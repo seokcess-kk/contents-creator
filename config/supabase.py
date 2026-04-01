@@ -6,12 +6,13 @@
     result = supabase.table("client_profiles").select("*").execute()
 """
 
-import os
+from __future__ import annotations
 
 from supabase import Client, create_client
 
+from domain.common.config import settings
+
 
 def get_client() -> Client:
-    url = os.environ["SUPABASE_URL"]
-    key = os.environ["SUPABASE_KEY"]
-    return create_client(url, key)
+    """Supabase 클라이언트를 반환한다."""
+    return create_client(settings.supabase_url, settings.supabase_key)

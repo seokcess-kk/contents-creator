@@ -29,6 +29,10 @@ class Settings(BaseModel):
     # Google Gemini (VLM)
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
 
+    # Supabase
+    supabase_url: str = os.getenv("SUPABASE_URL", "")
+    supabase_key: str = os.getenv("SUPABASE_KEY", "")
+
     # Naver
     naver_client_id: str = os.getenv("NAVER_CLIENT_ID", "")
     naver_client_secret: str = os.getenv("NAVER_CLIENT_SECRET", "")
