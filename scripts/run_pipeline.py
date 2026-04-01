@@ -81,7 +81,11 @@ def main() -> None:
     from domain.analysis.copy_analyzer import aggregate_l2, analyze_copy_single
     from domain.analysis.pattern_card import build_pattern_card
     from domain.analysis.structure_analyzer import aggregate_l1, analyze_structure
-    from domain.analysis.visual_analyzer import aggregate_visual, analyze_visual_dom
+    from domain.analysis.visual_analyzer import (
+        aggregate_visual,
+        analyze_visual_dom,
+        analyze_visual_vlm,
+    )
 
     successful_posts = [p for p in crawl_result.posts if p.success and p.raw_html]
 
@@ -99,9 +103,11 @@ def main() -> None:
     logger.info("비주얼 분석 중...")
     dom_results = [analyze_visual_dom(p.raw_html) for p in successful_posts]
 
+    from pathlib import Path
+
     vlm_results = [
-        {}  # VLM 스텁 — 추후 연결
-        for _ in successful_posts
+        analyze_visual_vlm(Path(p.screenshot_path), p.raw_html) if p.screenshot_path else {}
+        for p in successful_posts
     ]
     visual = aggregate_visual(dom_results, vlm_results)
 

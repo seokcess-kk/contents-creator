@@ -33,30 +33,57 @@ def analyze_visual_dom(html: str) -> dict:
     return {"colors": colors, "layout": layout, "images": images}
 
 
-def analyze_visual_vlm(screenshot_path: Path, html: str) -> dict:
-    """VLM으로 스크린샷을 분석한다.
+VLM_SYSTEM = """\
+당신은 블로그 페이지 비주얼 분석 전문가입니다.
+스크린샷을 보고 디자인 요소를 정확히 분류합니다.
+반드시 JSON만 반환하세요.
+"""
 
-    현재는 스텁 구현. 추후 실제 VLM API 연결.
-    """
+VLM_PROMPT = """\
+이 네이버 블로그 스크린샷을 분석하세요.
+
+다음 JSON 형태로 반환하세요:
+{
+  "mood": "따뜻한/차가운/전문적/밝은/차분한 중 하나",
+  "layout_pattern": "이미지-텍스트 교차/텍스트 중심/이미지 중심 중 하나",
+  "visual_flow": "시선 흐름 설명 (예: 상단 이미지→본문→CTA 순)",
+  "image_styles": [
+    {"type": "실사/AI생성/일러스트/그래픽디자인 중 하나", "position": "상단/중단/하단"}
+  ],
+  "overlay_patterns": "텍스트 오버레이/로고 워터마크/컬러 필터/없음",
+  "industry_trend": "의료/뷰티/건강 중 어느 업종에 최적화되어 보이는지"
+}
+"""
+
+
+def analyze_visual_vlm(screenshot_path: Path, html: str) -> dict:
+    """VLM(Claude Vision)으로 스크린샷을 분석한다."""
     if not screenshot_path.exists():
         logger.warning("스크린샷 없음, VLM 분석 스킵: %s", screenshot_path)
         return {}
 
-    # TODO: VLM API 연결 시 아래 주석 해제
-    # from domain.common import llm_client
-    # response = llm_client.analyze_image(
-    #     screenshot_path,
-    #     prompt="이 블로그 페이지를 분석하세요...",
-    #     system="...",
-    # )
+    import json
 
-    logger.info("VLM 분석 스킵 (인터페이스만 구현): %s", screenshot_path)
-    return {
-        "mood": "",
-        "layout_pattern": "",
-        "image_styles": [],
-        "industry_trend": "",
-    }
+    from domain.common import llm_client
+
+    try:
+        response = llm_client.analyze_image(
+            screenshot_path,
+            prompt=VLM_PROMPT,
+            system=VLM_SYSTEM,
+            max_tokens=1024,
+        )
+        # 마크다운 코드블록 제거
+        cleaned = llm_client._strip_json_markdown(response)
+        data = json.loads(cleaned)
+        logger.info("VLM 분석 완료: %s", screenshot_path)
+        return data
+    except json.JSONDecodeError as e:
+        logger.error("VLM 응답 JSON 파싱 실패: %s", e)
+        return {}
+    except Exception as e:
+        logger.error("VLM 분석 실패: %s", e)
+        return {}
 
 
 def aggregate_visual(dom_results: list[dict], vlm_results: list[dict]) -> VisualAnalysis:

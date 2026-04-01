@@ -31,16 +31,25 @@ def main() -> None:
         return
 
     # 분석
+    from pathlib import Path
+
     from domain.analysis.copy_analyzer import aggregate_l2, analyze_copy_single
     from domain.analysis.pattern_card import build_pattern_card
     from domain.analysis.structure_analyzer import aggregate_l1, analyze_structure
-    from domain.analysis.visual_analyzer import aggregate_visual, analyze_visual_dom
+    from domain.analysis.visual_analyzer import (
+        aggregate_visual,
+        analyze_visual_dom,
+        analyze_visual_vlm,
+    )
 
     l1 = aggregate_l1([analyze_structure(p.raw_html) for p in successful])
     l2 = aggregate_l2([analyze_copy_single(p.title, p.text_content) for p in successful])
     visual = aggregate_visual(
         [analyze_visual_dom(p.raw_html) for p in successful],
-        [{} for _ in successful],
+        [
+            analyze_visual_vlm(Path(p.screenshot_path), p.raw_html) if p.screenshot_path else {}
+            for p in successful
+        ],
     )
     card = build_pattern_card(args.keyword, l1, l2, visual)
 
