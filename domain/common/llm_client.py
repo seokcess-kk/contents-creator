@@ -87,9 +87,31 @@ def chat_json(
     model: str = "claude-sonnet-4-20250514",
     max_tokens: int = 4096,
 ) -> str:
-    """JSON 출력을 강제하는 chat 호출."""
+    """JSON 출력을 강제하는 chat 호출.
+
+    Claude가 ```json ... ``` 코드블록으로 감쌀 수 있으므로 후처리로 제거한다.
+    """
     json_system = system + "\n\nYou MUST respond with valid JSON only. No markdown, no explanation."
-    return chat(prompt, system=json_system, model=model, max_tokens=max_tokens, temperature=0.3)
+    raw = chat(prompt, system=json_system, model=model, max_tokens=max_tokens, temperature=0.3)
+    return _strip_json_markdown(raw)
+
+
+def _strip_json_markdown(text: str) -> str:
+    """마크다운 코드블록 래핑을 제거하여 순수 JSON 문자열을 반환한다."""
+    stripped = text.strip()
+
+    # ```json ... ``` 또는 ``` ... ```
+    if stripped.startswith("```"):
+        # 첫 줄 제거 (```json 또는 ```)
+        first_newline = stripped.find("\n")
+        if first_newline != -1:
+            stripped = stripped[first_newline + 1 :]
+        # 마지막 ``` 제거
+        if stripped.endswith("```"):
+            stripped = stripped[:-3]
+        return stripped.strip()
+
+    return stripped
 
 
 def analyze_image(
