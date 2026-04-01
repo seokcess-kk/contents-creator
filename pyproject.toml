@@ -1,0 +1,50 @@
+[project]
+name = "contents-creator"
+version = "0.1.0"
+description = "레퍼런스 분석 기반 네이버 블로그 SEO 콘텐츠 생성 엔진"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.40.0",
+    "scrapling>=0.2",
+    "playwright>=1.40",
+    "beautifulsoup4>=4.12",
+    "lxml>=5.0",
+    "pydantic>=2.0",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.4",
+    "mypy>=1.10",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
+[tool.setuptools.packages.find]
+include = ["domain*", "scripts*", "config*"]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# HTML 템플릿과 LLM 프롬프트 문자열은 분할 시 가독성 저하
+"domain/generation/design_card.py" = ["E501"]
+"domain/generation/seo_writer.py" = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

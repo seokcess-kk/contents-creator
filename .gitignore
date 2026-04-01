@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Environment
+config/.env
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# Output
+output/
+_workspace/
+
+# Data (로컬 저장소)
+data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/settings.local.json

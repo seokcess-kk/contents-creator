@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python C:/Users/assag/solution/contents-creator/.claude/hooks/post-edit-lint.py",
+            "timeout": 30,
+            "statusMessage": "ruff 검사 중..."
+          }
+        ]
+      }
+    ]
+  }
+}
