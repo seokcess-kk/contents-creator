@@ -57,26 +57,27 @@ VLM_PROMPT = """\
 
 
 def analyze_visual_vlm(screenshot_path: Path, html: str) -> dict:
-    """VLM(Claude Vision)으로 스크린샷을 분석한다."""
+    """VLM(Gemini Vision)으로 스크린샷을 분석한다."""
     if not screenshot_path.exists():
         logger.warning("스크린샷 없음, VLM 분석 스킵: %s", screenshot_path)
         return {}
 
     import json
 
-    from domain.common import llm_client
+    from domain.common import gemini_client
+    from domain.common.llm_client import _strip_json_markdown
+
+    full_prompt = VLM_SYSTEM + "\n\n" + VLM_PROMPT
 
     try:
-        response = llm_client.analyze_image(
+        response = gemini_client.analyze_image(
             screenshot_path,
-            prompt=VLM_PROMPT,
-            system=VLM_SYSTEM,
-            max_tokens=1024,
+            prompt=full_prompt,
+            max_tokens=2048,
         )
-        # 마크다운 코드블록 제거
-        cleaned = llm_client._strip_json_markdown(response)
+        cleaned = _strip_json_markdown(response)
         data = json.loads(cleaned)
-        logger.info("VLM 분석 완료: %s", screenshot_path)
+        logger.info("VLM 분석 완료 (Gemini): %s", screenshot_path)
         return data
     except json.JSONDecodeError as e:
         logger.error("VLM 응답 JSON 파싱 실패: %s", e)

@@ -26,6 +26,9 @@ class Settings(BaseModel):
     # Anthropic
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
 
+    # Google Gemini (VLM)
+    gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
+
     # Naver
     naver_client_id: str = os.getenv("NAVER_CLIENT_ID", "")
     naver_client_secret: str = os.getenv("NAVER_CLIENT_SECRET", "")
