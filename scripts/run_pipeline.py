@@ -8,9 +8,14 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import logging
 import sys
+
+# Windows 콘솔 UTF-8 출력
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(name)s | %(message)s")
 logger = logging.getLogger("pipeline")
@@ -117,7 +122,7 @@ def main() -> None:
 
     # === Phase C: 생성 + 검증 ===
     logger.info("=== Phase C: 콘텐츠 생성 ===")
-    from domain.generation.design_card import generate_cta_card, generate_header_card
+    from domain.generation.design_card import generate_branded_cards
     from domain.generation.image_generator import generate_image_prompts
     from domain.generation.model import GeneratedContent
     from domain.generation.seo_writer import generate_seo_text
@@ -137,9 +142,16 @@ def main() -> None:
     logger.info("SEO 텍스트 생성 중...")
     title, seo_text = generate_seo_text(args.keyword, pattern_card, profile, variation)
 
-    # 디자인 카드 생성
-    header_card = generate_header_card(args.keyword, title, pattern_card, profile)
-    cta_card = generate_cta_card(pattern_card, profile)
+    # 브랜디드 카드 생성 (3종 + 삽입 위치)
+    logger.info("브랜디드 카드 생성 중...")
+    design_cards, card_positions = generate_branded_cards(
+        keyword=args.keyword,
+        title=title,
+        structure_name=variation.structure,
+        pattern_card=pattern_card,
+        profile=profile,
+    )
+    logger.info("브랜디드 카드 %d장 생성 완료", len(design_cards))
 
     # AI 이미지 프롬프트
     image_prompts = generate_image_prompts(args.keyword, pattern_card, profile)
@@ -149,7 +161,8 @@ def main() -> None:
         title=title,
         seo_text=seo_text,
         variation_config=variation,
-        design_cards=[header_card, cta_card],
+        design_cards=design_cards,
+        card_positions=card_positions,
         ai_image_prompts=image_prompts,
     )
 

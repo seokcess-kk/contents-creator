@@ -39,10 +39,27 @@ class TestMarkdownToNaverHtml:
         assert "실사 사진 삽입" in html
         assert "시술실 사진" in html
 
-    def test_bold_text(self) -> None:
+    def test_bold_text_becomes_highlight(self) -> None:
         md = "이것은 **강조** 텍스트입니다."
         html = markdown_to_naver_html(md)
-        assert "<strong>강조</strong>" in html
+        assert "강조</span>" in html
+        assert "linear-gradient" in html
+
+    def test_blockquote(self) -> None:
+        md = "> 고객 후기 인용문입니다."
+        html = markdown_to_naver_html(md)
+        assert "고객 후기" in html
+        assert "border-left" in html
+
+    def test_section_directive(self) -> None:
+        md = "<!-- SECTION:도입 bg=#f5f0eb -->\n## 제목"
+        html = markdown_to_naver_html(md)
+        assert "background:#f5f0eb" in html
+
+    def test_card_marker_passthrough(self) -> None:
+        md = "본문\n<!-- CARD:intro -->\n본문2"
+        html = markdown_to_naver_html(md)
+        assert "<!-- CARD:intro -->" in html
 
     def test_empty_line_becomes_br(self) -> None:
         md = "첫째\n\n둘째"

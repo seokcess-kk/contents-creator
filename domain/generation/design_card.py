@@ -1,83 +1,142 @@
-"""디자인 카드 HTML 생성. 헤더/CTA 이미지를 HTML로 생성한다.
+"""브랜디드 카드 시스템 퍼블릭 API.
 
-패턴 카드의 색상 팔레트와 클라이언트 프로필 기반.
-680px 너비 고정 (네이버 블로그 기준).
+3종 카드(intro, transition, cta)를 생성하고 삽입 위치를 반환한다.
+HTML 생성 실패 시 하드코딩 템플릿으로 폴백한다.
 """
 
 from __future__ import annotations
 
+import logging
+
 from domain.analysis.model import PatternCard
-from domain.generation.model import DesignCard
+from domain.compliance.rules import DISCLAIMER_TEMPLATE
+from domain.generation.card_compositions import CARD_TYPES, get_card_positions
+from domain.generation.card_content_generator import generate_card_contents
+from domain.generation.card_html_generator import generate_card_htmls
+from domain.generation.card_templates import (
+    pick_style,
+    render_card_html,
+)
+from domain.generation.model import CardContent, DesignCard
 from domain.profile.model import ClientProfile
 
+logger = logging.getLogger(__name__)
 
-def generate_header_card(
+
+def generate_branded_cards(
     keyword: str,
     title: str,
+    structure_name: str,
     pattern_card: PatternCard,
     profile: ClientProfile,
-) -> DesignCard:
-    """헤더 디자인 카드 HTML을 생성한다."""
-    palette = pattern_card.visual_pattern.get("color_palette", ["#333333", "#ffffff"])
-    primary = palette[0] if palette else "#333333"
-    bg = palette[1] if len(palette) > 1 else "#f5f5f5"
-    accent = palette[2] if len(palette) > 2 else "#4a90d9"
+) -> tuple[list[DesignCard], dict[str, int]]:
+    """브랜디드 카드 3종을 생성하고 삽입 위치를 반환한다.
 
-    html = f"""\
-<div style="width:680px;padding:60px 40px;background:{bg};text-align:center;font-family:'Nanum Gothic',sans-serif;">
-  <p style="font-size:14px;color:{accent};margin:0 0 12px;letter-spacing:2px;">
-    {profile.company_name or keyword}
-  </p>
-  <h1 style="font-size:28px;color:{primary};margin:0 0 16px;line-height:1.4;font-weight:700;">
-    {title}
-  </h1>
-  <p style="font-size:15px;color:#666;margin:0;">
-    {profile.usp or keyword}
-  </p>
-</div>"""
+    1. 카드 삽입 위치 결정
+    2. LLM으로 카드 콘텐츠 일괄 생성
+    3. LLM으로 HTML/CSS 디자인 생성 (실패 시 템플릿 폴백)
 
-    return DesignCard(
-        card_type="header",
-        html=html,
-        title=title,
-        subtitle=profile.usp or keyword,
-        color_primary=primary,
-        color_background=bg,
-        color_accent=accent,
+    Returns:
+        (DesignCard 리스트, 삽입 위치 딕셔너리) 튜플
+    """
+    # 1. 카드 삽입 위치
+    positions = get_card_positions(structure_name, profile)
+    logger.info(
+        "카드 삽입 위치: %s",
+        ", ".join(f"{k}={v}" for k, v in positions.items()),
     )
 
+    # 2. 카드 시퀀스 구성
+    sequence = list(CARD_TYPES)  # intro, transition, cta
+    if profile.is_medical():
+        sequence.append("disclaimer")
 
-def generate_cta_card(
-    pattern_card: PatternCard,
+    logger.info("카드 시퀀스 (%d장): %s", len(sequence), " -> ".join(sequence))
+
+    # 3. LLM 콘텐츠 생성
+    contents = generate_card_contents(
+        sequence,
+        keyword,
+        pattern_card,
+        profile,
+    )
+    content_map = {c.card_type: c for c in contents}
+    if "disclaimer" in sequence and "disclaimer" not in content_map:
+        content_map["disclaimer"] = CardContent(
+            card_type="disclaimer",
+            body_text=DISCLAIMER_TEMPLATE,
+        )
+
+    ordered_contents = [content_map.get(ct, CardContent(card_type=ct)) for ct in sequence]
+
+    # 4. 색상 팔레트
+    palette = pattern_card.visual_pattern.get(
+        "color_palette",
+        ["#333333", "#ffffff", "#4a90d9"],
+    )
+    colors = {
+        "primary": palette[0] if palette else "#333333",
+        "background": palette[1] if len(palette) > 1 else "#ffffff",
+        "accent": palette[2] if len(palette) > 2 else "#4a90d9",
+    }
+
+    # 5. LLM HTML 디자인 생성
+    html_list = _generate_htmls_with_fallback(
+        ordered_contents,
+        profile,
+        colors,
+    )
+
+    # 6. DesignCard 조합
+    cards: list[DesignCard] = []
+    for i, card_type in enumerate(sequence):
+        content = ordered_contents[i]
+        cards.append(
+            DesignCard(
+                card_type=card_type,
+                html=html_list[i],
+                title=content.title,
+                subtitle=content.subtitle,
+                color_primary=colors["primary"],
+                color_background=colors["background"],
+                color_accent=colors["accent"],
+            ),
+        )
+
+    logger.info("브랜디드 카드 생성 완료: %d장", len(cards))
+    return cards, positions
+
+
+def _generate_htmls_with_fallback(
+    contents: list[CardContent],
     profile: ClientProfile,
-) -> DesignCard:
-    """CTA 디자인 카드 HTML을 생성한다."""
-    palette = pattern_card.visual_pattern.get("color_palette", ["#333333", "#ffffff"])
-    accent = palette[2] if len(palette) > 2 else "#4a90d9"
-    bg = palette[1] if len(palette) > 1 else "#f0f4f8"
+    colors: dict[str, str],
+) -> list[str]:
+    """LLM HTML 생성을 시도하고, 실패한 카드는 템플릿 폴백."""
+    try:
+        html_list = generate_card_htmls(contents, profile, colors)
+    except Exception:
+        logger.warning("LLM HTML 생성 실패, 전체 템플릿 폴백")
+        html_list = [""] * len(contents)
 
-    company = profile.company_name or "문의하기"
-    region = profile.region or ""
-    cta_text = f"{company} 상담 예약"
+    needs_fallback = any(not h.strip() for h in html_list)
+    if needs_fallback:
+        fallback_count = sum(1 for h in html_list if not h.strip())
+        logger.info("템플릿 폴백: %d장", fallback_count)
 
-    html = f"""\
-<div style="width:680px;padding:40px;background:{bg};text-align:center;font-family:'Nanum Gothic',sans-serif;">
-  <p style="font-size:20px;color:#333;margin:0 0 12px;font-weight:700;">
-    지금 바로 상담받아 보세요
-  </p>
-  <p style="font-size:15px;color:#666;margin:0 0 24px;">
-    {region} {company}
-  </p>
-  <div style="display:inline-block;padding:14px 40px;background:{accent};color:#fff;border-radius:8px;font-size:16px;font-weight:600;">
-    {cta_text}
-  </div>
-</div>"""
+        style = pick_style()
+        accent = colors["accent"]
+        total = len(contents)
 
-    return DesignCard(
-        card_type="cta",
-        html=html,
-        title=cta_text,
-        color_primary="#333333",
-        color_background=bg,
-        color_accent=accent,
-    )
+        for i, html in enumerate(html_list):
+            if not html.strip():
+                html_list[i] = render_card_html(
+                    contents[i],
+                    style,
+                    accent,
+                    profile,
+                    card_index=i,
+                    total_cards=total,
+                )
+
+    return html_list
