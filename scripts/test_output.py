@@ -101,13 +101,13 @@ def main() -> None:
     )
     logger.info("카드 %d장, 위치: %s", len(design_cards), card_positions)
 
-    # 6. AI 이미지 생성
+    # 6. AI 이미지 생성 (SEO 텍스트의 [이미지: 설명] 기반)
     generated_images = []
     try:
         from domain.generation.image_generator import generate_images
 
         logger.info("AI 이미지 생성 중...")
-        generated_images = generate_images(keyword, pattern_card, profile, count=2)
+        generated_images = generate_images(seo_text, pattern_card, profile)
         logger.info(
             "AI 이미지: %d/%d 성공",
             sum(1 for g in generated_images if g.success),
