@@ -8,7 +8,9 @@ from __future__ import annotations
 import random
 
 from domain.analysis.model import PatternCard
-from domain.generation.model import VariationConfig
+from domain.generation.card_layout_registry import get_layout_names
+from domain.generation.model import CardLayoutSet, VariationConfig
+from domain.generation.newsletter_theme import pick_theme
 from domain.generation.structure_templates import get_all_template_names
 
 # ② 도입부 스타일 풀
@@ -77,17 +79,27 @@ def recommend_variation(
     # ⑤ 이미지 배치: 랜덤
     image_placement = random.choice(IMAGE_PLACEMENT_STYLES)
 
+    # ⑥ 카드 레이아웃: 타입별 독립 선택
+    used_layouts = [c.card_layouts for c in exclude]
+    card_layouts = _pick_card_layouts(used_layouts)
+
+    # ⑦ 뉴스레터 테마
+    theme = pick_theme()
+
     return VariationConfig(
         structure=structure,
         intro=intro,
         subtitle_style=subtitle_style,
         expression_tone=expression_tone,
         image_placement=image_placement,
+        card_layouts=card_layouts,
+        newsletter_theme=theme.name,
     )
 
 
 def format_variation_preview(config: VariationConfig) -> str:
     """사용자 승인용 변이 조합 미리보기를 생성한다."""
+    cl = config.card_layouts
     return (
         "[변이 조합 제안]\n"
         f"① 구조: {config.structure}\n"
@@ -95,6 +107,9 @@ def format_variation_preview(config: VariationConfig) -> str:
         f"③ 소제목 스타일: {config.subtitle_style}\n"
         f"④ 표현 톤: {config.expression_tone}\n"
         f"⑤ 이미지 배치: {config.image_placement}\n"
+        f"⑥ 카드 레이아웃: intro={cl.intro}, "
+        f"transition={cl.transition}, cta={cl.cta}\n"
+        f"⑦ 뉴스레터 테마: {config.newsletter_theme}\n"
         "\n[승인/수정/재추천] 중 선택해 주세요."
     )
 
@@ -143,4 +158,25 @@ def _pick_intro(hook_types: list[str], used: set[str]) -> str:
         if mapped and mapped in available:
             return mapped
 
+    return random.choice(available)
+
+
+def _pick_card_layouts(used_layouts: list[CardLayoutSet]) -> CardLayoutSet:
+    """카드 타입별 레이아웃을 독립적으로 선택한다."""
+    used_intro = {lay.intro for lay in used_layouts if lay.intro}
+    used_transition = {lay.transition for lay in used_layouts if lay.transition}
+    used_cta = {lay.cta for lay in used_layouts if lay.cta}
+
+    return CardLayoutSet(
+        intro=_pick_unused(get_layout_names("intro"), used_intro),
+        transition=_pick_unused(get_layout_names("transition"), used_transition),
+        cta=_pick_unused(get_layout_names("cta"), used_cta),
+    )
+
+
+def _pick_unused(pool: list[str], used: set[str]) -> str:
+    """사용되지 않은 항목을 우선 선택한다."""
+    available = [name for name in pool if name not in used]
+    if not available:
+        available = pool
     return random.choice(available)

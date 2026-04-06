@@ -23,15 +23,15 @@ for Korean Naver blog posts.
 MANDATORY RULES:
 - Use width:100% with max-width:720px. Wrap each card in a single <div>
 - Inline CSS ONLY (no <style> tags)
-- Font: 'Nanum Gothic', 'Nanum Myeongjo', 'Malgun Gothic', sans-serif \
-(choose freely per card for variety)
+- Font system (choose per card based on layout instruction):
+  - Primary: 'Pretendard', 'Nanum Gothic', 'Malgun Gothic', sans-serif
+  - Handwriting: 'Nanum Pen Script', 'Nanum Gothic', cursive \
+(use for quotes, greetings, emotional text only)
 - NO emoji, NO icon fonts, NO external resources
-- Modern, magazine-quality design with sophisticated color harmony
+- FOLLOW the LAYOUT STRUCTURE instruction for each card exactly
 - Subtle gradients, refined spacing, clear visual hierarchy
 - Maintain visual consistency across all cards (one cohesive series)
-- Use numbering, badges, borders, and typography for differentiation
-- Choose aesthetically pleasing, harmonious color combinations \
-based on the provided palette
+- Generous padding (60px+ vertical, 48px horizontal)
 - Separate each card with === CARD N === delimiter
 - Return ONLY HTML code. No explanations, no comments
 
@@ -56,6 +56,7 @@ def _build_html_prompt(
     contents: list[CardContent],
     profile: ClientProfile,
     colors: dict[str, str],
+    layout_specs: dict[str, str] | None = None,
 ) -> str:
     """카드 HTML 생성 프롬프트를 구성한다."""
     cards_desc = []
@@ -76,6 +77,10 @@ def _build_html_prompt(
                     desc += f"  {j:02d}. {item}\n"
             if c.badge_text:
                 desc += f"Badge: {c.badge_text}\n"
+
+            # 레이아웃 구조 지시 주입
+            if layout_specs and c.card_type in layout_specs:
+                desc += f"LAYOUT STRUCTURE:\n{layout_specs[c.card_type]}\n"
 
             if c.card_type == "intro":
                 services = ", ".join(s.name for s in profile.services[:5])
@@ -195,6 +200,7 @@ def generate_card_htmls(
     contents: list[CardContent],
     profile: ClientProfile,
     colors: dict[str, str],
+    layout_specs: dict[str, str] | None = None,
 ) -> list[str]:
     """Gemini로 카드 HTML을 일괄 생성한다.
 
@@ -208,7 +214,7 @@ def generate_card_htmls(
     if profile.is_medical():
         system += MEDICAL_HTML_INJECTION
 
-    prompt = _build_html_prompt(contents, profile, colors)
+    prompt = _build_html_prompt(contents, profile, colors, layout_specs)
 
     logger.info("카드 HTML 디자인 생성 중 (Gemini, %d장)...", len(contents))
     raw = gemini_client.chat(

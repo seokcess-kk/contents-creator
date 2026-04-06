@@ -12,7 +12,11 @@ from pathlib import Path
 from domain.common.config import settings
 from domain.compliance.rules import DISCLAIMER_TEMPLATE
 from domain.composer.model import ComposedOutput, RenderedImage
-from domain.composer.naver_formatter import insert_disclaimer, markdown_to_naver_html
+from domain.composer.naver_formatter import (
+    FormatterTheme,
+    insert_disclaimer,
+    markdown_to_naver_html,
+)
 from domain.composer.renderer import render_batch_sync
 from domain.generation.model import GeneratedContent
 
@@ -71,8 +75,9 @@ def assemble(content: GeneratedContent) -> ComposedOutput:
         if b64:
             card_b64_map[card.card_type] = b64
 
-    # 4. 마크다운 -> 리치 HTML 변환
-    naver_html = markdown_to_naver_html(content.seo_text)
+    # 4. 마크다운 -> 리치 HTML 변환 (테마 적용)
+    formatter_theme = _extract_formatter_theme(content)
+    naver_html = markdown_to_naver_html(content.seo_text, theme=formatter_theme)
 
     # 5. <!-- CARD:type --> 마커를 base64 이미지로 교체
     naver_html = _replace_card_markers(naver_html, card_b64_map)
@@ -132,12 +137,50 @@ def _replace_card_markers(
         if not b64:
             return ""
         return (
-            f'<div style="text-align:center;margin:30px 0;">'
+            f'<div style="text-align:center;margin:40px 0;">'
             f'<img src="data:image/png;base64,{b64}" '
-            f'alt="{card_type}" style="max-width:100%;"></div>'
+            f'alt="{card_type}" style="max-width:100%;'
+            f"border-radius:12px;"
+            f'box-shadow:0 4px 20px rgba(0,0,0,0.08);"></div>'
         )
 
     return re.sub(r"<!--\s*CARD:(\w+)\s*-->", _replacer, html)
+
+
+def _extract_formatter_theme(content: GeneratedContent) -> FormatterTheme | None:
+    """GeneratedContent의 variation_config에서 테마 토큰을 추출한다."""
+    theme_name = content.variation_config.newsletter_theme
+    if not theme_name:
+        return None
+
+    # generation 도메인의 테마 데이터를 dict로 전달받아 FormatterTheme 생성
+    # 도메인 간 직접 import 대신 JSON-serializable 데이터로 전달
+    try:
+        from domain.generation.newsletter_theme import get_theme
+
+        theme = get_theme(theme_name)
+        if not theme:
+            return None
+        return FormatterTheme(
+            bg_primary=theme.bg_primary,
+            bg_section=theme.bg_section,
+            text_primary=theme.text_primary,
+            text_heading=theme.text_heading,
+            text_muted=theme.text_muted,
+            accent=theme.accent,
+            font_heading=theme.font_heading,
+            font_body=theme.font_body,
+            heading_weight=theme.heading_weight,
+            heading_size=theme.heading_size,
+            subheading_size=theme.subheading_size,
+            highlight_bg=theme.highlight_bg,
+            quote_bg=theme.quote_bg,
+            divider_style=theme.divider_style,
+            border_radius=theme.border_radius,
+        )
+    except ImportError:
+        logger.warning("뉴스레터 테마 로드 실패, 기본 테마 사용")
+        return None
 
 
 def _build_full_html(body_html: str) -> str:
@@ -147,9 +190,11 @@ def _build_full_html(body_html: str) -> str:
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard\
+@v1.3.9/dist/web/static/pretendard.min.css" rel="stylesheet">
   <style>
     body {{ margin: 0; padding: 0; background: #fff; }}
-    article {{ max-width: 720px; margin: 0 auto; }}
+    article {{ max-width: 720px; margin: 0 auto; padding: 20px 24px 60px; }}
   </style>
 </head>
 <body>

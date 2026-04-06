@@ -7,6 +7,13 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+_WEBFONT_LINKS = (
+    '<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard'
+    '@v1.3.9/dist/web/static/pretendard.min.css" rel="stylesheet">'
+    '<link href="https://fonts.googleapis.com/css2?family=Nanum+Pen+'
+    'Script&display=swap" rel="stylesheet">'
+)
+
 
 async def render_html_to_png(
     html: str,
@@ -30,11 +37,12 @@ async def render_html_to_png(
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # 자체 포함 HTML 생성
+    # 자체 포함 HTML 생성 (웹폰트 포함)
     full_html = f"""\
 <!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"><style>body{{margin:0;padding:0;}}</style></head>
+<head><meta charset="utf-8">{_WEBFONT_LINKS}\
+<style>body{{margin:0;padding:0;}}</style></head>
 <body>{html}</body>
 </html>"""
 
@@ -115,6 +123,7 @@ async def render_batch(
                 full_html = (
                     "<!DOCTYPE html><html><head>"
                     '<meta charset="utf-8">'
+                    f"{_WEBFONT_LINKS}"
                     "<style>body{margin:0;padding:0;}</style>"
                     f"</head><body>{html}</body></html>"
                 )

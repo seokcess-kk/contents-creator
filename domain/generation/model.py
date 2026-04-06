@@ -25,14 +25,24 @@ class CardContent(BaseModel):
     badge_text: str = ""  # 통계 뱃지, 라벨 등
 
 
+class CardLayoutSet(BaseModel):
+    """카드 타입별 레이아웃 변이명."""
+
+    intro: str = ""  # quote_greeting, magazine_header 등
+    transition: str = ""  # hashtag_keycopy, big_question 등
+    cta: str = ""  # service_grid, single_action 등
+
+
 class VariationConfig(BaseModel):
-    """5개 층위 변이 조합."""
+    """6개 층위 변이 조합."""
 
     structure: str = ""  # 구조 템플릿 이름
     intro: str = ""  # 도입부 스타일
     subtitle_style: str = ""  # 소제목 스타일
     expression_tone: str = ""  # 표현 톤
     image_placement: str = ""  # 이미지 배치 패턴
+    card_layouts: CardLayoutSet = Field(default_factory=CardLayoutSet)
+    newsletter_theme: str = ""  # 뉴스레터 테마 이름
 
 
 class DesignCard(BaseModel):

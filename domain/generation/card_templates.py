@@ -1,17 +1,23 @@
-"""카드 타입별 HTML 폴백 렌더러 + 비주얼 스타일 풀.
+"""카드 공통 스타일 유틸 + 디스패처.
 
-Gemini HTML 생성 실패 시 사용하는 하드코딩 템플릿.
-3종 카드(intro, transition, cta) + disclaimer만 지원한다.
+VisualStyle 풀, 공통 CSS 빌더, 카드 타입별 디스패처를 제공한다.
+레이아웃별 렌더러는 card_layout_intro/transition/cta.py에 분리되어 있다.
 """
 
 from __future__ import annotations
 
 import random
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from domain.compliance.rules import DISCLAIMER_TEMPLATE
 from domain.generation.model import CardContent
 from domain.profile.model import ClientProfile
+
+# === 폰트 상수 ===
+
+FONT_PRIMARY = "'Pretendard', 'Nanum Gothic', 'Malgun Gothic', sans-serif"
+FONT_HANDWRITING = "'Nanum Pen Script', 'Nanum Gothic', cursive"
 
 # === 라벨 사전 ===
 
@@ -109,15 +115,13 @@ STYLE_POOL: list[VisualStyle] = [
     ),
 ]
 
-_FONT = "'Nanum Gothic', 'Malgun Gothic', sans-serif"
-
 
 def pick_style() -> VisualStyle:
     """스타일 풀에서 랜덤 선택한다."""
     return random.choice(STYLE_POOL)
 
 
-def _get_label(
+def get_label(
     style: VisualStyle,
     card_type: str,
     content_badge: str = "",
@@ -132,25 +136,28 @@ def _get_label(
 # === 공통 스타일 빌더 ===
 
 
-def _base(
+def base_style(
     bg: str,
     color: str,
     style: VisualStyle,
     padding: str = "50px 40px",
+    font: str = "",
 ) -> str:
     """공통 컨테이너 스타일."""
+    f = font or FONT_PRIMARY
     return (
         f"width:100%;max-width:720px;padding:{padding};background:{bg};"
-        f"text-align:{style.text_align};font-family:{_FONT};"
+        f"text-align:{style.text_align};font-family:{f};"
         f"box-sizing:border-box;"
     )
 
 
-def _title_style(
+def title_style(
     color: str,
     style: VisualStyle,
     size: str = "26px",
 ) -> str:
+    """제목 스타일."""
     return (
         f"font-size:{size};color:{color};"
         f"font-weight:{style.font_weight_title};"
@@ -160,7 +167,7 @@ def _title_style(
     )
 
 
-def _title_dark(
+def title_dark_style(
     color: str,
     style: VisualStyle,
     size: str = "26px",
@@ -176,7 +183,7 @@ def _title_dark(
     )
 
 
-def _label_style(color: str, style: VisualStyle) -> str:
+def label_style(color: str, style: VisualStyle) -> str:
     """섹션 라벨 스타일."""
     return (
         f"font-size:12px;color:{color};"
@@ -186,11 +193,12 @@ def _label_style(color: str, style: VisualStyle) -> str:
     )
 
 
-def _body_style(color: str) -> str:
+def body_style(color: str) -> str:
+    """본문 스타일."""
     return f"font-size:15px;color:{color};line-height:1.8;margin:0;word-break:keep-all;"
 
 
-def _accent_line(
+def accent_line(
     accent: str,
     style: VisualStyle,
     card_index: int,
@@ -210,7 +218,7 @@ def _accent_line(
     return f'<div style="width:40px;height:3px;background:{accent};margin:0 auto 20px;"></div>'
 
 
-def _accent_line_bottom(
+def accent_line_bottom(
     accent: str,
     style: VisualStyle,
     card_index: int,
@@ -223,153 +231,25 @@ def _accent_line_bottom(
     return f'<div style="width:40px;height:3px;background:{accent};margin:20px {center} 0;"></div>'
 
 
-# === 카드 타입별 렌더러 ===
-
-
-def render_intro(
-    content: CardContent,
-    style: VisualStyle,
-    accent: str,
-    profile: ClientProfile,
-    card_index: int = 0,
-    total_cards: int = 1,
-) -> str:
-    """intro 카드: 업체 소개 + 공감 질문."""
-    bg = style.bg_light
-    color = style.text_on_light
-    company = profile.company_name or content.title
-    label = _get_label(style, "intro")
-    line = _accent_line(accent, style, card_index)
-    line_b = _accent_line_bottom(accent, style, card_index)
-
-    label_html = ""
-    if label:
-        label_html = f'<p style="{_label_style(accent, style)}">{label}</p>'
-
-    tags_html = ""
-    if profile.services:
-        badges = [
-            f'<span style="display:inline-block;padding:6px 14px;'
-            f"background:{accent}15;color:{accent};border-radius:20px;"
-            f"font-size:12px;font-weight:600;"
-            f'letter-spacing:0.5px;margin:4px;">{s.name}</span>'
-            for s in profile.services[:5]
-        ]
-        tags_html = f'<div style="margin-top:20px;">{"".join(badges)}</div>'
-
-    subtitle = content.subtitle or profile.usp or ""
-    sub_html = ""
-    if subtitle:
-        sub_html = (
-            f'<p style="font-size:15px;color:{color};opacity:0.6;'
-            f"margin:0 0 12px;line-height:1.5;"
-            f'letter-spacing:0.3px;">{subtitle}</p>'
-        )
-
-    return f"""\
-<div style="{_base(bg, color, style)}">
-  {label_html}
-  <h1 style="font-size:28px;color:{color};\
-font-weight:{style.font_weight_title};\
-letter-spacing:{style.title_spacing};\
-margin:0 0 10px;word-break:keep-all;">{company}</h1>
-  {sub_html}
-  {line}
-  <p style="{_body_style(color)}margin-top:16px;\
-opacity:0.8;">{content.body_text}</p>
-  {tags_html}
-  {line_b}
-</div>"""
-
-
-def render_transition(
-    content: CardContent,
-    style: VisualStyle,
-    accent: str,
-    card_index: int = 0,
-    total_cards: int = 1,
-) -> str:
-    """transition 카드: 고민 -> 솔루션 브릿지. 다크 배경."""
-    bg = style.bg_dark
-    color = style.text_on_dark
-    line = _accent_line(accent, style, card_index)
-    line_b = _accent_line_bottom(accent, style, card_index)
-
-    return f"""\
-<div style="{_base(bg, color, style, "60px 40px")}">
-  {line}
-  <h2 style="{_title_dark(color, style, "24px")}">\
-{content.title}</h2>
-  <p style="{_body_style(color)}opacity:0.8;\
-text-shadow:0 1px 1px rgba(0,0,0,0.2);">{content.body_text}</p>
-  {line_b}
-</div>"""
-
-
-def render_cta(
-    content: CardContent,
-    style: VisualStyle,
-    accent: str,
-    profile: ClientProfile,
-    card_index: int = 0,
-    total_cards: int = 1,
-) -> str:
-    """cta 카드: 마지막 후킹 + 연락처."""
-    bg = style.bg_dark
-    color = style.text_on_dark
-    company = profile.company_name or content.title
-    label = _get_label(style, "cta", content.subtitle)
-    line = _accent_line(accent, style, card_index)
-
-    label_html = ""
-    if label:
-        label_html = f'<p style="{_label_style(accent, style)}">{label}</p>'
-
-    contact_lines = []
-    if profile.phone:
-        contact_lines.append(f"T. {profile.phone}")
-    if profile.address:
-        contact_lines.append(profile.address)
-    if profile.region and not profile.address:
-        contact_lines.append(profile.region)
-
-    contact_html = ""
-    if contact_lines:
-        items = "".join(
-            f'<p style="font-size:13px;color:{color};opacity:0.55;'
-            f'margin:4px 0;letter-spacing:0.3px;">{cl}</p>'
-            for cl in contact_lines
-        )
-        contact_html = f'<div style="margin-top:20px;">{items}</div>'
-
-    return f"""\
-<div style="{_base(bg, color, style, "50px 40px")}">
-  {line}
-  {label_html}
-  <h2 style="{_title_dark(color, style, "24px")}">\
-{content.title}</h2>
-  <p style="{_body_style(color)}opacity:0.75;\
-text-shadow:0 1px 1px rgba(0,0,0,0.2);">{content.body_text}</p>
-  <p style="font-size:20px;color:{color};font-weight:700;\
-letter-spacing:{style.title_spacing};\
-margin:24px 0 0;word-break:keep-all;">{company}</p>
-  {contact_html}
-</div>"""
+# === disclaimer (고정) ===
 
 
 def render_disclaimer(style: VisualStyle) -> str:
     """disclaimer 카드: 의료법 면책 고지 (고정 템플릿)."""
-    label = _get_label(style, "disclaimer")
+    lbl = get_label(style, "disclaimer")
     return f"""\
 <div style="width:100%;max-width:720px;padding:30px 40px;\
 background:linear-gradient(180deg, #f5f5f5 0%, #efefef 100%);\
-font-family:{_FONT};box-sizing:border-box;">
+font-family:{FONT_PRIMARY};box-sizing:border-box;">
   <p style="font-size:10px;color:#aaa;margin:0 0 8px;\
 letter-spacing:{style.label_spacing};\
-font-weight:600;">{label}</p>
+font-weight:600;">{lbl}</p>
   <p style="font-size:12px;color:#999;line-height:1.8;\
 margin:0;word-break:keep-all;">{DISCLAIMER_TEMPLATE}</p>
 </div>"""
+
+
+# === 디스패처 ===
 
 
 def render_card_html(
@@ -379,45 +259,57 @@ def render_card_html(
     profile: ClientProfile,
     card_index: int = 0,
     total_cards: int = 1,
+    layout_name: str = "",
 ) -> str:
-    """카드 타입에 따라 적절한 렌더러를 호출한다."""
-    ci = card_index
-    tc = total_cards
-    renderers = {
-        "intro": lambda: render_intro(
-            content,
-            style,
-            accent,
-            profile,
-            ci,
-            tc,
-        ),
-        "transition": lambda: render_transition(
-            content,
-            style,
-            accent,
-            ci,
-            tc,
-        ),
-        "cta": lambda: render_cta(
-            content,
-            style,
-            accent,
-            profile,
-            ci,
-            tc,
-        ),
-        "disclaimer": lambda: render_disclaimer(style),
-    }
+    """카드 타입과 레이아웃에 따라 적절한 렌더러를 호출한다."""
+    if content.card_type == "disclaimer":
+        return render_disclaimer(style)
 
-    renderer = renderers.get(content.card_type)
+    renderer = _resolve_renderer(content.card_type, layout_name)
     if renderer:
-        return renderer()
+        return renderer(
+            content=content,
+            style=style,
+            accent=accent,
+            profile=profile,
+            card_index=card_index,
+            total_cards=total_cards,
+        )
 
+    # 최종 폴백: 기본 div
     return f"""\
-<div style="{_base(style.bg_light, style.text_on_light, style)}">
-  <h2 style="{_title_style(style.text_on_light, style)}">\
+<div style="{base_style(style.bg_light, style.text_on_light, style)}">
+  <h2 style="{title_style(style.text_on_light, style)}">\
 {content.title}</h2>
-  <p style="{_body_style(style.text_on_light)}">\
+  <p style="{body_style(style.text_on_light)}">\
 {content.body_text}</p>
 </div>"""
+
+
+def _resolve_renderer(
+    card_type: str,
+    layout_name: str,
+) -> Callable[..., str] | None:
+    """레이아웃 이름으로 렌더러 함수를 찾는다."""
+    from domain.generation.card_layout_cta import CTA_RENDERERS
+    from domain.generation.card_layout_intro import INTRO_RENDERERS
+    from domain.generation.card_layout_transition import TRANSITION_RENDERERS
+
+    registry = {
+        "intro": INTRO_RENDERERS,
+        "transition": TRANSITION_RENDERERS,
+        "cta": CTA_RENDERERS,
+    }
+
+    renderers = registry.get(card_type, {})
+
+    # 지정된 레이아웃이 있으면 해당 렌더러 사용
+    if layout_name and layout_name in renderers:
+        return renderers[layout_name]
+
+    # 레이아웃 미지정 시 첫 번째 렌더러를 기본값으로
+    if renderers:
+        first_key = next(iter(renderers))
+        return renderers[first_key]
+
+    return None
