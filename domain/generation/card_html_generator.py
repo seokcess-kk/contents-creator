@@ -89,6 +89,12 @@ def _build_html_prompt(
                 if services:
                     desc += f"Service tags: {services}\n"
                 desc += f"Company: {profile.company_name}\n"
+                if profile.photo_path:
+                    desc += (
+                        "NOTE: This client has a representative photo. "
+                        "Include a circular photo placeholder area (80px) "
+                        "at the top of the intro card.\n"
+                    )
             elif c.card_type == "cta":
                 if profile.phone:
                     desc += f"Phone: {profile.phone}\n"

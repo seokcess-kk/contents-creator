@@ -23,6 +23,34 @@ from domain.generation.model import CardContent
 from domain.profile.model import ClientProfile
 
 
+def _photo_b64(profile: ClientProfile) -> str:
+    """프로필 사진을 base64 문자열로 반환한다. 없으면 빈 문자열."""
+    import base64
+    from pathlib import Path
+
+    if not profile.photo_path:
+        return ""
+    p = Path(profile.photo_path)
+    if not p.exists():
+        return ""
+    return base64.b64encode(p.read_bytes()).decode("ascii")
+
+
+def _photo_html(
+    b64: str,
+    size: str = "80px",
+    radius: str = "50%",
+) -> str:
+    """원형 사진 HTML을 반환한다."""
+    if not b64:
+        return ""
+    return (
+        f'<img src="data:image/png;base64,{b64}" '
+        f'style="width:{size};height:{size};border-radius:{radius};'
+        f'object-fit:cover;display:block;" alt="photo">'
+    )
+
+
 def render_quote_greeting(
     content: CardContent,
     style: VisualStyle,
@@ -31,15 +59,21 @@ def render_quote_greeting(
     card_index: int = 0,
     total_cards: int = 1,
 ) -> str:
-    """큰따옴표 인사말 + 원장명 서명 + 손글씨체."""
+    """큰따옴표 인사말 + 원장명 서명 + 손글씨체 (+ 사진)."""
     bg = style.bg_light
     color = style.text_on_light
     rep = profile.representative or profile.company_name
     company = profile.company_name or content.title
     greeting = content.body_text or f"{content.title} 고민이세요?"
 
+    photo = _photo_html(_photo_b64(profile))
+    photo_block = ""
+    if photo:
+        photo_block = f'<div style="text-align:center;margin:0 0 20px;">{photo}</div>'
+
     return f"""\
 <div style="{base_style(bg, color, style, "70px 48px")}">
+  {photo_block}
   <div style="font-size:48px;color:{accent};opacity:0.3;\
 line-height:1;margin:0 0 8px;font-family:Georgia,serif;">\u201c</div>
   <p style="font-size:22px;color:{color};font-family:{FONT_HANDWRITING};\

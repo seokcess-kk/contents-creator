@@ -78,6 +78,7 @@ def _parse_blocks(
     in_blockquote = False
     blockquote_lines: list[str] = []
     consecutive_blanks = 0
+    image_index = 0
 
     for line in lines:
         stripped = line.strip()
@@ -143,10 +144,13 @@ def _parse_blocks(
             blocks.append((_BLOCK_SUBSUBHEADING, _subsubheading(text, t)))
             continue
 
-        # 이미지 플레이스홀더
+        # 이미지 플레이스홀더 → 인덱싱된 마커
         if re.match(r"\[이미지:\s*.+\]", stripped):
             desc = re.sub(r"\[이미지:\s*(.+)\]", r"\1", stripped)
-            blocks.append((_BLOCK_IMAGE, _image_placeholder(desc, t)))
+            blocks.append(
+                (_BLOCK_IMAGE, f"<!-- IMAGE:{image_index} desc={desc} -->"),
+            )
+            image_index += 1
             continue
 
         # 리스트 아이템

@@ -80,7 +80,8 @@ def assemble(content: GeneratedContent) -> ComposedOutput:
     # 5. <!-- CARD:type --> 마커를 base64 이미지로 교체
     naver_html = _replace_card_markers(naver_html, card_b64_map)
 
-    # 6. Disclaimer — SEO 텍스트에 이미 포함되므로 별도 삽입하지 않음
+    # 6. <!-- IMAGE:N --> 마커를 AI 생성 이미지로 교체
+    naver_html = _replace_image_markers(naver_html, content, images_dir)
 
     # 7. 최종 HTML 빌드
     final_html = _build_full_html(naver_html)
@@ -176,6 +177,47 @@ def _extract_formatter_theme(content: GeneratedContent) -> FormatterTheme | None
     except ImportError:
         logger.warning("뉴스레터 테마 로드 실패, 기본 테마 사용")
         return None
+
+
+def _replace_image_markers(
+    html: str,
+    content: GeneratedContent,
+    images_dir: Path,
+) -> str:
+    """<!-- IMAGE:N --> 마커를 AI 생성 이미지로 교체한다."""
+    gen_images = content.generated_images
+
+    def _img_replacer(match: re.Match[str]) -> str:
+        idx = int(match.group(1))
+        desc = match.group(2) or ""
+
+        if idx < len(gen_images) and gen_images[idx].success:
+            img = gen_images[idx]
+            # 이미지 파일 저장
+            img_path = images_dir / f"ai_{idx:02d}.png"
+            img_path.write_bytes(img.image_bytes)
+
+            b64 = base64.b64encode(img.image_bytes).decode("ascii")
+            return (
+                f'<div style="text-align:center;margin:32px 0;">'
+                f'<img src="data:image/png;base64,{b64}" '
+                f'alt="{desc}" style="max-width:100%;'
+                f"border-radius:12px;"
+                f'box-shadow:0 4px 20px rgba(0,0,0,0.08);"></div>'
+            )
+
+        # 이미지 없으면 플레이스홀더 유지
+        return (
+            f'<div style="border:2px dashed #ddd;padding:48px;'
+            f"border-radius:12px;text-align:center;color:#aaa;"
+            f'margin:32px 0;font-size:14px;">{desc}</div>'
+        )
+
+    return re.sub(
+        r"<!--\s*IMAGE:(\d+)\s*desc=([^>]*?)\s*-->",
+        _img_replacer,
+        html,
+    )
 
 
 def _build_full_html(body_html: str) -> str:

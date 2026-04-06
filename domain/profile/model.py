@@ -44,6 +44,9 @@ class ClientProfile(BaseModel):
     address: str = ""
     reviews: list[ReviewItem] = Field(default_factory=list)
 
+    # 사진
+    photo_path: str = ""  # 원장/대표 사진 로컬 경로
+
     # 메타
     source_url: str = ""
     status: str = "draft"  # draft | confirmed

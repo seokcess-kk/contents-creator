@@ -57,6 +57,15 @@ class DesignCard(BaseModel):
     color_accent: str = "#4a90d9"
 
 
+class GeneratedImage(BaseModel):
+    """AI 생성 이미지."""
+
+    prompt: str = ""
+    image_bytes: bytes = b""
+    success: bool = True
+    error: str = ""
+
+
 class GeneratedContent(BaseModel):
     """생성된 콘텐츠."""
 
@@ -71,5 +80,6 @@ class GeneratedContent(BaseModel):
     design_cards: list[DesignCard] = Field(default_factory=list)
     card_positions: dict[str, int] = Field(default_factory=dict)  # 카드 삽입 위치
     ai_image_prompts: list[str] = Field(default_factory=list)
+    generated_images: list[GeneratedImage] = Field(default_factory=list)
 
     compliance_status: str = "pending"  # pending / pass / fix / reject

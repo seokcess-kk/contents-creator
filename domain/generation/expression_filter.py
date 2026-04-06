@@ -74,7 +74,22 @@ def filter_expressions(text: str) -> tuple[str, list[str]]:
                 # 대체 없이 제거 (문장 재구성 필요 시 그대로 유지)
                 pass
 
+    # 리스트 항목 정규화: 번호/불릿 → `- ` 통일
+    result = normalize_list_items(result)
+
+    # 연속 빈 줄 정리 (3줄 이상 → 2줄로)
+    result = re.sub(r"\n{3,}", "\n\n", result)
+
     return result, detected
+
+
+def normalize_list_items(text: str) -> str:
+    """번호/불릿 리스트를 `- ` 형식으로 통일한다."""
+    # "1. ", "1) ", "① ", "• ", "· " → "- "
+    result = re.sub(r"^(\d+)[.)]\s+", "- ", text, flags=re.MULTILINE)
+    result = re.sub(r"^[①②③④⑤⑥⑦⑧⑨⑩]\s*", "- ", result, flags=re.MULTILINE)
+    result = re.sub(r"^[•·]\s+", "- ", result, flags=re.MULTILINE)
+    return result
 
 
 def count_cliches(text: str) -> int:

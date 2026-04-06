@@ -101,7 +101,22 @@ def main() -> None:
     )
     logger.info("카드 %d장, 위치: %s", len(design_cards), card_positions)
 
-    # 6. GeneratedContent 조립
+    # 6. AI 이미지 생성
+    generated_images = []
+    try:
+        from domain.generation.image_generator import generate_images
+
+        logger.info("AI 이미지 생성 중...")
+        generated_images = generate_images(keyword, pattern_card, profile, count=2)
+        logger.info(
+            "AI 이미지: %d/%d 성공",
+            sum(1 for g in generated_images if g.success),
+            len(generated_images),
+        )
+    except Exception as e:
+        logger.warning("AI 이미지 생성 스킵: %s", e)
+
+    # 7. GeneratedContent 조립
     from domain.generation.model import GeneratedContent
 
     content = GeneratedContent(
@@ -111,10 +126,10 @@ def main() -> None:
         variation_config=variation,
         design_cards=design_cards,
         card_positions=card_positions,
-        ai_image_prompts=[],
+        generated_images=generated_images,
     )
 
-    # 7. 의료법 검증
+    # 8. 의료법 검증
     from domain.compliance.checker import check_compliance
     from domain.compliance.fixer import fix_and_verify
 
@@ -129,7 +144,7 @@ def main() -> None:
     content.compliance_status = report.verdict
     logger.info("검증 결과: %s", report.verdict)
 
-    # 8. 최종 조합
+    # 9. 최종 조합
     from domain.composer.assembler import assemble
 
     logger.info("최종 조합 중...")
