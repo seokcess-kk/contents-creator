@@ -296,9 +296,15 @@ def _resolve_renderer(
     from domain.generation.card_layout_transition import TRANSITION_RENDERERS
 
     registry = {
+        # 5종 브랜드 카드 → 기존 렌더러 매핑
+        "greeting": INTRO_RENDERERS,
+        "empathy": TRANSITION_RENDERERS,
+        "service": CTA_RENDERERS,  # service_grid 등
+        "trust": TRANSITION_RENDERERS,  # stat_highlight 등
+        "cta": CTA_RENDERERS,
+        # 하위호환
         "intro": INTRO_RENDERERS,
         "transition": TRANSITION_RENDERERS,
-        "cta": CTA_RENDERERS,
     }
 
     renderers = registry.get(card_type, {})

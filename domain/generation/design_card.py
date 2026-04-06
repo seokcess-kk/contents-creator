@@ -1,6 +1,6 @@
-"""브랜디드 카드 시스템 퍼블릭 API.
+"""브랜드 카드 시스템 퍼블릭 API.
 
-3종 카드(intro, transition, cta)를 생성하고 삽입 위치를 반환한다.
+5종 브랜드 카드(greeting, empathy, service, trust, cta)를 생성한다.
 HTML 생성 실패 시 하드코딩 템플릿으로 폴백한다.
 """
 
@@ -10,10 +10,9 @@ import logging
 
 from domain.analysis.model import PatternCard
 from domain.compliance.rules import DISCLAIMER_TEMPLATE
-from domain.generation.card_compositions import CARD_TYPES, get_card_positions
+from domain.generation.card_compositions import get_brand_sequence
 from domain.generation.card_content_generator import generate_card_contents
 from domain.generation.card_html_generator import generate_card_htmls
-from domain.generation.card_layout_registry import get_gemini_instructions
 from domain.generation.card_templates import (
     pick_style,
     render_card_html,
@@ -25,44 +24,24 @@ from domain.profile.model import ClientProfile
 logger = logging.getLogger(__name__)
 
 
-def generate_branded_cards(
+def generate_brand_cards(
     keyword: str,
     title: str,
-    structure_name: str,
     pattern_card: PatternCard,
     profile: ClientProfile,
     variation_config: VariationConfig | None = None,
-) -> tuple[list[DesignCard], dict[str, int]]:
-    """브랜디드 카드 3종을 생성하고 삽입 위치를 반환한다.
-
-    1. 카드 삽입 위치 결정
-    2. LLM으로 카드 콘텐츠 일괄 생성
-    3. LLM으로 HTML/CSS 디자인 생성 (실패 시 템플릿 폴백)
+) -> list[DesignCard]:
+    """브랜드 카드 5종+를 생성한다.
 
     Returns:
-        (DesignCard 리스트, 삽입 위치 딕셔너리) 튜플
+        DesignCard 리스트 (시퀀스 순서)
     """
-    # 1. 카드 삽입 위치
-    positions = get_card_positions(structure_name, profile)
-    logger.info(
-        "카드 삽입 위치: %s",
-        ", ".join(f"{k}={v}" for k, v in positions.items()),
-    )
-
-    # 2. 카드 시퀀스 구성
-    sequence = list(CARD_TYPES)  # intro, transition, cta
-    if profile.is_medical():
-        sequence.append("disclaimer")
-
+    # 1. 카드 시퀀스
+    sequence = get_brand_sequence(profile)
     logger.info("카드 시퀀스 (%d장): %s", len(sequence), " -> ".join(sequence))
 
-    # 3. LLM 콘텐츠 생성
-    contents = generate_card_contents(
-        sequence,
-        keyword,
-        pattern_card,
-        profile,
-    )
+    # 2. LLM 콘텐츠 생성
+    contents = generate_card_contents(sequence, keyword, pattern_card, profile)
     content_map = {c.card_type: c for c in contents}
     if "disclaimer" in sequence and "disclaimer" not in content_map:
         content_map["disclaimer"] = CardContent(
@@ -70,28 +49,30 @@ def generate_branded_cards(
             body_text=DISCLAIMER_TEMPLATE,
         )
 
-    ordered_contents = [content_map.get(ct, CardContent(card_type=ct)) for ct in sequence]
+    ordered = [content_map.get(ct, CardContent(card_type=ct)) for ct in sequence]
 
-    # 4. 색상 팔레트 (테마 우선, 없으면 패턴 카드)
+    # 3. 색상 팔레트 (테마 우선)
     colors = _resolve_colors(pattern_card, variation_config)
 
-    # 5. 레이아웃 스펙 구성
+    # 4. 레이아웃 스펙
     card_layouts = variation_config.card_layouts if variation_config else CardLayoutSet()
+    from domain.generation.card_layout_registry import get_gemini_instructions
+
     layout_specs = get_gemini_instructions(card_layouts.model_dump(exclude_defaults=True))
 
-    # 6. LLM HTML 디자인 생성
+    # 5. LLM HTML 생성 + 폴백
     html_list = _generate_htmls_with_fallback(
-        ordered_contents,
+        ordered,
         profile,
         colors,
-        layout_specs=layout_specs,
-        card_layouts=card_layouts,
+        layout_specs,
+        card_layouts,
     )
 
     # 6. DesignCard 조합
     cards: list[DesignCard] = []
     for i, card_type in enumerate(sequence):
-        content = ordered_contents[i]
+        content = ordered[i]
         cards.append(
             DesignCard(
                 card_type=card_type,
@@ -104,8 +85,8 @@ def generate_branded_cards(
             ),
         )
 
-    logger.info("브랜디드 카드 생성 완료: %d장", len(cards))
-    return cards, positions
+    logger.info("브랜드 카드 생성 완료: %d장", len(cards))
+    return cards
 
 
 def _generate_htmls_with_fallback(
@@ -153,7 +134,7 @@ def _resolve_colors(
     pattern_card: PatternCard,
     variation_config: VariationConfig | None,
 ) -> dict[str, str]:
-    """테마 색상 우선, 없으면 패턴 카드 팔레트를 사용한다."""
+    """테마 색상 우선, 없으면 패턴 카드 팔레트."""
     if variation_config and variation_config.newsletter_theme:
         theme = get_theme(variation_config.newsletter_theme)
         if theme:

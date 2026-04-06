@@ -58,50 +58,43 @@ def main() -> None:
     from domain.generation.variation_engine import recommend_variation
 
     variation = recommend_variation(pattern_card)
-    logger.info("변이 조합: %s / %s", variation.structure, variation.intro)
+    logger.info(
+        "변이: %s / %s / 테마=%s",
+        variation.structure,
+        variation.intro,
+        variation.newsletter_theme,
+    )
 
     # 4. SEO 텍스트 생성
     from domain.generation.seo_writer import generate_seo_text
 
     logger.info("SEO 텍스트 생성 중...")
     title, seo_text = generate_seo_text(keyword, pattern_card, profile, variation)
-    logger.info("제목: %s", title)
-    logger.info("본문 길이: %d자", len(seo_text))
+    logger.info("제목: %s (%d자)", title, len(seo_text))
 
-    # 카드 마커 확인
-    for marker in ["CARD:intro", "CARD:transition", "CARD:cta"]:
-        if marker in seo_text:
-            logger.info("마커 발견: %s", marker)
-        else:
-            logger.warning("마커 미발견: %s", marker)
+    # 5. 브랜드 카드 생성
+    from domain.generation.design_card import generate_brand_cards
 
-    # SECTION 디렉티브 확인
-    import re
-
-    sections = re.findall(r"<!-- SECTION:(\S+) bg=(#\w+) -->", seo_text)
-    logger.info("섹션 디렉티브: %d개 — %s", len(sections), sections)
-
-    # 5. 브랜디드 카드 생성
-    from domain.generation.design_card import generate_branded_cards
-
-    logger.info("브랜디드 카드 생성 중...")
+    logger.info("브랜드 카드 생성 중...")
+    cl = variation.card_layouts
     logger.info(
-        "카드 레이아웃: intro=%s, transition=%s, cta=%s",
-        variation.card_layouts.intro,
-        variation.card_layouts.transition,
-        variation.card_layouts.cta,
+        "레이아웃: greeting=%s, empathy=%s, service=%s, trust=%s, cta=%s",
+        cl.greeting,
+        cl.empathy,
+        cl.service,
+        cl.trust,
+        cl.cta,
     )
-    design_cards, card_positions = generate_branded_cards(
+    brand_cards = generate_brand_cards(
         keyword=keyword,
         title=title,
-        structure_name=variation.structure,
         pattern_card=pattern_card,
         profile=profile,
         variation_config=variation,
     )
-    logger.info("카드 %d장, 위치: %s", len(design_cards), card_positions)
+    logger.info("브랜드 카드 %d장", len(brand_cards))
 
-    # 6. AI 이미지 생성 (SEO 텍스트의 [이미지: 설명] 기반)
+    # 6. AI 이미지 생성
     generated_images = []
     try:
         from domain.generation.image_generator import generate_images
@@ -124,8 +117,7 @@ def main() -> None:
         title=title,
         seo_text=seo_text,
         variation_config=variation,
-        design_cards=design_cards,
-        card_positions=card_positions,
+        brand_cards=brand_cards,
         generated_images=generated_images,
     )
 
@@ -137,7 +129,7 @@ def main() -> None:
     report = check_compliance(seo_text, use_llm=False)
 
     if report.verdict != "pass":
-        logger.info("위반 %d건, 자동 수정 시작...", len(report.violations))
+        logger.info("위반 %d건, 자동 수정...", len(report.violations))
         seo_text, report = fix_and_verify(seo_text, report)
         content.seo_text = seo_text
 
@@ -151,17 +143,10 @@ def main() -> None:
     output = assemble(content)
 
     logger.info("=== 완료 ===")
-    logger.info("출력 디렉터리: %s", output.output_dir)
-    logger.info("최종 HTML: %s", output.final_html_path)
-    logger.info("붙여넣기용: %s", output.paste_ready_path)
-    logger.info("이미지: %d장", len(output.images))
+    logger.info("출력: %s", output.output_dir)
+    logger.info("HTML: %s", output.final_html_path)
     for img in output.images:
-        logger.info(
-            "  %s: %s (%s)",
-            img.image_type,
-            "OK" if img.success else "FAIL",
-            img.output_path,
-        )
+        logger.info("  %s: %s", img.image_type, "OK" if img.success else "FAIL")
 
     print(f"\n완료! 결과: {output.output_dir}")
     print(f"브라우저에서 열기: {output.final_html_path}")

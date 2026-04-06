@@ -1,7 +1,6 @@
 """LLM 일괄 카드 콘텐츠 생성.
 
-단일 LLM 호출로 3종 브랜디드 카드(intro, transition, cta) 텍스트를 생성한다.
-pain/cause/solution/trust 내용은 SEO 텍스트에 흡수되었으므로 카드로 생성하지 않는다.
+5종 브랜드 카드(greeting, empathy, service, trust, cta) 텍스트를 생성한다.
 disclaimer는 고정 템플릿이므로 LLM에 요청하지 않는다.
 """
 
@@ -18,10 +17,10 @@ from domain.profile.model import ClientProfile
 logger = logging.getLogger(__name__)
 
 CARD_CONTENT_SYSTEM = """\
-당신은 네이버 블로그용 브랜디드 이미지 카드의 카피를 작성하는 전문 카피라이터입니다.
+당신은 네이버 블로그용 브랜드 이미지 카드의 카피를 작성하는 전문 카피라이터입니다.
 
 규칙:
-- 각 카드는 블로그 글 흐름 속에 삽입되는 브랜디드 이미지입니다
+- 각 카드는 블로그 글 상단에 연속 배치되는 브랜드 이미지입니다
 - title: 1줄, 최대 25자
 - subtitle: 1줄, 최대 35자 (없으면 빈 문자열)
 - body_text: 1-3줄, 최대 100자
@@ -45,29 +44,32 @@ def _build_card_prompt(
     pattern_card: PatternCard,
     profile: ClientProfile,
 ) -> str:
-    """카드 콘텐츠 생성 프롬프트를 구성한다."""
+    """5종 브랜드 카드 콘텐츠 생성 프롬프트."""
     services_text = ", ".join(s.name for s in profile.services[:5])
     reviews_text = ""
     if profile.reviews:
         reviews_text = "\n".join(f'- "{r.text}" ({r.source})' for r in profile.reviews[:3])
 
     return f"""\
-아래 정보를 바탕으로 브랜디드 카드 콘텐츠를 JSON 배열로 생성하세요.
+아래 정보를 바탕으로 브랜드 이미지 카드 콘텐츠를 JSON 배열로 생성하세요.
+이 카드들은 블로그 글 상단에 연속 배치되어 브랜드를 소개하는 이미지 섹션입니다.
 
 ## 생성할 카드 (순서대로)
 {json.dumps(card_types, ensure_ascii=False)}
 
 ## 카드 타입별 역할
-- intro: 업체 소개 + 공감 질문. hook과 brand_intro를 합친 카드. \
-업체명을 포함하고, 독자의 공감을 끌어내는 질문이나 문장으로 시작
-- transition: 고민에서 솔루션으로의 전환. 짧은 브릿지 카피
-- cta: 마지막 후킹 + 연락처 정보. 행동 유도
+- greeting: 원장/대표 인사말. 따뜻한 첫인상, 업체명 포함, 공감 유도
+- empathy: 타겟 고객 고민 공감. "이런 고민 있으신가요?" 스타일 후킹
+- service: 핵심 서비스 3~4개 소개. items 필드에 서비스명 나열, USP 강조
+- trust: 실적 수치나 후기 인용. badge_text에 핵심 수치, 신뢰 구축
+- cta: 마지막 후킹 + 연락처. 행동 유도 메시지 (버튼 없이 텍스트로)
 
 ## 키워드
 {keyword}
 
 ## 업체 정보
 - 업체명: {profile.company_name}
+- 대표/원장: {profile.representative or "(미입력)"}
 - 업종: {profile.industry} > {profile.sub_category}
 - 지역: {profile.region}
 - 서비스: {services_text}
@@ -91,14 +93,7 @@ def generate_card_contents(
     pattern_card: PatternCard,
     profile: ClientProfile,
 ) -> list[CardContent]:
-    """LLM으로 카드 콘텐츠를 일괄 생성한다.
-
-    disclaimer는 제외하고 전달받은 card_types에 대해서만 생성.
-
-    Returns:
-        CardContent 리스트 (card_types 순서대로)
-    """
-    # disclaimer 제외
+    """LLM으로 브랜드 카드 콘텐츠를 일괄 생성한다."""
     llm_types = [t for t in card_types if t != "disclaimer"]
     if not llm_types:
         return []
@@ -148,36 +143,35 @@ def _fallback_contents(
     keyword: str,
     profile: ClientProfile,
 ) -> list[CardContent]:
-    """LLM 실패 시 최소한의 폴백 콘텐츠를 반환한다."""
+    """LLM 실패 시 최소한의 폴백 콘텐츠."""
     logger.warning("폴백 카드 콘텐츠 사용")
-    results: list[CardContent] = []
     company = profile.company_name or keyword
-    for ct in card_types:
-        if ct == "intro":
-            results.append(
-                CardContent(
-                    card_type=ct,
-                    title=company,
-                    subtitle=profile.usp or f"{profile.region} {profile.sub_category}",
-                    body_text=f"{keyword} 관련 고민, 함께 알아보겠습니다.",
-                )
-            )
-        elif ct == "transition":
-            results.append(
-                CardContent(
-                    card_type=ct,
-                    title="이제 달라질 수 있습니다",
-                    body_text=f"{company}에서 준비한 솔루션을 확인해 보세요.",
-                )
-            )
-        elif ct == "cta":
-            results.append(
-                CardContent(
-                    card_type=ct,
-                    title="지금 바로 상담받아 보세요",
-                    body_text=f"{company} | {profile.phone or profile.region}",
-                )
-            )
-        else:
-            results.append(CardContent(card_type=ct, title=keyword))
-    return results
+    fallbacks: dict[str, CardContent] = {
+        "greeting": CardContent(
+            card_type="greeting",
+            title=company,
+            subtitle=profile.usp or f"{profile.region} {profile.sub_category}",
+            body_text=f"{keyword} 관련 고민, 함께 알아보겠습니다.",
+        ),
+        "empathy": CardContent(
+            card_type="empathy",
+            title="이런 고민 있으신가요?",
+            body_text=f"{keyword} 때문에 걱정되시나요?",
+        ),
+        "service": CardContent(
+            card_type="service",
+            title="서비스 안내",
+            items=[s.name for s in profile.services[:4]],
+        ),
+        "trust": CardContent(
+            card_type="trust",
+            title="신뢰할 수 있는 이유",
+            body_text=f"{company}의 전문적인 관리를 받아보세요.",
+        ),
+        "cta": CardContent(
+            card_type="cta",
+            title="지금 바로 상담받아 보세요",
+            body_text=f"{company} | {profile.phone or profile.region}",
+        ),
+    }
+    return [fallbacks.get(ct, CardContent(card_type=ct)) for ct in card_types]

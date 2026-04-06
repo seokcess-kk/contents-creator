@@ -124,7 +124,7 @@ def main() -> None:
 
     # === Phase C: 생성 + 검증 ===
     logger.info("=== Phase C: 콘텐츠 생성 ===")
-    from domain.generation.design_card import generate_branded_cards
+    from domain.generation.design_card import generate_brand_cards
     from domain.generation.image_generator import generate_images
     from domain.generation.model import GeneratedContent
     from domain.generation.seo_writer import generate_seo_text
@@ -132,7 +132,12 @@ def main() -> None:
 
     # 변이 조합 추천
     variation = recommend_variation(pattern_card)
-    logger.info("변이 조합: %s / %s / 테마=%s", variation.structure, variation.intro, variation.newsletter_theme)
+    logger.info(
+        "변이 조합: %s / %s / 테마=%s",
+        variation.structure,
+        variation.intro,
+        variation.newsletter_theme,
+    )
 
     if not args.auto:
         print("\n" + format_variation_preview(variation))
@@ -147,23 +152,16 @@ def main() -> None:
     logger.info("SEO 텍스트 생성 중...")
     title, seo_text = generate_seo_text(args.keyword, pattern_card, profile, variation)
 
-    # 브랜디드 카드 생성 (3종 + 삽입 위치)
-    logger.info("브랜디드 카드 생성 중...")
-    logger.info(
-        "카드 레이아웃: intro=%s, transition=%s, cta=%s",
-        variation.card_layouts.intro,
-        variation.card_layouts.transition,
-        variation.card_layouts.cta,
-    )
-    design_cards, card_positions = generate_branded_cards(
+    # 브랜드 카드 생성 (5종+)
+    logger.info("브랜드 카드 생성 중...")
+    brand_cards = generate_brand_cards(
         keyword=args.keyword,
         title=title,
-        structure_name=variation.structure,
         pattern_card=pattern_card,
         profile=profile,
         variation_config=variation,
     )
-    logger.info("브랜디드 카드 %d장 생성 완료", len(design_cards))
+    logger.info("브랜드 카드 %d장 생성 완료", len(brand_cards))
 
     # AI 이미지 생성 (SEO 텍스트의 [이미지: 설명] 기반)
     generated_images = []
@@ -183,8 +181,7 @@ def main() -> None:
         title=title,
         seo_text=seo_text,
         variation_config=variation,
-        design_cards=design_cards,
-        card_positions=card_positions,
+        brand_cards=brand_cards,
         generated_images=generated_images,
     )
 

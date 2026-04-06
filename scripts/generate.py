@@ -44,7 +44,7 @@ def main() -> None:
         return
 
     # 생성
-    from domain.generation.design_card import generate_branded_cards
+    from domain.generation.design_card import generate_brand_cards
     from domain.generation.image_generator import generate_images
     from domain.generation.model import GeneratedContent
     from domain.generation.seo_writer import generate_seo_text
@@ -56,10 +56,9 @@ def main() -> None:
 
     title, seo_text = generate_seo_text(keyword, pattern_card, profile, variation)
 
-    design_cards, card_positions = generate_branded_cards(
+    brand_cards = generate_brand_cards(
         keyword=keyword,
         title=title,
-        structure_name=variation.structure,
         pattern_card=pattern_card,
         profile=profile,
         variation_config=variation,
@@ -76,8 +75,7 @@ def main() -> None:
         title=title,
         seo_text=seo_text,
         variation_config=variation,
-        design_cards=design_cards,
-        card_positions=card_positions,
+        brand_cards=brand_cards,
         generated_images=generated_images,
     )
 

@@ -84,18 +84,22 @@ def _build_html_prompt(
             if layout_specs and c.card_type in layout_specs:
                 desc += f"LAYOUT STRUCTURE:\n{layout_specs[c.card_type]}\n"
 
-            if c.card_type == "intro":
+            # 카드 타입별 추가 정보
+            if c.card_type in ("greeting", "intro"):
                 services = ", ".join(s.name for s in profile.services[:5])
                 if services:
                     desc += f"Service tags: {services}\n"
                 desc += f"Company: {profile.company_name}\n"
                 if profile.photo_path:
                     desc += (
-                        "NOTE: This client has a representative photo. "
-                        "Include a circular photo placeholder area (80px) "
-                        "at the top of the intro card.\n"
+                        "NOTE: Include a circular photo placeholder (80px) "
+                        "at the top of this card.\n"
                     )
-            elif c.card_type == "cta":
+            elif c.card_type == "service":
+                services = ", ".join(s.name for s in profile.services[:5])
+                desc += f"Services: {services}\n"
+                desc += f"USP: {profile.usp}\n"
+            elif c.card_type in ("cta",):
                 if profile.phone:
                     desc += f"Phone: {profile.phone}\n"
                 if profile.address:

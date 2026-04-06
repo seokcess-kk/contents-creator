@@ -107,8 +107,9 @@ def format_variation_preview(config: VariationConfig) -> str:
         f"③ 소제목 스타일: {config.subtitle_style}\n"
         f"④ 표현 톤: {config.expression_tone}\n"
         f"⑤ 이미지 배치: {config.image_placement}\n"
-        f"⑥ 카드 레이아웃: intro={cl.intro}, "
-        f"transition={cl.transition}, cta={cl.cta}\n"
+        f"⑥ 카드 레이아웃: greeting={cl.greeting}, "
+        f"empathy={cl.empathy}, service={cl.service}, "
+        f"trust={cl.trust}, cta={cl.cta}\n"
         f"⑦ 뉴스레터 테마: {config.newsletter_theme}\n"
         "\n[승인/수정/재추천] 중 선택해 주세요."
     )
@@ -163,14 +164,18 @@ def _pick_intro(hook_types: list[str], used: set[str]) -> str:
 
 def _pick_card_layouts(used_layouts: list[CardLayoutSet]) -> CardLayoutSet:
     """카드 타입별 레이아웃을 독립적으로 선택한다."""
-    used_intro = {lay.intro for lay in used_layouts if lay.intro}
-    used_transition = {lay.transition for lay in used_layouts if lay.transition}
-    used_cta = {lay.cta for lay in used_layouts if lay.cta}
+    used = {
+        field: {getattr(lay, field) for lay in used_layouts if getattr(lay, field)}
+        for field in ("greeting", "empathy", "service", "trust", "cta")
+    }
 
+    # greeting/empathy/trust는 intro/transition 렌더러 풀에서 선택
     return CardLayoutSet(
-        intro=_pick_unused(get_layout_names("intro"), used_intro),
-        transition=_pick_unused(get_layout_names("transition"), used_transition),
-        cta=_pick_unused(get_layout_names("cta"), used_cta),
+        greeting=_pick_unused(get_layout_names("intro"), used["greeting"]),
+        empathy=_pick_unused(get_layout_names("transition"), used["empathy"]),
+        service=_pick_unused(get_layout_names("cta"), used["service"]),
+        trust=_pick_unused(get_layout_names("transition"), used["trust"]),
+        cta=_pick_unused(get_layout_names("cta"), used["cta"]),
     )
 
 

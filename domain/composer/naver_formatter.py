@@ -60,7 +60,6 @@ _BLOCK_SUBHEADING = "subheading"
 _BLOCK_SUBSUBHEADING = "subsubheading"
 _BLOCK_QUOTE = "quote"
 _BLOCK_LIST = "list_item"
-_BLOCK_CARD = "card"
 _BLOCK_IMAGE = "image"
 _BLOCK_DIVIDER = "divider"
 _BLOCK_TEXT = "text"
@@ -105,11 +104,6 @@ def _parse_blocks(
         # SECTION 디렉티브 → 섹션 경계 마커
         if re.match(r"<!--\s*SECTION:\S+\s+bg=#[0-9a-fA-F]{3,6}\s*-->", stripped):
             blocks.append((_BLOCK_SECTION, ""))
-            continue
-
-        # CARD 마커
-        if re.match(r"<!--\s*CARD:\w+\s*-->", stripped):
-            blocks.append((_BLOCK_CARD, stripped))
             continue
 
         # 인용문
