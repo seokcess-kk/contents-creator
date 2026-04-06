@@ -13,7 +13,7 @@ from domain.compliance.model import ComplianceReport
 
 logger = logging.getLogger(__name__)
 
-MAX_FIX_ROUNDS = 3
+MAX_FIX_ROUNDS = 5
 
 FIX_SYSTEM = """\
 당신은 의료광고법 준수 전문 에디터입니다.
@@ -84,8 +84,13 @@ def fix_and_verify(
         )
 
     if current_report.verdict != "pass" and current_report.review_round >= MAX_FIX_ROUNDS:
-        logger.warning("최대 수정 라운드 도달. 수동 검토 필요.")
-        current_report.verdict = "reject"
+        critical_count = current_report.stats.get("critical", 0)
+        if critical_count > 0:
+            logger.warning("최대 수정 라운드 도달. CRITICAL %d건 잔존 → reject.", critical_count)
+            current_report.verdict = "reject"
+        else:
+            logger.warning("최대 수정 라운드 도달. WARNING만 잔존 → 수동 검토 권장.")
+            current_report.verdict = "fix"
 
     return current_text, current_report
 

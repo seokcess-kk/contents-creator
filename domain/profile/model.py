@@ -12,6 +12,13 @@ class ServiceItem(BaseModel):
     description: str = ""
 
 
+class ReviewItem(BaseModel):
+    """고객 후기 항목."""
+
+    text: str
+    source: str = ""
+
+
 class ClientProfile(BaseModel):
     """클라이언트 프로필. Level 1(필수) + Level 2(방향성)."""
 
@@ -31,6 +38,11 @@ class ClientProfile(BaseModel):
     usp: str = ""  # 한 줄 핵심 차별점
     frequent_expressions: list[str] = Field(default_factory=list)
     prohibited_expressions: list[str] = Field(default_factory=list)  # 반드시 수동 입력
+
+    # Level 3: 연락처/후기
+    phone: str = ""
+    address: str = ""
+    reviews: list[ReviewItem] = Field(default_factory=list)
 
     # 메타
     source_url: str = ""
