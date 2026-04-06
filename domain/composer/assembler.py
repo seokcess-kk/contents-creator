@@ -10,11 +10,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from domain.common.config import settings
-from domain.compliance.rules import DISCLAIMER_TEMPLATE
 from domain.composer.model import ComposedOutput, RenderedImage
 from domain.composer.naver_formatter import (
     FormatterTheme,
-    insert_disclaimer,
     markdown_to_naver_html,
 )
 from domain.composer.renderer import render_batch_sync
@@ -82,10 +80,7 @@ def assemble(content: GeneratedContent) -> ComposedOutput:
     # 5. <!-- CARD:type --> 마커를 base64 이미지로 교체
     naver_html = _replace_card_markers(naver_html, card_b64_map)
 
-    # 6. Disclaimer 삽입 (HTML 텍스트, PNG 아님)
-    has_disclaimer = any(c.card_type == "disclaimer" for c in content.design_cards)
-    if has_disclaimer:
-        naver_html = insert_disclaimer(naver_html, DISCLAIMER_TEMPLATE)
+    # 6. Disclaimer — SEO 텍스트에 이미 포함되므로 별도 삽입하지 않음
 
     # 7. 최종 HTML 빌드
     final_html = _build_full_html(naver_html)

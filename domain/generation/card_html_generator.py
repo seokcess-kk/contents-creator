@@ -32,6 +32,8 @@ MANDATORY RULES:
 - Subtle gradients, refined spacing, clear visual hierarchy
 - Maintain visual consistency across all cards (one cohesive series)
 - Generous padding (60px+ vertical, 48px horizontal)
+- NO buttons or button-like elements (no "상담 예약", "예약하기" buttons). \
+CTA cards should end with text information only (company name, phone, address)
 - Separate each card with === CARD N === delimiter
 - Return ONLY HTML code. No explanations, no comments
 
