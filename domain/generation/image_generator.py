@@ -63,7 +63,7 @@ def generate_images(
     Returns:
         GeneratedImage 리스트
     """
-    from domain.common.openai_client import generate_image
+    from domain.common.gemini_client import generate_image
 
     prompts = generate_image_prompts(keyword, pattern_card, profile, count)
     results: list[GeneratedImage] = []

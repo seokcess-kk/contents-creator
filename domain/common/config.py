@@ -29,9 +29,6 @@ class Settings(BaseModel):
     # Google Gemini (VLM)
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
 
-    # OpenAI (이미지 생성)
-    openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
-
     # Supabase
     supabase_url: str = os.getenv("SUPABASE_URL", "")
     supabase_key: str = os.getenv("SUPABASE_KEY", "")
