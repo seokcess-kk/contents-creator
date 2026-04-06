@@ -28,6 +28,7 @@ def main() -> None:
     parser.add_argument("--profile-id", help="기존 프로필 ID")
     parser.add_argument("--profile-url", help="프로필 추출할 URL (신규)")
     parser.add_argument("--skip-crawl", action="store_true", help="크롤링 스킵 (기존 데이터 사용)")
+    parser.add_argument("--auto", action="store_true", help="대화형 승인 없이 자동 실행")
     args = parser.parse_args()
 
     if not args.profile_id and not args.profile_url:
@@ -55,8 +56,9 @@ def main() -> None:
         print("\n" + format_review_prompt(profile))
         print(f"\n프로필 ID: {profile_id}")
         print("프로필을 확인하고, 수정이 필요하면 data/profiles/ 에서 직접 편집하세요.")
-        print("계속하려면 Enter를 누르세요...")
-        input()
+        if not args.auto:
+            print("계속하려면 Enter를 누르세요...")
+            input()
 
     # === Phase A: 크롤링 ===
     if not args.skip_crawl:
@@ -130,13 +132,16 @@ def main() -> None:
 
     # 변이 조합 추천
     variation = recommend_variation(pattern_card)
-    print("\n" + format_variation_preview(variation))
-    print("Enter로 승인, 'r'로 재추천:")
-    user_input = input().strip().lower()
-    if user_input == "r":
-        variation = recommend_variation(pattern_card, exclude_configs=[variation])
+    logger.info("변이 조합: %s / %s / 테마=%s", variation.structure, variation.intro, variation.newsletter_theme)
+
+    if not args.auto:
         print("\n" + format_variation_preview(variation))
-        input("Enter로 승인:")
+        print("Enter로 승인, 'r'로 재추천:")
+        user_input = input().strip().lower()
+        if user_input == "r":
+            variation = recommend_variation(pattern_card, exclude_configs=[variation])
+            print("\n" + format_variation_preview(variation))
+            input("Enter로 승인:")
 
     # SEO 텍스트 생성
     logger.info("SEO 텍스트 생성 중...")
