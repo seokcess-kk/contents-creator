@@ -123,7 +123,7 @@ def main() -> None:
     # === Phase C: 생성 + 검증 ===
     logger.info("=== Phase C: 콘텐츠 생성 ===")
     from domain.generation.design_card import generate_branded_cards
-    from domain.generation.image_generator import generate_image_prompts
+    from domain.generation.image_generator import generate_images
     from domain.generation.model import GeneratedContent
     from domain.generation.seo_writer import generate_seo_text
     from domain.generation.variation_engine import format_variation_preview, recommend_variation
@@ -144,17 +144,34 @@ def main() -> None:
 
     # 브랜디드 카드 생성 (3종 + 삽입 위치)
     logger.info("브랜디드 카드 생성 중...")
+    logger.info(
+        "카드 레이아웃: intro=%s, transition=%s, cta=%s",
+        variation.card_layouts.intro,
+        variation.card_layouts.transition,
+        variation.card_layouts.cta,
+    )
     design_cards, card_positions = generate_branded_cards(
         keyword=args.keyword,
         title=title,
         structure_name=variation.structure,
         pattern_card=pattern_card,
         profile=profile,
+        variation_config=variation,
     )
     logger.info("브랜디드 카드 %d장 생성 완료", len(design_cards))
 
-    # AI 이미지 프롬프트
-    image_prompts = generate_image_prompts(args.keyword, pattern_card, profile)
+    # AI 이미지 생성 (SEO 텍스트의 [이미지: 설명] 기반)
+    generated_images = []
+    try:
+        logger.info("AI 이미지 생성 중...")
+        generated_images = generate_images(seo_text, pattern_card, profile)
+        logger.info(
+            "AI 이미지: %d/%d 성공",
+            sum(1 for g in generated_images if g.success),
+            len(generated_images),
+        )
+    except Exception as e:
+        logger.warning("AI 이미지 생성 스킵: %s", e)
 
     content = GeneratedContent(
         keyword=args.keyword,
@@ -163,7 +180,7 @@ def main() -> None:
         variation_config=variation,
         design_cards=design_cards,
         card_positions=card_positions,
-        ai_image_prompts=image_prompts,
+        generated_images=generated_images,
     )
 
     # 의료법 검증 (2차+3차 방어)

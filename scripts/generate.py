@@ -7,8 +7,13 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import logging
+import sys
+
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(name)s | %(message)s")
 logger = logging.getLogger("generate")
@@ -39,8 +44,8 @@ def main() -> None:
         return
 
     # 생성
-    from domain.generation.design_card import generate_cta_card, generate_header_card
-    from domain.generation.image_generator import generate_image_prompts
+    from domain.generation.design_card import generate_branded_cards
+    from domain.generation.image_generator import generate_images
     from domain.generation.model import GeneratedContent
     from domain.generation.seo_writer import generate_seo_text
     from domain.generation.variation_engine import format_variation_preview, recommend_variation
@@ -50,18 +55,41 @@ def main() -> None:
     input("Enter로 승인:")
 
     title, seo_text = generate_seo_text(keyword, pattern_card, profile, variation)
-    header = generate_header_card(keyword, title, pattern_card, profile)
-    cta = generate_cta_card(pattern_card, profile)
-    prompts = generate_image_prompts(keyword, pattern_card, profile)
+
+    design_cards, card_positions = generate_branded_cards(
+        keyword=keyword,
+        title=title,
+        structure_name=variation.structure,
+        pattern_card=pattern_card,
+        profile=profile,
+        variation_config=variation,
+    )
+
+    generated_images = []
+    try:
+        generated_images = generate_images(seo_text, pattern_card, profile)
+    except Exception as e:
+        logger.warning("AI 이미지 생성 스킵: %s", e)
 
     content = GeneratedContent(
         keyword=keyword,
         title=title,
         seo_text=seo_text,
         variation_config=variation,
-        design_cards=[header, cta],
-        ai_image_prompts=prompts,
+        design_cards=design_cards,
+        card_positions=card_positions,
+        generated_images=generated_images,
     )
+
+    # 의료법 검증
+    from domain.compliance.checker import check_compliance
+    from domain.compliance.fixer import fix_and_verify
+
+    report = check_compliance(seo_text, use_llm=False)
+    if report.verdict != "pass":
+        seo_text, report = fix_and_verify(seo_text, report)
+        content.seo_text = seo_text
+    content.compliance_status = report.verdict
 
     # 조합
     from domain.composer.assembler import assemble
