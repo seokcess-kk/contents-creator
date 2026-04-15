@@ -17,7 +17,7 @@ from application.progress import LoggingProgressReporter
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="의료법 검증만 실행: [8] 3중 방어 (SPEC.md §3)",
+        description="의료법 검증만 실행: [8] 3중 방어 (SPEC-SEO-TEXT.md §3)",
     )
     parser.add_argument(
         "--content",

@@ -1,6 +1,6 @@
 # Image Generation Domain
 
-[9] 단계 — 검증된 `image_prompts` 를 Gemini 3.1 Flash Image Preview 로 실제 이미지로 만든다. SPEC.md §3 [9] 구현.
+[9] 단계 — 검증된 `image_prompts` 를 Gemini 3.1 Flash Image Preview 로 실제 이미지로 만든다. SPEC-SEO-TEXT.md §3 [9] 구현.
 
 ## 🔴 최상위 원칙
 
@@ -147,6 +147,6 @@ if generated_count >= budget:
 
 ## 참조
 
-- @../../SPEC.md §3 [9]
+- @../../SPEC-SEO-TEXT.md §3 [9]
 - @../../.claude/skills/image-generation/SKILL.md
 - @../compliance/CLAUDE.md (이미지 prompt 검증 규칙)

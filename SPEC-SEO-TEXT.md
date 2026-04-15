@@ -800,7 +800,8 @@ create index idx_generated_contents_card on generated_contents (pattern_card_id,
 ```
 contents-creator/
 ├── CLAUDE.md                          ← 프로젝트 전역 지침 (200줄 이내)
-├── SPEC.md                            ← 본 문서
+├── SPEC-SEO-TEXT.md                   ← 본 문서 (SEO 트랙)
+├── SPEC-BRAND-CARD.md                 ← 자매 문서 (브랜드 카드 트랙)
 ├── pyproject.toml
 ├── .gitignore
 │

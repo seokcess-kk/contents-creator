@@ -128,7 +128,7 @@ if [[ ${#violations[@]} -gt 0 ]]; then
   printf '   %s\n' "${violations[@]}"
   echo ""
   echo "References:"
-  echo "  - SPEC.md §3 [7] (M2 rule)"
+  echo "  - SPEC-SEO-TEXT.md §3 [7] (M2 rule)"
   echo "  - .claude/skills/generation/SKILL.md"
   echo "  - .claude/skills/medical-compliance/SKILL.md"
   exit 1

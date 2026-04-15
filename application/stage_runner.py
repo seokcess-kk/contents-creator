@@ -10,7 +10,7 @@ from __future__ import annotations
 
 # NOTE:
 # 이 파일은 각 단계의 헬퍼 함수를 모아두는 곳이다.
-# 단계별 구현 순서는 SPEC.md §8 개발 순서 참조.
+# 단계별 구현 순서는 SPEC-SEO-TEXT.md §8 개발 순서 참조.
 #
 # 예시 시그니처 (실제 타입은 도메인 모델 구현 후 import):
 #

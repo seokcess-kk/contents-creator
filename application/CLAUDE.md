@@ -1,6 +1,6 @@
 # Application Layer
 
-도메인 오케스트레이션. DDD 의 Application Service 레이어. SPEC.md §12 구현.
+도메인 오케스트레이션. DDD 의 Application Service 레이어. SPEC-SEO-TEXT.md §12 구현.
 
 ## 책임 범위
 
@@ -18,7 +18,7 @@
 ## 파일 책임
 
 ### orchestrator.py
-각 use case 1개 = 함수 1개. 시그니처는 **SPEC.md §12-4 불변 확정**:
+각 use case 1개 = 함수 1개. 시그니처는 **SPEC-SEO-TEXT.md §12-4 불변 확정**:
 
 ```python
 def run_pipeline(
@@ -102,6 +102,6 @@ class NullProgressReporter:
 
 ## 참조
 
-- @../SPEC.md §12 (Phase 2 대비)
-- @../SPEC.md §3 (8단계 파이프라인 상세)
+- @../SPEC-SEO-TEXT.md §12 (Phase 2 대비)
+- @../SPEC-SEO-TEXT.md §3 (8단계 파이프라인 상세)
 - @../.claude/skills/content-pipeline/SKILL.md (단계 매핑)

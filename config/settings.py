@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     supabase_url: str | None = Field(default=None, description="Supabase project URL")
     supabase_key: str | None = Field(default=None, description="Supabase service role key")
 
-    # LLM 모델 식별자 (SPEC.md §5 — 역할별 매핑)
+    # LLM 모델 식별자 (SPEC-SEO-TEXT.md §5 — 역할별 매핑)
     model_opus: str = "claude-opus-4-6"
     model_sonnet: str = "claude-sonnet-4-6"
     image_model: str = "gemini-3.1-flash-image-preview"
@@ -68,7 +68,7 @@ def require(field_name: str) -> str:
     value = getattr(settings, field_name, None)
     if value is None:
         raise RuntimeError(
-            f"설정 '{field_name}' 이(가) config/.env 에 없습니다. SPEC.md §6 config/.env 참조."
+            f"설정 '{field_name}' 이(가) config/.env 에 없습니다. SPEC-SEO-TEXT.md §6 config/.env 참조."
         )
     if not isinstance(value, str):
         raise TypeError(f"설정 '{field_name}' 은(는) 문자열이어야 합니다.")

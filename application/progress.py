@@ -1,6 +1,6 @@
 """진행 리포트 프로토콜과 기본 구현.
 
-SPEC.md §12-3 참조.
+SPEC-SEO-TEXT.md §12-3 참조.
 
 - MVP: LoggingProgressReporter (CLI) + NullProgressReporter (테스트)
 - Phase 2: WebSocketProgressReporter 를 추가 구현하면 기존 코드 변경 없이 주입 가능

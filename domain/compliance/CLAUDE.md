@@ -1,6 +1,6 @@
 # Compliance Domain
 
-의료광고법 3중 방어. SPEC.md §3 [8] 구현.
+의료광고법 3중 방어. SPEC-SEO-TEXT.md §3 [8] 구현.
 
 ## 🔴 최상위 원칙: rules.py 단일 출처
 
@@ -26,7 +26,7 @@
 ## 핵심 규칙
 
 - 8개 카테고리는 사용자 확정 전까지 `rules.py` 의 `ViolationCategory` enum 에 placeholder 로 예약
-- **카테고리 임의 추가·삭제 금지**. 변경은 SPEC.md §5 수정 동반 필요
+- **카테고리 임의 추가·삭제 금지**. 변경은 SPEC-SEO-TEXT.md §5 수정 동반 필요
 - 재시도는 최대 2회. `while True:` 무한 루프 금지
 - 검증 결과는 `ComplianceReport` Pydantic 모델로 반환. 실패를 `raise` 가 아닌 `ComplianceReport(passed=False)` 로 처리
 - 태그(`suggested_tags`)도 검증 대상. 위반 태그는 유사어 교체 또는 목록에서 제거
@@ -65,6 +65,6 @@
 
 ## 참조
 
-- @../../SPEC.md §3 [8]
+- @../../SPEC-SEO-TEXT.md §3 [8]
 - @../../.claude/skills/medical-compliance/SKILL.md
 - @../../.claude/agents/domain/compliance-reviewer.md

@@ -1,11 +1,11 @@
 ---
 name: content-pipeline
-description: SEO 원고 생성 전체 파이프라인 오케스트레이터. 네이버 키워드 입력부터 Bright Data 크롤링, 물리·의미·소구 분석, 패턴 카드 생성, SEO 원고 작성, 의료법 검증, 네이버 호환 출력까지 8단계를 순차 실행한다. '파이프라인 실행', '전체 실행', '키워드로 SEO 원고 만들어줘', '콘텐츠 생성 전체', 'SEO 원고 자동 생성' 요청 시 반드시 이 스킬을 사용할 것. SPEC.md §2 파이프라인의 단일 진입점이다.
+description: SEO 원고 생성 전체 파이프라인 오케스트레이터. 네이버 키워드 입력부터 Bright Data 크롤링, 물리·의미·소구 분석, 패턴 카드 생성, SEO 원고 작성, 의료법 검증, 네이버 호환 출력까지 8단계를 순차 실행한다. '파이프라인 실행', '전체 실행', '키워드로 SEO 원고 만들어줘', '콘텐츠 생성 전체', 'SEO 원고 자동 생성' 요청 시 반드시 이 스킬을 사용할 것. SPEC-SEO-TEXT.md §2 파이프라인의 단일 진입점이다.
 ---
 
 # Content Pipeline Orchestrator
 
-SPEC.md §2 8단계 파이프라인 전체를 실행하는 상위 오케스트레이터. 하위 스킬(crawling, analysis, generation, medical-compliance)을 순차 호출하고 composer 도메인으로 마무리한다.
+SPEC-SEO-TEXT.md §2 8단계 파이프라인 전체를 실행하는 상위 오케스트레이터. 하위 스킬(crawling, analysis, generation, medical-compliance)을 순차 호출하고 composer 도메인으로 마무리한다.
 
 ## 언제 이 스킬을 쓰는가
 

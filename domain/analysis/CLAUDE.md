@@ -1,6 +1,6 @@
 # Analysis Domain
 
-물리 + 의미 + 소구 + 교차 4단계 분석으로 패턴 카드 생성. SPEC.md §3 [3][4a][4b][5] 구현.
+물리 + 의미 + 소구 + 교차 4단계 분석으로 패턴 카드 생성. SPEC-SEO-TEXT.md §3 [3][4a][4b][5] 구현.
 
 ## 🔴 최상위 원칙: [4a]/[4b] 분리 절대 준수
 
@@ -55,5 +55,5 @@
 
 ## 참조
 
-- @../../SPEC.md §3 [3][4a][4b][5]
+- @../../SPEC-SEO-TEXT.md §3 [3][4a][4b][5]
 - @../../.claude/skills/analysis/SKILL.md

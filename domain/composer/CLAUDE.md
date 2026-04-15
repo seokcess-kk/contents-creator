@@ -1,6 +1,6 @@
 # Composer Domain
 
-intro + body 조립, outline.md 변환, 네이버 호환 HTML 생성. SPEC.md §3 [9] 구현.
+intro + body 조립, outline.md 변환, 네이버 호환 HTML 생성. SPEC-SEO-TEXT.md §3 [9] 구현.
 
 ## 핵심 규칙
 
@@ -54,6 +54,6 @@ intro + body 조립, outline.md 변환, 네이버 호환 HTML 생성. SPEC.md §
 
 ## 참조
 
-- @../../SPEC.md §3 [9]
+- @../../SPEC-SEO-TEXT.md §3 [9]
 - @../../.claude/skills/content-pipeline/SKILL.md (단계 매핑)
 - 화이트리스트 실측 결과: `tasks/lessons.md` 참조

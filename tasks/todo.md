@@ -5,7 +5,7 @@
 ## ✅ 완료
 
 - [x] v1 프로젝트 초기화 — 2026-04-15
-- [x] SPEC.md v2 작성 — 2026-04-15
+- [x] SPEC-SEO-TEXT.md v2 작성 — 2026-04-15
 - [x] 블로그 해시태그 분석 반영 — 2026-04-15
 - [x] 2차 비평 반영 (C1 iframe 실측, M1 fixer, M2 차별화 N<10, M3 schema_version, M4 태그 클램프 제거, M5 outline.md) — 2026-04-15
 - [x] Harness 구성 (5 skills + 5 agents + 2 hooks + settings.json) — 2026-04-15
@@ -26,7 +26,7 @@
 - [x] 브라우저 렌더링 → 네이버 스마트에디터 ONE 붙여넣기 테스트
 - [x] 화이트리스트 모든 태그 보존 확인 (h2, h3, p, strong, em, hr, ul, ol, li, blockquote, table, thead, tbody, tr, th, td)
 - [x] **중첩 ul/ol 은 네이버 에디터가 평탄화/소실시킴** — 생성 단계에서 중첩 금지 규칙 추가
-- [x] `SPEC.md` §3 [9], `generation` 스킬, `composer/CLAUDE.md` 에 중첩 리스트 차단 규칙 반영
+- [x] `SPEC-SEO-TEXT.md` §3 [9], `generation` 스킬, `composer/CLAUDE.md` 에 중첩 리스트 차단 규칙 반영
 - [x] `tasks/lessons.md` B3 섹션에 결과 기록
 
 ### [C1] Bright Data Web Unlocker iframe 실측 ✅ 완료 (2026-04-15)
@@ -38,7 +38,7 @@
 - [x] **결정: `page_scraper.py` 는 URL 을 `m.blog.naver.com` 으로 정규화 후 단일 호출**. 2단계 호출 불필요
 - [x] URL 필터 정규식 확정: `https?://(?:m\.)?blog\.naver\.com/[a-zA-Z0-9_-]+/\d{9,}` (`/clip/` 배제)
 - [x] `tasks/lessons.md` C1 섹션에 실측 데이터 기록
-- [x] `SPEC.md` §3 [2] 및 crawling 스킬 업데이트
+- [x] `SPEC-SEO-TEXT.md` §3 [2] 및 crawling 스킬 업데이트
 
 ### [C3] Claude Code 훅 환경 변수 실측 ✅ 완료 (2026-04-15)
 - [x] Claude Code 훅은 JSON 을 **stdin** 으로 전달 (환경 변수 아님) — claude-code-guide 확인
@@ -56,7 +56,7 @@
   - `SUPABASE_URL`, `SUPABASE_KEY`
 - [ ] `python -c "from config.settings import settings; print(settings.bright_data_api_key is not None)"` 로 로드 확인
 
-## 🚧 Phase 1 — 크롤러 도메인 (SPEC.md §3 [1][2])
+## 🚧 Phase 1 — 크롤러 도메인 (SPEC-SEO-TEXT.md §3 [1][2])
 
 - [ ] `domain/crawler/model.py` — `SerpResult`, `BlogPage`, `InsufficientCollectionError`
 - [ ] `domain/crawler/brightdata_client.py` — 공통 HTTP, 재시도, 타임아웃

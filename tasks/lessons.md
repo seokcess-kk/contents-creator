@@ -40,7 +40,7 @@ ALLOWED_TAGS = {
 
 **재발 방지**:
 - 화이트리스트 상수는 `naver_html.py` 에만 정의 (단일 출처)
-- 중첩 리스트 금지 규칙은 SPEC.md §3 [6][7] 및 generation 스킬에 명시
+- 중첩 리스트 금지 규칙은 SPEC-SEO-TEXT.md §3 [6][7] 및 generation 스킬에 명시
 - 에디터 버전이 바뀌면 이 실측을 재수행하고 `lessons.md` 를 업데이트
 
 ### [C1] Bright Data Web Unlocker iframe 처리 (2026-04-15 실측 완료)
@@ -60,7 +60,7 @@ ALLOWED_TAGS = {
 - 정규식 권장: `https?://(?:m\.)?blog\.naver\.com/[a-zA-Z0-9_-]+/\d{9,}` (clip 과 유저 홈 배제)
 
 **영향**:
-- SPEC.md §3 [2] iframe 처리 로직을 "모바일 정규화 후 단일 호출" 로 확정
+- SPEC-SEO-TEXT.md §3 [2] iframe 처리 로직을 "모바일 정규화 후 단일 호출" 로 확정
 - crawling 스킬 업데이트
 - `BRIGHT_DATA_API_KEY` 는 `7243a70f-16c...` (검증용 prefix)
 
@@ -131,7 +131,7 @@ ALLOWED_TAGS = {
 **영향**:
 - `config/.env`: `BRIGHT_DATA_SERP_ZONE` 제거, `BRIGHT_DATA_WEB_UNLOCKER_ZONE` 단일 사용
 - `config/settings.py`: `bright_data_serp_zone` 필드 제거
-- SPEC.md §3 [1] 업데이트 (Web Unlocker + BS4 파싱으로 전환)
+- SPEC-SEO-TEXT.md §3 [1] 업데이트 (Web Unlocker + BS4 파싱으로 전환)
 - crawling 스킬 업데이트
 
 **재발 방지**: 서드파티 API 의 전용 지원 목록을 SPEC 착수 전 반드시 확인한다. "이 서비스에서 X 기능이 있다" 와 "우리 대상 서비스에 X 기능이 작동한다" 는 별개.

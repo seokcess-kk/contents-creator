@@ -17,7 +17,7 @@ from application.progress import LoggingProgressReporter
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="생성 파이프라인만 실행: [6] 아웃라인 → [9] HTML (SPEC.md §3)",
+        description="생성 파이프라인만 실행: [6] 아웃라인 → [9] HTML (SPEC-SEO-TEXT.md §3)",
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(

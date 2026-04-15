@@ -16,7 +16,7 @@ from application.progress import LoggingProgressReporter
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="분석 파이프라인만 실행: [1] SERP → [5] 패턴 카드 (SPEC.md §3)",
+        description="분석 파이프라인만 실행: [1] SERP → [5] 패턴 카드 (SPEC-SEO-TEXT.md §3)",
     )
     parser.add_argument("--keyword", required=True, help="타겟 네이버 검색 키워드")
     args = parser.parse_args()

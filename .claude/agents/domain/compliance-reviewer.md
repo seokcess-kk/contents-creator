@@ -14,7 +14,7 @@ tools: [Read, Grep, Glob, Bash]
 - `domain/compliance/` 하위 파일 수정 후
 - `domain/compliance/rules.py` 변경 시 (가장 민감)
 - 의료 콘텐츠 원고 생성 완료 후 검증이 통과했을 때 (2차 리뷰)
-- SPEC.md §3 [8] 관련 변경 시
+- SPEC-SEO-TEXT.md §3 [8] 관련 변경 시
 
 ## 🔴 검사해야 할 불변 규칙들
 
@@ -43,7 +43,7 @@ tools: [Read, Grep, Glob, Bash]
 2. 사용자 제공 상세 정의가 없는 상태에서는 placeholder 8개 유지 (조기 구현 금지)
 3. 카테고리 추가·삭제는 SPEC 변경을 동반해야 함
 
-**위반 시 조치:** REJECT. "카테고리 변경은 SPEC.md §5 수정 후 진행"
+**위반 시 조치:** REJECT. "카테고리 변경은 SPEC-SEO-TEXT.md §5 수정 후 진행"
 
 ### R4 — 재시도 제한
 

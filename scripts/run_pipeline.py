@@ -18,7 +18,7 @@ from application.progress import LoggingProgressReporter
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="전체 SEO 원고 생성 파이프라인 실행 (SPEC.md §3 [1]~[9])",
+        description="전체 SEO 원고 생성 파이프라인 실행 (SPEC-SEO-TEXT.md §3 [1]~[9])",
     )
     parser.add_argument("--keyword", required=True, help="타겟 네이버 검색 키워드")
     parser.add_argument(

@@ -1,7 +1,7 @@
 """파이프라인 use case. CLI 와 Phase 2 FastAPI 가 공통으로 호출하는 진입점.
 
-⚠️ 함수 시그니처는 SPEC.md §12-4 불변 규칙.
-변경하려면 SPEC.md 먼저 수정 후 동기화할 것.
+⚠️ 함수 시그니처는 SPEC-SEO-TEXT.md §12-4 불변 규칙.
+변경하려면 SPEC-SEO-TEXT.md 먼저 수정 후 동기화할 것.
 
 현재 MVP 스켈레톤 — 각 함수 본문은 해당 단계 구현 시 채운다:
   - run_pipeline: 1~6단계 완료 후 최종 통합 (개발 순서 7단계)

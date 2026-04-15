@@ -1,5 +1,5 @@
 -- Contents Creator — Supabase 스키마 v2
--- 참조: SPEC.md §4
+-- 참조: SPEC-SEO-TEXT.md §4
 -- 적용: Supabase 대시보드 SQL Editor 에 전체 붙여넣기
 
 -- ============================================================

@@ -14,7 +14,7 @@ tools: [Read, Grep, Glob, Bash]
 - `domain/generation/` 하위 파일을 수정한 직후 (post-edit hook이 1차 감지, 심층 검토는 이 에이전트)
 - `domain/composer/assembler.py` 수정 시 (intro + body 조립 로직 영향)
 - generation 도메인 신규 파일 추가 시
-- SPEC.md §3 [6][7] 관련 변경 시
+- SPEC-SEO-TEXT.md §3 [6][7] 관련 변경 시
 
 ## 🔴 검사해야 할 불변 규칙들
 

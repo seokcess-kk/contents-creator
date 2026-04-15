@@ -8,7 +8,7 @@ _최종 업데이트: 2026-04-15_
 
 ## 완료한 것
 
-- SPEC.md v2 확정 (블로그 태그, 2차 비평, Phase 2 Next.js 대비 모두 반영)
+- SPEC-SEO-TEXT.md v2 확정 (블로그 태그, 2차 비평, Phase 2 Next.js 대비 모두 반영)
 - Harness (`.claude/` skills/agents/hooks/settings.json)
 - CLAUDE.md (루트 + 5개 도메인 + application)
 - 프로젝트 스캐폴딩:

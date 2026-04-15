@@ -1,6 +1,6 @@
 # Generation Domain
 
-아웃라인 + 도입부 + 본문 생성. SPEC.md §3 [6][7] 구현. **M2 불변 규칙이 최상위**.
+아웃라인 + 도입부 + 본문 생성. SPEC-SEO-TEXT.md §3 [6][7] 구현. **M2 불변 규칙이 최상위**.
 
 ## 🔴 M2 — 절대 위반 불가
 
@@ -70,7 +70,7 @@
 
 ## 참조
 
-- @../../SPEC.md §3 [6][7]
+- @../../SPEC-SEO-TEXT.md §3 [6][7]
 - @../../.claude/skills/generation/SKILL.md
 - @../../.claude/agents/domain/seo-writer-guardian.md (M2 리뷰 전담)
 - @../../.claude/hooks/post-edit-lint.sh (M2 자동 차단)

@@ -5,7 +5,7 @@ description: Bright Data Web Unlocker 단일 zone 으로 네이버 블로그 상
 
 # Crawling Skill — Bright Data Web Unlocker
 
-Bright Data Web Unlocker 단일 zone 으로 네이버 블로그 상위 노출 글을 수집한다. SPEC.md §3 [1][2]를 구현한다.
+Bright Data Web Unlocker 단일 zone 으로 네이버 블로그 상위 노출 글을 수집한다. SPEC-SEO-TEXT.md §3 [1][2]를 구현한다.
 
 **주**: Bright Data SERP API 는 Naver 전용 파서를 제공하지 않으므로(Google/Bing/Yandex/Baidu 만) 사용하지 않는다. Web Unlocker 가 범용 fetcher 이므로 검색 결과 페이지도 정상 fetch 되며, BeautifulSoup 으로 블로그 URL 을 직접 파싱한다.
 
@@ -113,7 +113,7 @@ class BrightDataClient:
 - [ ] 수집 수가 7개 미만일 때 명시적 에러가 발생하는지
 - [ ] iframe URL 추출이 정상 동작하는지
 - [ ] 재시도 2회 정책이 실제로 동작하는지 (mock으로 테스트)
-- [ ] 저장 경로 구조가 SPEC.md와 일치하는지
+- [ ] 저장 경로 구조가 SPEC-SEO-TEXT.md와 일치하는지
 
 ## 금지 사항
 
