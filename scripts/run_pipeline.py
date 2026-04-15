@@ -1,0 +1,46 @@
+"""전체 파이프라인 CLI.
+
+얇은 argparse 래퍼 — 실제 로직은 `application.orchestrator.run_pipeline`.
+Phase 2 FastAPI 라우터도 동일한 함수를 호출한다.
+"""
+
+from __future__ import annotations
+
+import argparse
+import logging
+import sys
+from pathlib import Path
+
+from application.models import StageStatus
+from application.orchestrator import run_pipeline
+from application.progress import LoggingProgressReporter
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="전체 SEO 원고 생성 파이프라인 실행 (SPEC.md §3 [1]~[9])",
+    )
+    parser.add_argument("--keyword", required=True, help="타겟 네이버 검색 키워드")
+    parser.add_argument(
+        "--pattern-card",
+        type=Path,
+        default=None,
+        help="기존 패턴 카드 JSON 경로 (지정 시 [1]~[5] 분석 스킵하고 재사용)",
+    )
+    args = parser.parse_args()
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+    )
+
+    result = run_pipeline(
+        keyword=args.keyword,
+        reporter=LoggingProgressReporter(),
+        pattern_card_path=args.pattern_card,
+    )
+    return 0 if result.status == StageStatus.SUCCEEDED else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

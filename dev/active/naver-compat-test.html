@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>네이버 스마트에디터 HTML 호환성 실측</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 680px; margin: 40px auto; padding: 0 16px; line-height: 1.8; color: #333; }
+    h2, h3 { margin-top: 32px; }
+    table { border-collapse: collapse; margin: 16px 0; }
+    th, td { border: 1px solid #ccc; padding: 8px 12px; }
+    th { background: #f5f5f5; }
+    blockquote { border-left: 4px solid #3498db; margin: 16px 0; padding: 8px 16px; background: #f9f9f9; }
+    hr { border: 0; border-top: 2px solid #e0e0e0; margin: 32px 0; }
+    .tag-label { font-family: monospace; color: #888; font-size: 0.85em; }
+  </style>
+</head>
+<body>
+
+  <h2>H2 헤딩 — 가장 큰 소제목</h2>
+  <p class="tag-label">tag: &lt;h2&gt;</p>
+  <p>이것은 h2 아래의 일반 문단입니다. 네이버 에디터에서 제목(대) 서식으로 보존되는지 확인합니다.</p>
+
+  <h3>H3 헤딩 — 중간 소제목</h3>
+  <p class="tag-label">tag: &lt;h3&gt;</p>
+  <p>이것은 h3 아래의 일반 문단입니다. 네이버 에디터에서 제목(중) 서식으로 보존되는지 확인합니다.</p>
+
+  <h2>인라인 서식 테스트</h2>
+  <p>
+    이 문장은 일반 텍스트입니다.
+    <strong>이 부분은 strong 태그로 굵게 처리된 텍스트</strong>입니다.
+    이 부분은 <em>em 태그로 기울임 처리된 텍스트</em>입니다.
+    <strong><em>strong + em 중첩</em></strong>도 포함합니다.
+  </p>
+
+  <hr>
+
+  <h2>구분선 (hr) 위 아래</h2>
+  <p>위 구분선이 네이버 에디터의 구분선 요소로 보존되는지 확인합니다. 이것은 DIA+ 요소 중 `separators` 에 해당합니다.</p>
+
+  <h2>순서 없는 리스트 (ul)</h2>
+  <ul>
+    <li>첫 번째 항목</li>
+    <li>두 번째 항목</li>
+    <li>세 번째 항목
+      <ul>
+        <li>중첩된 항목 A</li>
+        <li>중첩된 항목 B</li>
+      </ul>
+    </li>
+  </ul>
+
+  <h2>순서 있는 리스트 (ol)</h2>
+  <ol>
+    <li>첫 번째 단계</li>
+    <li>두 번째 단계</li>
+    <li>세 번째 단계</li>
+  </ol>
+
+  <h2>인용구 (blockquote)</h2>
+  <blockquote>
+    <p>이것은 인용구 블록입니다. 네이버 에디터에서 인용구 서식으로 보존되는지 확인합니다.</p>
+    <p>여러 문단이 있는 경우도 테스트합니다.</p>
+  </blockquote>
+
+  <h2>표 (table)</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>카테고리</th>
+        <th>설명</th>
+        <th>비중</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>도입/공감</td>
+        <td>독자의 고민에 공감하는 섹션</td>
+        <td>12%</td>
+      </tr>
+      <tr>
+        <td>정보 제공</td>
+        <td>객관적 정보 전달</td>
+        <td>45%</td>
+      </tr>
+      <tr>
+        <td>사례/후기</td>
+        <td>구체적 사례 소개</td>
+        <td>30%</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>복합 레이아웃 테스트</h2>
+  <p>아래는 <strong>중요한 정보</strong>가 담긴 Q&amp;A 형식 섹션입니다.</p>
+
+  <h3>Q. 첫 번째 질문입니다</h3>
+  <p>A. 이것이 첫 번째 질문에 대한 답변입니다. 문장이 평서문으로 구성되어 DIA+ 의 Q&amp;A 패턴 감지 규칙에 부합합니다.</p>
+
+  <h3>Q. 두 번째 질문입니다</h3>
+  <p>A. 이것이 두 번째 질문에 대한 답변입니다.</p>
+
+  <hr>
+
+  <h2>통계 데이터 예시</h2>
+  <p>
+    다이어트 한의원을 방문하는 환자의 약 65% 는 요요 경험이 있으며,
+    평균 감량 기간은 12주, 부작용 발생률은 3% 미만입니다.
+  </p>
+
+  <h2>긴 문단 테스트</h2>
+  <p>이것은 일반적인 블로그 본문 문단입니다. 네이버 에디터는 문단 간격·정렬·폰트 크기를 어떻게 처리하는지 확인합니다. 단일 문단의 길이가 평균 약 95자 내외가 되도록 구성했으며 이는 SPEC.md 의 물리 분석 통계 목표치와 일치합니다.</p>
+
+  <p>두 번째 문단은 짧게 만들어봅니다. 짧은 문단과 긴 문단이 혼재했을 때 서식이 어떻게 유지되는지 봅니다.</p>
+
+</body>
+</html>

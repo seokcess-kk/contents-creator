@@ -1,0 +1,74 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "contents-creator"
+version = "0.1.0"
+description = "네이버 SEO 원고 생성 엔진 — 레퍼런스 분석 기반 콘텐츠 생성"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.40.0",
+    "pydantic>=2.8",
+    "pydantic-settings>=2.5",
+    "beautifulsoup4>=4.12",
+    "lxml>=5.0",
+    "supabase>=2.8",
+    "requests>=2.32",
+    "tenacity>=9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "pytest>=8.3",
+    "pytest-cov>=5.0",
+    "types-requests>=2.32",
+]
+
+[tool.setuptools.packages.find]
+include = ["domain*", "application*", "config*"]
+exclude = ["tests*", "scripts*", "output*", "dev*", "tasks*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["output", ".venv", "dev", ".claude"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "SIM",  # flake8-simplify
+    "RET",  # flake8-return
+    "N",    # pep8-naming
+]
+ignore = ["E501"]  # line length handled by formatter
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+
+[[tool.mypy.overrides]]
+module = ["bs4.*", "supabase.*", "tenacity.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
