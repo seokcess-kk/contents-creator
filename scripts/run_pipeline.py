@@ -27,6 +27,16 @@ def main() -> int:
         default=None,
         help="기존 패턴 카드 JSON 경로 (지정 시 [1]~[5] 분석 스킵하고 재사용)",
     )
+    parser.add_argument(
+        "--no-images",
+        action="store_true",
+        help="[9] AI 이미지 생성 단계를 스킵",
+    )
+    parser.add_argument(
+        "--regenerate-images",
+        action="store_true",
+        help="이미지 prompt 해시 캐시를 무시하고 강제 재생성",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -38,6 +48,8 @@ def main() -> int:
         keyword=args.keyword,
         reporter=LoggingProgressReporter(),
         pattern_card_path=args.pattern_card,
+        generate_images=not args.no_images,
+        regenerate_images=args.regenerate_images,
     )
     return 0 if result.status == StageStatus.SUCCEEDED else 1
 

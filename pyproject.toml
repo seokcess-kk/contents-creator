@@ -9,6 +9,7 @@ description = "네이버 SEO 원고 생성 엔진 — 레퍼런스 분석 기반
 requires-python = ">=3.11"
 dependencies = [
     "anthropic>=0.40.0",
+    "google-genai>=0.3.0",
     "pydantic>=2.8",
     "pydantic-settings>=2.5",
     "beautifulsoup4>=4.12",

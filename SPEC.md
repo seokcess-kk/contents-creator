@@ -4,6 +4,8 @@
 > 단계: Phase 1 (MVP)
 > 범위: Bright Data 크롤링 → 상위글 분석 → 패턴 카드 → SEO 원고 생성 → 의료법 검증 → 네이버 호환 출력
 > 전체 비전 문서: 별도 보관 (`dev/active/vision.md`, 추후 작성)
+>
+> ⚠️ **이 문서는 SEO 트랙만 다룬다.** 브랜드 카드 트랙은 `SPEC-BRAND-CARD.md` 참조. 두 트랙의 합류 지점(`run_full_package`)은 `SPEC-BRAND-CARD.md` §13 에 정의되어 있다. 컴플라이언스는 `SEO_STRICT` 프로필을 사용한다 (브랜드 카드는 `BRAND_LENIENT`).
 
 ---
 
@@ -18,9 +20,10 @@
 - **분석 1번, 생성 N번** — 패턴 카드는 Supabase 자산으로 재사용
 
 ### 이 Spec에 포함되지 않는 것 (추후 단계)
-- 브랜드 카드, 비주얼 분석(VLM), AI 이미지 생성, 변이 엔진 고도화
+- 브랜드 카드, 비주얼 분석(VLM), 변이 엔진 고도화
 - 클라이언트 프로필 자동 추출, 실사 사진 관리
 - 랜딩페이지/상세페이지 생성
+- 네이버 에디터 자동 업로드 (Selenium)
 
 ---
 
@@ -41,13 +44,15 @@
     ↓
 [5] 교차 분석 → 패턴 카드 (비율 기반 임계값)
     ↓
-[6] 아웃라인 + 도입부 확정 생성 (Opus)
+[6] 아웃라인 + 도입부 + image_prompts 생성 (Opus)
     ↓
 [7] 본문 생성 (2번째 섹션부터, Opus)
     ↓
-[8] 의료법 검증 + 자동 수정 (Sonnet)
+[8] 의료법 검증 + 자동 수정 (Sonnet) — 본문 + 이미지 prompt 동시 검증
     ↓
-[9] 네이버 호환 HTML 조립 (.md + .html 동시 출력)
+[9] 🆕 AI 이미지 생성 (Gemini 3.1 Flash Image Preview) — 검증 통과 prompt 만
+    ↓
+[10] 네이버 호환 HTML 조립 + outline.md 가이드 (.md + .html + 이미지 매핑)
 ```
 
 ---
@@ -383,6 +388,41 @@ HTML 파싱으로 정량 데이터 추출. LLM 불필요.
 - 우선순위: (a) common 태그 전부 → (b) frequent 태그에서 본 원고와 관련도 높은 순 → (c) 주 키워드·연관 키워드 중 top_tags에 없는 1~2개
 - 중복 제거, 의료법 금지 표현 배제
 
+[AI 이미지 prompt 생성]
+상위 글 평균 이미지 개수: {image_pattern.avg_count_per_post}
+이미지 위치 분포: {image_pattern.position_distribution}
+이미지 타입 분포: {image_pattern.type_distribution}
+
+`image_prompts` 필드에 이미지 prompt 리스트를 출력하라. 개수는 분석 결과 그대로 (`round(avg_count_per_post)`).
+
+각 prompt 는 다음 규칙을 반드시 준수한다:
+
+1. **언어: 영어** — Gemini Image 모델은 영어 prompt 가 안정적
+2. **텍스트 절대 금지** — `no text`, `no letters`, `no captions`, `no labels` 명시. AI 모델은 한글을 깨뜨림
+3. **인물 등장 시 한국인 명시 필수** — 사람·얼굴·실사 인물 사진 모두 허용. 단, 인물이 등장하면 prompt 에 반드시 `Korean` 키워드 (예: `Korean woman`, `Korean man`, `Korean person`, `Korean family`) 를 포함한다. 외국인·서양인 외형 묘사 금지
+4. **의료 맥락 금지** — 다음은 인물이 있어도 금지:
+   - 환자 묘사 (`patient`, `환자`, `injured`, `sick person`)
+   - 전후 비교 (`before/after`, `before and after`, `comparison shot`, `weight loss progression`)
+   - 시술 장면 (`medical procedure`, `surgery`, `injection`, `treatment scene`)
+   - 신체 비교 (`body comparison`, `weight loss before/after`, `naked body`)
+5. **권장 시나리오** (한국적 맥락):
+   - 한식 요리·식사 (김치, 비빔밥, 한정식, 차 등)
+   - 한방 재료 (인삼, 대추, 한약재)
+   - 한국 자연·풍경 (산, 바다, 한옥 마을, 도시)
+   - 라이프스타일 (요가, 산책, 명상, 차 마시기, 책 읽기)
+   - 한국인이 등장하는 일상 (운동복 입은 한국 여성, 식사하는 한국 가족 등)
+6. **권장 스타일**: `realistic photography`, `lifestyle photography`, `natural lighting`, `cinematic`, `high quality DSLR`, `flat illustration`, `minimalist infographic`, `food photography`
+7. **종횡비**: 1024x1024 정사각 (네이버 본문 친화)
+8. **각 prompt 에 반드시 포함**: 권장 스타일 1개 + 시나리오 + 색감 + `no text` (+ 인물 시 `Korean`)
+
+각 항목 필드:
+- `sequence`: 1부터 순번
+- `position`: `after_intro` / `section_N_end` / `before_conclusion` 등 위치 힌트
+- `prompt`: Gemini 에 전달할 영어 prompt 전문
+- `alt_text`: 한국어 alt 텍스트 (네이버 에디터 alt 입력란용)
+- `image_type`: `photo` / `illustration` / `infographic` / `diagram`
+- `rationale`: 1줄로 위치·소재 결정 근거
+
 [의료법 사전 규칙]
 - 치료 효과 보장 표현 금지
 - 비교/우위 표현 금지 ("최고", "유일한", "가장 좋은")
@@ -404,6 +444,32 @@ HTML 파싱으로 정량 데이터 추출. LLM 불필요.
   "title_pattern": "방법론형",
   "target_chars": 2800,
   "suggested_tags": ["다이어트", "한의원", "체질", "요요", "한약", "건강"],
+  "image_prompts": [
+    {
+      "sequence": 1,
+      "position": "after_intro",
+      "prompt": "Realistic lifestyle photography of a healthy Korean home cooked meal with kimchi, rice, and vegetables on a traditional wooden table, soft natural morning light, warm color palette, no text, food photography style, high quality DSLR",
+      "alt_text": "건강한 한식 한 상",
+      "image_type": "photo",
+      "rationale": "상위 글 90% 가 도입 직후 분위기 사진을 사용. 한식 라이프스타일"
+    },
+    {
+      "sequence": 2,
+      "position": "section_2_end",
+      "prompt": "Realistic lifestyle photography of a Korean woman in her 30s practicing morning yoga in a peaceful natural environment, soft sunrise light, calm and serene mood, no text, cinematic, lifestyle photography",
+      "alt_text": "아침 요가 중인 한국 여성",
+      "image_type": "photo",
+      "rationale": "본문 중간 라이프스타일 인물 사진 — 한국인 명시"
+    },
+    {
+      "sequence": 3,
+      "position": "section_4_end",
+      "prompt": "Minimalist flat illustration of traditional Korean herbal medicine ingredients (ginseng, jujube, dried herbs) arranged on parchment, pastel color palette, no text, infographic style",
+      "alt_text": "한방 재료 일러스트",
+      "image_type": "illustration",
+      "rationale": "한약재 정보 섹션 — 인포그래픽 스타일"
+    }
+  ],
   "intro": "...(200~300자 확정본 도입부)...",
   "sections": [
     {
@@ -508,18 +574,32 @@ HTML 파싱으로 정량 데이터 추출. LLM 불필요.
 ```
 full_text = title + intro + body_sections
 tags = suggested_tags
+image_prompts = outline.image_prompts
     ↓
-규칙 기반 1차 스크리닝 (rules.py의 금지 표현 regex를 full_text + tags 모두에 적용)
+규칙 기반 1차 스크리닝 (rules.py의 금지 표현 regex를 full_text + tags + image_prompts 모두에 적용)
     ↓
-LLM 검증 (Sonnet, tool_use로 구조화 출력)
+LLM 검증 (Sonnet, tool_use로 구조화 출력) — 본문/태그/이미지 prompt 동시
     ↓
-위반 있음 → LLM 수정 제안 → 해당 문단/태그만 교체 → 재검증
+위반 있음 → LLM 수정 제안 → 해당 문단/태그/prompt만 교체 → 재검증
 위반 없음 → 통과
     ↓
 통과/최대 재시도 초과 시 종료
 ```
 
 **태그 검증:** `suggested_tags` 도 본문과 동일하게 rules.py 규칙을 적용한다. 위반 태그는 유사어로 교체하거나 목록에서 제거.
+
+**이미지 prompt 검증:** `image_prompts` 의 각 `prompt` 와 `alt_text` 모두 rules.py 규칙을 적용한다. 추가 검사 항목:
+
+- **필수 포함**: `no text` 또는 `no letters` (Gemini 한글 깨짐 방지)
+- **인물 등장 시 필수**: prompt 에 사람 관련 키워드(`person`, `people`, `man`, `woman`, `face`, `portrait`, `family`, `child`)가 있으면 **반드시 `Korean` 키워드 동반**. 누락 시 fixer 가 자동으로 `Korean` 추가
+- **금지 키워드** (인물 유무 무관):
+  - 환자 묘사: `patient`, `환자`, `injured`, `sick person`
+  - 전후 비교: `before/after`, `before and after`, `comparison shot`, `weight loss progression`
+  - 시술 장면: `medical procedure`, `surgery`, `injection`, `treatment scene`
+  - 신체 비교: `body comparison`, `naked`, `nude`
+  - 효과 보장: `100%`, `guarantee`
+- **rules.py 일반 금지 표현**도 prompt·alt_text 양쪽에 적용 (단일 출처 원칙)
+- 위반 prompt 는 fixer 가 안전한 대안 prompt 로 재생성. 2회 재시도 후도 실패하면 해당 이미지 슬롯 스킵 (생성 X)
 
 **fixer 동작 방식:**
 1. **기본 — 구절 치환 (phrase replacement)**: 위반 표현 자리만 안전 대체어로 교체. 주변 문맥·문장 흐름·톤을 보존하므로 가장 안전하고 빠르다. 대부분의 케이스는 이것으로 해결.
@@ -545,7 +625,70 @@ LLM 검증 (Sonnet, tool_use로 구조화 출력)
 
 **저장:** `output/{slug}/{timestamp}/content/compliance-report.json`
 
-### [9] 네이버 호환 출력 조립
+### [9] AI 이미지 생성
+
+검증을 통과한 `image_prompts` 만 Gemini 3.1 Flash Image Preview 로 실제 생성한다.
+
+**모델·설정**:
+- 모델: `gemini-3.1-flash-image-preview` (Google Gen AI SDK)
+- 환경 변수: `GOOGLE_API_KEY`
+- 출력 사이즈: `1024x1024` (정사각, 네이버 본문 친화)
+- 응답 modality: `IMAGE`
+
+**호출 패턴**:
+```python
+from google import genai
+from google.genai import types
+
+client = genai.Client(api_key=settings.google_api_key)
+
+response = client.models.generate_content(
+    model=settings.image_model,
+    contents=[image_prompt.prompt],
+    config=types.GenerateContentConfig(
+        response_modalities=["IMAGE"],
+    ),
+)
+
+# response.candidates[0].content.parts[i].inline_data.data 에 이미지 바이트
+```
+
+**캐싱 (개발 비용 폭주 방지)**:
+- prompt 텍스트 SHA256 해시를 키로 사용
+- 캐시 위치: `output/_image_cache/{hash}.png`
+- 같은 해시가 이미 있으면 재호출 없이 캐시 파일 복사
+- `--regenerate-images` CLI 플래그로 캐시 무시 가능
+
+**예산 가드**:
+- `IMAGE_GENERATION_BUDGET_PER_RUN` 환경 변수 (기본 10) — 한 파이프라인 실행 시 최대 이미지 수
+- 초과 시 경고 로그 + 나머지 prompt 스킵
+
+**저장**:
+- 생성 파일: `output/{slug}/{timestamp}/images/image_{sequence}.png`
+- 생성 결과 메타: `output/{slug}/{timestamp}/images/index.json`
+  ```json
+  {
+    "generated": [
+      {"sequence": 1, "path": "images/image_1.png", "prompt_hash": "abc...", "alt_text": "..."}
+    ],
+    "skipped": [
+      {"sequence": 3, "reason": "compliance_failed"},
+      {"sequence": 4, "reason": "budget_exceeded"}
+    ]
+  }
+  ```
+
+**재시도 정책**:
+- API 호출 실패 시 1회 재시도 (1초 대기 후)
+- 2회 후도 실패 → 해당 이미지 스킵, `generated` 에 미포함, `skipped` 에 reason="api_error"
+- 파이프라인은 계속 진행 (이미지 생성 실패가 전체 실패로 이어지지 않음)
+
+**금지 사항**:
+- 검증 실패한 prompt 로 생성 호출 금지
+- 생성된 이미지에 후처리로 텍스트 삽입 금지
+- 캐시 위치를 코드에 하드코딩 금지 (`settings.image_cache_dir`)
+
+### [10] 네이버 호환 출력 조립
 
 최종 원고를 두 형식으로 동시 출력.
 
@@ -626,6 +769,7 @@ create index idx_generated_contents_card on generated_contents (pattern_card_id,
 | 본문 크롤링 | Bright Data Web Unlocker (동일 zone) |
 | HTML 파싱 | BeautifulSoup / lxml |
 | LLM API | Anthropic Claude (`anthropic` SDK) |
+| 이미지 생성 | Google Gemini 3.1 Flash Image Preview (`google-genai` SDK) |
 | 구조화 출력 | `tool_use` (JSON 스키마 강제) |
 | 타입 검사 | mypy |
 | 린트·포맷 | ruff |
@@ -639,13 +783,15 @@ create index idx_generated_contents_card on generated_contents (pattern_card_id,
 | [4b] 소구 포인트 추출 | **Sonnet 4.6** | 전용 분류 | [4a]와 분리해 품질 안정화 |
 | [6] 아웃라인 + 도입부 | **Opus 4.6** | 전체 구조·톤 확정 | 글 품질 좌우하는 핵심 판단 |
 | [7] 본문 생성 | **Opus 4.6** | 한국어 본문 작성 | 한국어 품질 최우선 |
-| [8] 의료법 검증·수정 | **Sonnet 4.6** | 규칙 판단·수정 제안 | 정확도·비용 균형 |
+| [8] 의료법 검증·수정 | **Sonnet 4.6** | 규칙 판단·수정 제안 (본문+태그+이미지 prompt) | 정확도·비용 균형 |
+| [9] AI 이미지 생성 | **Gemini 3.1 Flash Image Preview** | 검증된 prompt → 이미지 | 단일 호출, 영어 prompt, 텍스트 절대 금지 |
 
 ### LLM 불필요 (코드)
 - [1] SERP 수집, [2] 본문 수집 — Bright Data API
 - [3] 물리적 구조 추출 — BeautifulSoup + 정규식
 - [5] 교차 분석 집계 — 코드 집계
-- [9] HTML 조립 — 템플릿 + 화이트리스트 필터
+- [9] AI 이미지 생성 — Google Gen AI SDK 호출 (prompt 는 [6] 에서 LLM 이 생성, 여기선 호출만)
+- [10] HTML 조립 — 템플릿 + 화이트리스트 필터
 
 ---
 
@@ -702,9 +848,16 @@ contents-creator/
 │   │   └── body_writer.py             ← [7] 본문 생성 (intro 받지 않음)
 │   ├── compliance/
 │   │   ├── CLAUDE.md
-│   │   ├── checker.py                 ← 의료법 검증
+│   │   ├── checker.py                 ← 의료법 검증 (본문+태그+이미지 prompt)
 │   │   ├── fixer.py                   ← 자동 수정
 │   │   └── rules.py                   ← 8개 카테고리 규칙 (사용자 제공 예정)
+│   ├── image_generation/              ← 🆕 [9] AI 이미지 생성
+│   │   ├── CLAUDE.md
+│   │   ├── model.py                   ← ImagePrompt, GeneratedImage Pydantic
+│   │   ├── provider.py                ← ImageProvider Protocol + GeminiImageProvider
+│   │   ├── prompt_builder.py          ← 이미지 prompt 빌드 (의료법 가이드 주입)
+│   │   ├── generator.py               ← 검증된 prompt → 이미지 호출 → 저장
+│   │   └── cache.py                   ← prompt 해시 기반 파일 캐시
 │   └── composer/
 │       ├── CLAUDE.md
 │       ├── assembler.py               ← intro + body concat + seo-content.md 조립
@@ -723,10 +876,11 @@ contents-creator/
 │   ├── test_analysis/
 │   ├── test_generation/
 │   ├── test_compliance/
+│   ├── test_image_generation/         ← 🆕
 │   └── test_composer/
 │
 ├── config/
-│   ├── .env                           ← BRIGHT_DATA_API_KEY, BRIGHT_DATA_WEB_UNLOCKER_ZONE, ANTHROPIC_API_KEY, SUPABASE_URL, SUPABASE_KEY
+│   ├── .env                           ← BRIGHT_DATA_API_KEY, BRIGHT_DATA_WEB_UNLOCKER_ZONE, ANTHROPIC_API_KEY, GOOGLE_API_KEY, SUPABASE_URL, SUPABASE_KEY
 │   ├── settings.py                    ← 환경 변수 로드
 │   ├── supabase.py                    ← DB 클라이언트
 │   └── schema.sql                     ← 위 DDL
@@ -734,6 +888,8 @@ contents-creator/
 ├── dev/active/                        ← 외부 기억 장치 (plan, context, tasks)
 │
 └── output/                            ← 실행 결과 (타임스탬프 디렉토리)
+    ├── _image_cache/                  ← 🆕 prompt 해시 기반 이미지 캐시 (전역 공유)
+    │   └── {sha256}.png
     └── {slug}/
         ├── latest → {YYYYMMDD-HHmm}/  ← junction/symlink
         └── {YYYYMMDD-HHmm}/
@@ -744,13 +900,17 @@ contents-creator/
             │   ├── semantic/          ← [4a] 결과
             │   ├── appeal/            ← [4b] 결과
             │   └── pattern-card.json
-            └── content/
-                ├── outline.json
-                ├── outline.md
-                ├── body.json
-                ├── compliance-report.json
-                ├── seo-content.md
-                └── seo-content.html
+            ├── content/
+            │   ├── outline.json
+            │   ├── outline.md
+            │   ├── body.json
+            │   ├── compliance-report.json
+            │   ├── seo-content.md
+            │   └── seo-content.html
+            └── images/                ← 🆕 [9] 생성 결과
+                ├── image_1.png
+                ├── image_2.png
+                └── index.json
 ```
 
 ---
@@ -814,15 +974,23 @@ mypy domain/
   └─ body_writer.py ([7], intro 받지 않는 시그니처)
 
 5단계: 의료법 검증 (※ 시작 전 8개 카테고리 주입 필요)
-  ├─ rules.py
+  ├─ rules.py — 본문/태그/이미지 prompt 검증 규칙
   ├─ checker.py
   └─ fixer.py
 
-6단계: 조립 및 출력
+6단계: AI 이미지 생성 🆕
+  ├─ image_generation/model.py
+  ├─ image_generation/provider.py — GeminiImageProvider
+  ├─ image_generation/prompt_builder.py — 의료법 가이드 주입
+  ├─ image_generation/cache.py — prompt 해시 캐시
+  └─ image_generation/generator.py
+
+7단계: 조립 및 출력 (composer)
   ├─ assembler.py (intro + body)
+  ├─ outline_md.py (outline.json + 태그 + 이미지 매핑 → outline.md)
   └─ naver_html.py (화이트리스트)
 
-7단계: CLI 통합
+8단계: CLI 통합
   └─ scripts/run_pipeline.py
 ```
 
@@ -847,6 +1015,9 @@ mypy domain/
 | 블로그 태그 추출 | 상위 글 각각에서 해시태그 리스트 정확 추출 (수동 검증 5개) |
 | 태그 집계 | 공통/빈출 태그 비율 계산이 수동 집계와 일치 |
 | 제안 태그 | 본문에 삽입되지 않고 `outline.md`/`outline.json`에만 존재. 목표 개수가 avg_tag_count_per_post 기준 유동 |
+| AI 이미지 prompt | 영어, 텍스트 금지(`no text`), 사람 금지(`no people/faces`), 전후 비교 금지 |
+| AI 이미지 생성 | 검증 통과한 prompt 만 호출, 캐시 동작, 예산 초과 시 스킵 |
+| 이미지 의료법 | 위반 prompt 차단·재생성·2회 후 스킵 (파이프라인 종료 X) |
 
 ---
 
@@ -862,6 +1033,8 @@ mypy domain/
 | **타임스탬프 재현성** | 같은 키워드 재실행 시 덮어쓰지 않고 이력 누적 |
 | **구조화 출력** | LLM 호출은 `tool_use`로 JSON 스키마 강제 |
 | **UI 비종속 도메인** | `domain/` 은 I/O·표현 로직 없음. 순수 함수 + Pydantic 반환. 오케스트레이션은 `application/` 에서만. Phase 2 Web UI 는 `application.orchestrator.*` 를 직접 호출 |
+| **이미지에 텍스트 금지** | AI 이미지 모델은 한글을 깨뜨리고, 텍스트 삽입은 의료법 위반 위험까지 동반. prompt 에 `no text`, `no letters` 강제. 텍스트 필요 시 본문 텍스트 또는 에디터 내 태그/제목으로 처리 |
+| **이미지 인물은 한국인 한정** | 사람·실사 인물 사진 모두 허용하되, prompt 에 인물 키워드가 있으면 반드시 `Korean` 동반. 외국인·서양인 외형 묘사 금지. 단, 의료 맥락(환자/전후/시술/신체 비교)은 인물 유무 무관 항상 금지 |
 
 ---
 
@@ -872,6 +1045,7 @@ mypy domain/
 - **Bright Data iframe 재요청 필요 여부**: 1단계 착수 직전 실측
 - **Claude Code 훅 환경 변수 이름**: 1단계 착수 시 실측 확인
 - **Bright Data zone 구성**: 사용자 진행 중 (`WEB_UNLOCKER_ZONE` 단일. SERP 도 Web Unlocker 로 처리)
+- **GOOGLE_API_KEY**: 사용자 제공 대기 (Google AI Studio 또는 Vertex AI 발급)
 
 ---
 
@@ -935,6 +1109,8 @@ def run_pipeline(
     keyword: str,
     reporter: ProgressReporter = None,      # None → LoggingProgressReporter()
     pattern_card_path: Path | None = None,  # None → 새로 분석, path → 재사용
+    generate_images: bool = True,           # False → [9] 이미지 생성 스킵
+    regenerate_images: bool = False,        # True → 이미지 캐시 무시하고 재생성
 ) -> PipelineResult: ...
 
 def run_analyze_only(
@@ -946,6 +1122,8 @@ def run_generate_only(
     keyword: str | None = None,
     pattern_card_path: Path | None = None,
     reporter: ProgressReporter = None,
+    generate_images: bool = True,
+    regenerate_images: bool = False,
 ) -> GenerateResult: ...
 
 def run_validate_only(
@@ -985,3 +1163,5 @@ def run_validate_only(
 - `2026-04-15`: 2차 비평 반영. (C1) iframe 재요청 실측 후 결정. (M1) fixer는 구절 치환 기본·문단 재생성 폴백. (M2) N<10 차별화 섹션 생략. (M3) 패턴 카드 `schema_version` 필드 추가. (M4) 태그 개수는 `round(avg)` 분석값 그대로(클램프 제거). (M5) `outline.md` 변환은 composer 도메인 담당
 - `2026-04-15`: Phase 2 Web UI(Next.js + FastAPI) 대비. `application/` 레이어 신설, ProgressReporter 프로토콜, 파이프라인 함수 시그니처 불변 확정, scripts/ 를 얇은 CLI 래퍼로 전환
 - `2026-04-15`: Bright Data SERP API 가 Naver 전용 지원이 없어 (Google/Bing/Yandex/Baidu 만) **SERP API 사용 철회**. SERP 수집과 본문 수집 모두 Web Unlocker 단일 zone + BeautifulSoup 파싱으로 전환. `BRIGHT_DATA_SERP_ZONE` 환경 변수 제거
+- `2026-04-16`: **AI 이미지 생성 단계 [9] 신설**. Gemini 3.1 Flash Image Preview 사용. 신규 도메인 `domain/image_generation/`. 이미지 prompt 는 [6] outline 단계에서 생성, [8] compliance 가 본문/태그/이미지 prompt 동시 검증, [9] 검증 통과 prompt 만 실행. 이미지에 텍스트 절대 금지 정책. SHA256 해시 기반 캐시 + 예산 가드. 기존 [9] HTML 조립이 [10] 으로 재번호. `GOOGLE_API_KEY` 환경 변수 추가
+- `2026-04-16`: 이미지 인물 정책 완화. 사람·얼굴·실사 인물 사진 허용, 단 prompt 에 인물 키워드가 있으면 `Korean` 명시 필수. 의료 맥락(환자/전후/시술/신체 비교) 은 인물 유무 무관 영구 금지. `no people` 필수 키워드 제거, `Korean` 조건부 필수로 전환

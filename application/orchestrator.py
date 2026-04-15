@@ -27,20 +27,24 @@ def run_pipeline(
     keyword: str,
     reporter: ProgressReporter | None = None,
     pattern_card_path: Path | None = None,
+    generate_images: bool = True,
+    regenerate_images: bool = False,
 ) -> PipelineResult:
-    """전체 8단계 파이프라인 실행.
+    """전체 [1]~[10] 파이프라인 실행.
 
     Args:
         keyword: 타겟 네이버 검색 키워드
         reporter: 진행 리포터. None 이면 LoggingProgressReporter 기본값
         pattern_card_path: 지정 시 기존 패턴 카드 재사용, None 이면 [1]~[5] 분석부터 실행
+        generate_images: False 면 [9] AI 이미지 생성 단계를 스킵
+        regenerate_images: True 면 prompt 해시 캐시를 무시하고 강제 재생성
 
     Returns:
         PipelineResult — 실행 결과. 실패도 예외 대신 status=FAILED 로 반환
     """
     _reporter = reporter or LoggingProgressReporter()
-    _ = (_reporter, keyword, pattern_card_path)
-    raise NotImplementedError("run_pipeline 은 1~6단계 도메인 구현 완료 후 7단계에서 채운다")
+    _ = (_reporter, keyword, pattern_card_path, generate_images, regenerate_images)
+    raise NotImplementedError("run_pipeline 은 1~7단계 도메인 구현 완료 후 8단계에서 채운다")
 
 
 def run_analyze_only(
@@ -60,8 +64,10 @@ def run_generate_only(
     keyword: str | None = None,
     pattern_card_path: Path | None = None,
     reporter: ProgressReporter | None = None,
+    generate_images: bool = True,
+    regenerate_images: bool = False,
 ) -> GenerateResult:
-    """[6]~[9] 생성 파이프라인만 실행.
+    """[6]~[10] 생성 파이프라인만 실행.
 
     keyword 지정 시 DB 에서 최신 패턴 카드 조회.
     pattern_card_path 지정 시 해당 파일 사용.
@@ -70,7 +76,7 @@ def run_generate_only(
         raise ValueError("keyword 또는 pattern_card_path 중 하나는 필요")
 
     _reporter = reporter or LoggingProgressReporter()
-    _ = (_reporter, keyword, pattern_card_path)
+    _ = (_reporter, keyword, pattern_card_path, generate_images, regenerate_images)
     raise NotImplementedError("run_generate_only 는 4단계 구현 시 채운다")
 
 

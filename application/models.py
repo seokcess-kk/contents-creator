@@ -57,7 +57,7 @@ class AnalyzeResult(BaseModel):
 
 
 class GenerateResult(BaseModel):
-    """`run_generate_only` 의 반환 타입. [6]~[9] 생성만 실행."""
+    """`run_generate_only` 의 반환 타입. [6]~[10] 생성 + 이미지 + 조립 실행."""
 
     status: StageStatus
     keyword: str
@@ -65,6 +65,9 @@ class GenerateResult(BaseModel):
     seo_content_md_path: Path | None = None
     seo_content_html_path: Path | None = None
     outline_md_path: Path | None = None
+    images_dir: Path | None = None
+    images_generated: int = 0
+    images_skipped: int = 0
     compliance_passed: bool | None = None
     compliance_iterations: int | None = None
     stages: list[StageResult] = Field(default_factory=list)

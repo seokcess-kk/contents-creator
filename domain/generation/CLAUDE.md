@@ -23,19 +23,42 @@
 
 ## 핵심 규칙
 
-- [6] 아웃라인 출력: 제목 + 섹션 구조 + 도입부 200~300자 확정본 + `suggested_tags`
+- [6] 아웃라인 출력: 제목 + 섹션 구조 + 도입부 200~300자 + `suggested_tags` + **`image_prompts`**
 - [7] 본문은 **2번째 섹션부터만** 생성. 도입부는 재생성하지 않음
 - 모델: Opus 4.6 (두 단계 모두)
 - LLM 호출은 `tool_use` 로 JSON 스키마 강제 (Pydantic → JSON schema)
 - 중립화 프롬프트: 홍보성 소구 포인트를 일반 정보로 재서술 지시
 - 태그 개수는 `round(avg_tag_count_per_post)` 분석값 그대로. 클램프 없음 (Naver 30개 상한만 예외)
+- **이미지 prompt 개수**는 `round(image_pattern.avg_count_per_post)` 분석값 그대로. 예산 가드는 [9] 단계에서
+
+## 이미지 prompt 생성 규칙 ([6] 단계)
+
+`prompt_builder.build_outline_prompt` 가 LLM 에게 image_prompts 를 만들도록 지시할 때 다음 제약을 강제 주입한다:
+
+- **언어: 영어** — Gemini Image 모델은 영어가 안정적
+- **각 prompt 에 반드시 포함**: `no text` (또는 `no letters`) + 권장 스타일 1개 + 시나리오 + 색감
+- **인물 등장 시 필수**: `Korean` 키워드 명시 (예: `Korean woman`, `Korean man`, `Korean person`, `Korean family`). 외국인 외형 금지
+- **권장 시나리오** (한국적 맥락):
+  - 한식 요리·식사, 한방 재료, 한국 자연·풍경
+  - 라이프스타일 (요가, 산책, 명상, 차 마시기)
+  - 한국인 일상 (운동복 입은 한국 여성, 식사하는 한국 가족 등)
+- **권장 스타일**: `realistic photography`, `lifestyle photography`, `natural lighting`, `cinematic`, `high quality DSLR`, `flat illustration`, `minimalist infographic`, `food photography`
+- **금지 키워드** (인물 유무 무관):
+  - 환자: `patient`, `환자`, `injured`, `sick person`
+  - 전후 비교: `before/after`, `comparison shot`, `weight loss progression`
+  - 시술: `medical procedure`, `surgery`, `injection`
+  - 신체 비교: `body comparison`, `naked`, `nude`
+  - 효과 보장: `100%`, `guarantee`
+- **종횡비**: 1024x1024
+
+이 규칙은 [8] compliance + [9] image_generation 도메인이 한 번 더 검증한다. 3중 안전망.
 
 ## 파일 책임
 
 - `prompt_builder.py` — **단일 프롬프트 진입점**
 - `outline_writer.py` — [6] 아웃라인 + 도입부 생성 (Opus 4.6, tool_use)
 - `body_writer.py` — [7] 본문 생성 (Opus 4.6, intro 미유입)
-- `model.py` — `Outline`, `OutlineSection`, `BodyResult`, `SuggestedTags` Pydantic 모델
+- `model.py` — `Outline`, `OutlineSection`, `BodyResult`, `SuggestedTags`, `ImagePromptDraft` Pydantic 모델
 
 ## 금지
 

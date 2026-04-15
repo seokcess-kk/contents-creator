@@ -97,6 +97,27 @@ ALLOWED_TAGS = {
 
 ## 설계 결정
 
+### AI 이미지 인물 정책 — 한국인 한정 허용 (2026-04-16)
+
+**결정**: 사람·얼굴·실사 인물 사진을 모두 허용. 단, prompt 에 인물 키워드가 등장하면 반드시 `Korean` 명시.
+
+**이유**: SEO 블로그에서 라이프스타일 사진(요가, 식사, 산책 등)이 핵심 노출 신호. 무조건 금지하면 이미지 품질·자연스러움이 떨어진다. 외국인 외형은 한국 콘텐츠 맥락과 어긋나므로 한국인으로 통일.
+
+**유지되는 금지** (인물 유무 무관 영구):
+- 환자 묘사 (`patient`, `환자`, `injured`)
+- 전후 비교 (`before/after`, `weight loss progression`)
+- 시술 장면 (`medical procedure`, `surgery`, `injection`)
+- 신체 비교 (`body comparison`, `naked`)
+- 효과 보장 (`100%`, `guarantee`)
+
+**구현**: 
+- `validate_prompt()` 가 사람 키워드 (`person`, `people`, `man`, `woman`, `face`, `portrait`, `family`, `child`) 감지 시 `Korean` 동반 확인
+- 누락 시 fixer 가 `Korean` 자동 보강
+- [6] outline LLM 프롬프트에 "인물 시 `Korean` 명시" 강제 주입
+- 권장 시나리오에 한국적 라이프스타일 (한식, 한방, 한국 자연 등) 우선
+
+**텍스트 금지는 불변**: Gemini 가 한글을 깨뜨리므로 모든 prompt 에 `no text`/`no letters` 항상 필수.
+
 ### Bright Data — SERP API 대신 Web Unlocker 단일 zone (2026-04-15)
 
 **발견**: Bright Data SERP API 는 전용 파서를 제공하는 검색 엔진이 Google / Bing / Yandex / Baidu 로 한정되어 있고 **Naver 는 지원하지 않는다** (대시보드의 검색 엔진 드롭다운에 Google 만 노출).

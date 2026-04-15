@@ -52,6 +52,7 @@
 - [ ] `config/.env` 에 다음 키 모두 채움:
   - `BRIGHT_DATA_API_KEY`, `BRIGHT_DATA_WEB_UNLOCKER_ZONE` (SERP 도 Web Unlocker 로 처리)
   - `ANTHROPIC_API_KEY`
+  - **`GOOGLE_API_KEY`** (Google AI Studio 발급 — Gemini 3.1 Flash Image Preview 용)
   - `SUPABASE_URL`, `SUPABASE_KEY`
 - [ ] `python -c "from config.settings import settings; print(settings.bright_data_api_key is not None)"` 로 로드 확인
 
@@ -67,14 +68,15 @@
 - [ ] `bash .claude/hooks/build-check.sh` 통과
 - [ ] `tasks/lessons.md` 에 수집 결과 기록
 
-## 🔮 Phase 2~6 — 이후 단계 (각 단계 착수 시 분해)
+## 🔮 Phase 2~7 — 이후 단계 (각 단계 착수 시 분해)
 
-- Phase 2: 물리 분석 (`physical_extractor`)
+- Phase 2: 물리 분석 (`physical_extractor`) — 이미지 메타 추출 포함 (`image_pattern`)
 - Phase 3: 의미 + 소구 + 교차 분석 (`semantic_extractor`, `appeal_extractor`, `cross_analyzer`, `pattern_card`)
-- Phase 4: 생성 (`prompt_builder`, `outline_writer`, `body_writer`) — M2 불변 규칙 적용
-- Phase 5: 의료법 검증 (`rules`, `checker`, `fixer`) — 사용자 제공 8개 카테고리 필요
-- Phase 6: 조립 (`assembler`, `outline_md`, `naver_html`)
-- Phase 7: 통합 + E2E 테스트 + `run_pipeline` 본문 채움
+- Phase 4: 생성 (`prompt_builder`, `outline_writer`, `body_writer`) — M2 불변 규칙 + image_prompts 생성
+- Phase 5: 의료법 검증 (`rules`, `checker`, `fixer`) — 본문/태그/이미지 prompt 동시 검증. 사용자 제공 8개 카테고리 필요
+- **Phase 6: AI 이미지 생성** 🆕 (`domain/image_generation/`) — Gemini 3.1 Flash Image Preview, 캐시 + 예산 + 재시도
+- Phase 7: 조립 (`assembler`, `outline_md`, `naver_html`) — outline.md 에 이미지 매핑 가이드
+- Phase 8: 통합 + E2E 테스트 + `run_pipeline` 본문 채움
 
 ## ⚠️ 사용자 제공 대기 중
 

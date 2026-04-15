@@ -30,7 +30,21 @@
 - 재시도는 최대 2회. `while True:` 무한 루프 금지
 - 검증 결과는 `ComplianceReport` Pydantic 모델로 반환. 실패를 `raise` 가 아닌 `ComplianceReport(passed=False)` 로 처리
 - 태그(`suggested_tags`)도 검증 대상. 위반 태그는 유사어 교체 또는 목록에서 제거
+- **이미지 prompt(`image_prompts`) 도 검증 대상**. 위반 prompt 는 fixer 가 안전한 대안으로 재생성, 2회 후 실패 시 해당 슬롯 스킵
 - 모델: Sonnet 4.6, `tool_use` 로 구조화 출력
+
+## 이미지 prompt 검증 추가 규칙
+
+- **필수 포함 (항상)**: `no text` 또는 `no letters` (Gemini 한글 깨짐 방지)
+- **조건부 필수 (인물 등장 시)**: prompt 에 사람 키워드 (`person`, `people`, `man`, `woman`, `face`, `portrait`, `family`, `child`) 가 있으면 → 반드시 `Korean` 동반. 누락 시 fixer 가 `Korean` 추가
+- **금지 키워드** (인물 유무 무관 영구 금지):
+  - 환자: `patient`, `환자`, `injured`, `sick person`
+  - 전후 비교: `before/after`, `before and after`, `comparison shot`, `weight loss progression`
+  - 시술: `medical procedure`, `surgery`, `injection`, `treatment scene`
+  - 신체 비교: `body comparison`, `naked`, `nude`
+  - 효과 보장: `100%`, `guarantee`
+- **rules.py 의 일반 금지 표현**도 prompt·alt_text 양쪽에 적용 (단일 출처 원칙)
+- 위반 시 fixer 는 안전한 대체 prompt 를 LLM 에게 재요청. 2회 시도 후 실패 → `ComplianceReport.image_skipped` 에 sequence 기록 (파이프라인 종료 X)
 
 ## 파일 책임
 

@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     # Anthropic Claude (생성·분석·의료법 검증)
     anthropic_api_key: str | None = Field(default=None, description="Anthropic API key")
 
+    # Google Gen AI (이미지 생성 — Gemini 3.1 Flash Image Preview)
+    google_api_key: str | None = Field(default=None, description="Google AI Studio API key")
+
     # Supabase (패턴 카드 저장소)
     supabase_url: str | None = Field(default=None, description="Supabase project URL")
     supabase_key: str | None = Field(default=None, description="Supabase service role key")
@@ -41,11 +44,17 @@ class Settings(BaseSettings):
     # LLM 모델 식별자 (SPEC.md §5 — 역할별 매핑)
     model_opus: str = "claude-opus-4-6"
     model_sonnet: str = "claude-sonnet-4-6"
+    image_model: str = "gemini-3.1-flash-image-preview"
+    image_size: str = "1024x1024"
 
     # 파이프라인 동작 상수
     min_analyzed_samples: int = 7
     retry_max_attempts: int = 2
     llm_tool_use_timeout_seconds: int = 60
+
+    # 이미지 생성 안전장치
+    image_generation_budget_per_run: int = 10  # 한 파이프라인 실행 시 최대 이미지 수
+    image_cache_dir: str = "output/_image_cache"
 
 
 settings = Settings()  # type: ignore[call-arg]
