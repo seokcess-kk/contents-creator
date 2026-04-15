@@ -49,6 +49,7 @@ class ViolationCategory(str, Enum):
 - 모든 금지 표현 regex는 `rules.py`에만 정의
 - `checker.py`, `fixer.py`, `prompt_builder.py`는 `rules.py`를 **참조만** 하고 자체 정의하지 않는다
 - 새 위반 케이스 발견 시 `rules.py`에만 추가
+- `rules.py` 는 `CompliancePolicy` enum 으로 복수 프로필 지원. 이 스킬의 "8개 카테고리"는 `SEO_STRICT` 프로필 기준. 브랜드 카드 트랙용 `BRAND_LENIENT` 프로필은 `SPEC-BRAND-CARD.md` §7 참조. `checker(text, policy=CompliancePolicy.SEO_STRICT)` 형태로 호출 (기본값 `SEO_STRICT`)
 
 ## [8] 검증 파이프라인
 

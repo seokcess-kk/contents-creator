@@ -1,5 +1,5 @@
--- Contents Creator — Supabase 스키마 v2
--- 참조: SPEC-SEO-TEXT.md §4
+-- Contents Creator — Supabase 스키마 v3
+-- 참조: SPEC-SEO-TEXT.md §4 (SEO 트랙), SPEC-BRAND-CARD.md §9 (브랜드 카드 트랙)
 -- 적용: Supabase 대시보드 SQL Editor 에 전체 붙여넣기
 
 -- ============================================================
@@ -64,8 +64,97 @@ alter default privileges in schema public
 
 
 -- ============================================================
+-- 브랜드 카드 트랙 (SPEC-BRAND-CARD.md §9)
+--
+-- SEO 트랙(pattern_cards, generated_contents) 과 외래키 관계 없음.
+-- 완전 격리. run_full_package 는 application 레이어에서만 합류.
+-- ============================================================
+
+-- 브랜드 프로필 (upsert 단위, §4-6)
+create table if not exists brand_profiles (
+    id uuid primary key default gen_random_uuid(),
+    name text not null,
+    slug text not null unique,
+    homepage_url text not null,
+    locale text default 'ko-KR',
+    current_asset_version int default 1,
+    created_at timestamptz default now(),
+    updated_at timestamptz default now()
+);
+
+create index if not exists idx_brand_profiles_slug
+    on brand_profiles (slug);
+
+
+-- 브랜드 자산 (버전별, 텍스트 기반 자산만)
+-- media_library 는 여기가 아니라 brand_media_assets 로 분리 (brand 레벨 공유)
+create table if not exists brand_assets (
+    id uuid primary key default gen_random_uuid(),
+    brand_id uuid references brand_profiles(id) on delete cascade,
+    version int not null,
+    design_guide jsonb not null,
+    business_context jsonb not null,
+    brand_guideline jsonb not null,
+    logo_url text,
+    raw_source_paths jsonb,            -- 로컬 파일 경로 리스트
+    created_at timestamptz default now(),
+    unique (brand_id, version)
+);
+
+create index if not exists idx_brand_assets_brand
+    on brand_assets (brand_id, version desc);
+
+
+-- 브랜드 미디어 라이브러리 (실사 사진) — brand 레벨, asset_version 무관
+create table if not exists brand_media_assets (
+    id uuid primary key default gen_random_uuid(),
+    brand_id uuid references brand_profiles(id) on delete cascade,
+    type text not null,                -- doctor | facility | equipment | cert | other
+    file_path text not null,
+    file_sha256 text not null,         -- 중복 업로드 검출용
+    title text,
+    description text,
+    orientation text,                  -- portrait | landscape | square
+    width int,
+    height int,
+    tags jsonb default '[]'::jsonb,
+    created_at timestamptz default now(),
+    unique (brand_id, file_sha256)     -- 같은 브랜드에 동일 파일 중복 방지
+);
+
+create index if not exists idx_brand_media_assets_brand
+    on brand_media_assets (brand_id, type);
+
+
+-- 생성된 브랜드 카드 (키워드별 variant 추적)
+create table if not exists brand_cards (
+    id uuid primary key default gen_random_uuid(),
+    brand_id uuid references brand_profiles(id) on delete cascade,
+    brand_asset_version int not null,
+    keyword text not null,
+    variant_idx int not null,
+    template_id text not null,
+    angle text,
+    height_px int,
+    block_count int,
+    png_path text not null,             -- 로컬 파일 경로
+    png_meta jsonb,                     -- 텍스트 본문, 블록 시퀀스, 분할 정보 등
+    compliance_passed boolean,
+    compliance_iterations int,
+    recommended_position text,          -- intro | mid | ending
+    created_at timestamptz default now()
+);
+
+create index if not exists idx_brand_cards_brand
+    on brand_cards (brand_id, created_at desc);
+
+create index if not exists idx_brand_cards_keyword
+    on brand_cards (keyword, created_at desc);
+
+
+-- ============================================================
 -- 향후 확장 시 이 파일에 테이블 추가 (Phase 2):
---   - client_profiles  (클라이언트 프로필)
---   - design_cards     (브랜드 카드)
---   - visual_patterns  (비주얼 분석)
+--   - client_profiles  (클라이언트 프로필, 브랜드와 구분)
+--   - visual_patterns  (비주얼 분석 / VLM)
+--   - ab_test_results  (카드 A/B 테스트)
 -- ============================================================

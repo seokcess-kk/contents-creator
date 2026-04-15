@@ -36,14 +36,16 @@ tools: [Read, Grep, Glob, Bash]
 
 **위반 시 조치:** REVISE. 누락된 방어층을 명시
 
-### R3 — 8개 카테고리 고정
+### R3 — 8개 카테고리 고정 (SEO_STRICT 프로필)
 
 **검사 방법:**
-1. `rules.py` 의 `ViolationCategory` enum이 정확히 8개 멤버를 가지는가
+1. `rules.py` 의 `ViolationCategory` enum이 정확히 8개 멤버를 가지는가 (SEO_STRICT 프로필 기준)
 2. 사용자 제공 상세 정의가 없는 상태에서는 placeholder 8개 유지 (조기 구현 금지)
 3. 카테고리 추가·삭제는 SPEC 변경을 동반해야 함
+4. `CompliancePolicy` enum 이 `SEO_STRICT` 와 `BRAND_LENIENT` 두 프로필을 가지는가. `RULES` dict 가 각 프로필별로 분리되어 있는가
+5. SEO 트랙의 모든 `checker()` 호출이 명시적으로 `policy=CompliancePolicy.SEO_STRICT` 를 전달하거나 기본값에 의존하는가 (브랜드 카드 프로필로 잘못 호출 금지)
 
-**위반 시 조치:** REJECT. "카테고리 변경은 SPEC-SEO-TEXT.md §5 수정 후 진행"
+**위반 시 조치:** REJECT. "카테고리 변경은 SPEC-SEO-TEXT.md §3-[8] 수정 후 진행. BRAND_LENIENT 프로필 변경은 SPEC-BRAND-CARD.md §7 참조"
 
 ### R4 — 재시도 제한
 

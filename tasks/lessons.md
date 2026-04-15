@@ -3,6 +3,157 @@
 > 사용자 교정이나 반복 실수 발견 시 이 파일에 기록.
 > 세션 시작 시 이 파일을 리뷰. 반복 패턴 발견 시 `CLAUDE.md` 에 규칙으로 승격.
 
+## 실측 결과 (Phase 0.6 — 브랜드 카드 트랙)
+
+### [BC-1] Playwright Chromium 렌더 (2026-04-16 실측 완료) ✅
+
+**환경**: Windows, `.venv/Scripts/python.exe`, `playwright==1.58.0`, `chromium-1208` (`~/AppData/Local/ms-playwright/chromium-1208/chrome-win64/chrome.exe`).
+
+**절차**:
+1. `pip install -e ".[dev]"` — 신규 의존성 6종(playwright/jinja2/python-docx/pypdf/pdfplumber/pillow) 정상 설치. google-genai 1.73.1 자동 포함
+2. `python -m playwright install chromium` — Windows Chromium 바이너리 다운로드 성공 (로그 출력 없음, 약 300MB 디스크 사용)
+3. `sync_playwright()` 로 launch → new_page(viewport 1080×100) → goto(file://) → `wait_for_load_state("networkidle")` → `page.screenshot(full_page=True)`
+
+**결과** (`dev/active/bc-tests/bc1_render.py` + `bc1-sample.html`):
+- 풀페이지 PNG: 1080×1601, 98KB, mode=RGB
+- `body.scrollHeight === png.height` 일치 (픽셀 누락 없음)
+- 한글 렌더 정상, Windows 환경 설치 블로커 없음
+
+**결정**: Playwright sync API 채택 확정. `viewport height=100` + `full_page=True` 패턴이 가장 단순하고 정확.
+
+---
+
+### [BC-2] Pretendard 웹폰트 임베딩 (2026-04-16 실측 완료) ✅
+
+**폰트**: Pretendard Variable woff2 (v1.3.9, `orioncactus/pretendard` OFL 라이선스). 2.0MB. jsdelivr CDN 에서 다운로드 → `assets/fonts/Pretendard-Regular.woff2` 저장.
+
+**CSS**:
+```css
+@font-face {
+  font-family: 'Pretendard';
+  font-weight: 45 920;
+  font-style: normal;
+  font-display: block;
+  src: url('...Pretendard-Regular.woff2') format('woff2-variations');
+}
+```
+
+**검증**:
+- `document.fonts.ready` 후 `document.fonts.size === 1` (Pretendard 1개 정상 등록)
+- `getComputedStyle('.hero h1').fontFamily === "Pretendard, -apple-system, sans-serif"` (fallback 사용 안 함)
+- 렌더 이미지 육안 검사: 한글 렌더링 깨짐 0건 (히어로 72px + 본문 22px + 카드 24px 혼합 크기 모두 정상)
+
+**결정**:
+- 폰트 경로는 `assets/fonts/` 루트 공용 (브랜드 카드·SEO 양 트랙 공유)
+- `font-display: block` — FOUT 방지 (Playwright 가 `fonts.ready` 를 대기하므로 FOIT 도 없음)
+- Pretendard Variable 하나면 heading/body 모두 커버 가능 (weight 45~920)
+
+---
+
+### [BC-3] PDF 파싱 (2026-04-16 — 사용자 샘플 대기 중) ⏸
+
+- 의존성 설치 완료: `pypdf==6.10.2`, `pdfplumber==0.11.9`
+- 사용자가 PDF 3종(스캔·텍스트·혼합) 업로드 후 재개
+- 예정 경로: `dev/active/bc-tests/samples/*.pdf`
+
+---
+
+### [BC-4] docx 파싱 (2026-04-16 — 사용자 샘플 대기 중) ⏸
+
+- 의존성 설치 완료: `python-docx==1.2.0`
+- 사용자가 표 포함 docx 1개 업로드 후 재개
+
+---
+
+### [BC-5] 로고 자동 추출 셀렉터 (2026-04-16 로직 검증 완료) ✅
+
+**Phase 1 — 로컬 fixture 7/7 통과** (`dev/active/bc-tests/bc5_logo.py`):
+
+| case | HTML 패턴 | 기대 셀렉터 | 결과 |
+|---|---|---|---|
+| 1 | `<link rel="icon">` | `link[rel=icon]` | ✅ |
+| 2 | `<meta property="og:image">` | `meta[og:image]` | ✅ |
+| 3 | `<header><img alt="Company Logo">` | `header img[alt*=logo]` | ✅ |
+| 4 | `<div class="site-logo"><img>` | `[class*=logo] img` | ✅ |
+| 5 | `<img src="/logo-mark.png">` | `img[src*=logo]` | ✅ |
+| 6 | link + og:image 공존 | `link[rel=icon]` (우선순위) | ✅ |
+| 7 | 아무것도 없음 | `none` | ✅ |
+
+**폴백 순서 확정** (단일 출처: `domain/brand_card/source_loader.py`):
+1. `<link rel="apple-touch-icon"|"icon"|"shortcut icon">` — 브랜드 아이콘 우선
+2. `<meta property="og:image">` — SNS 대표 이미지
+3. `<header> img[alt*=logo]` — 헤더 로고
+4. `[class*=logo]` 하위 img — 클래스 명명 관례
+5. `img[src*=logo]` — 파일명 관례
+
+**Phase 2 — 실존 홈페이지 실측 (사용자 URL 리스트 대기)** ⏸
+- 한의원 5~10곳 공개 홈페이지 URL 제공 시 동일 로직으로 실측 후 성공률 집계 예정
+
+---
+
+### [BC-6] Gemini Nano Banana (2026-04-16 실측 완료) ✅
+
+**모델명 확정**: `gemini-2.5-flash-image` (정식 이름, `-preview` 접미사 없음).
+
+**호출 결과** (`dev/active/bc-tests/bc6_gemini.py`):
+- 응답시간: **9.27초** (SAFE 프롬프트 1회)
+- 출력: `image/png`, **1.15 MB**, `finish_reason=STOP`
+- safety filter 차단 없음
+- 이미지 품질: 프롬프트 지시(beige/forest green 팔레트, flat illustration, no text, no people) 모두 정확 반영
+
+**프롬프트** (영어, 브랜드 카드 배경·아이콘 슬롯 용 패턴):
+```
+A minimalist flat illustration of a traditional Korean herbal tea bowl
+with steam rising, warm beige and forest green color palette,
+editorial style, soft lighting, no text, no people, 1:1 aspect ratio
+```
+
+**API 변경 주의**:
+- `google-genai==1.73.1` 는 `GOOGLE_API_KEY` 환경 변수를 `GEMINI_API_KEY` 보다 우선. 두 키 모두 있을 경우 "Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY." 경고 출력. 운영에선 하나만 사용 권장
+- 응답 파싱: `response.candidates[0].content.parts[i].inline_data.data` 에 바이트 저장. `mime_type` 필드 확인 후 저장
+
+**SHA256 캐시 키 일관성**: 동일 `(prompt + model)` 으로 2회 해시 → 동일 값. SPEC §5-4 캐시 키 전략 안전.
+
+**추후 실측 필요**: 의료 키워드 safety 필터링 차단율 측정 (`clinic`, `treatment`, `medical procedure`, `before after`, `patient` 5종). 이번 실측은 안전한 첫 호출만 진행. 실제 사용 전 별도 스트레스 테스트 권장.
+
+**비용·지연 추정**: 1장당 9초 + Nano Banana 비용(TBD). 카드당 평균 3개 이미지 × variant 3 = 9 이미지 → 약 80초 + 캐시 히트 시 단축.
+
+---
+
+### [BC-7] Playwright 블록 경계 기반 분할 (2026-04-16 실측 완료) ✅
+
+**시나리오**: 10400px 세로 HTML (6 블록 × 평균 1733px) → soft max 9000px 초과 → 자동 분할.
+
+**DOM 경계 추출**:
+```js
+Array.from(document.querySelectorAll('section.block')).map(b =>
+  Math.round(b.getBoundingClientRect().bottom + window.scrollY)
+)
+// → [1800, 3600, 5400, 7200, 9000, 10400]
+```
+
+**그리디 분할 결과**:
+- 조각 `a`: y=0~7200 (7200px) → 블록 1~4 포함 ✅
+- 조각 `b`: y=7200~10400 (3200px) → 블록 5~6 포함 ✅
+- 블록 중간 절단 0건 (모든 cut 이 block boundary 에 정확 일치)
+- 합계 = 10400 = 원본 총 높이 (픽셀 누락 0)
+
+**Pillow 크롭**:
+```python
+Image.open(full_png).crop((0, y_start, 1080, y_end)).save(out, optimize=True)
+```
+- `a`: 450KB, `b`: 199KB
+
+**SPEC §2-4 보완 필요**:
+- 현재 SPEC 은 "각 조각 세로 4000~8000" 라고 명시하지만, **마지막 조각은 예외 허용 필수** (남은 높이가 4000 미만이어도 잘라낼 수 없음). 위 실측의 `b` 조각이 3200px 으로 target_min 미만.
+- 대안: (a) 마지막 조각 예외 허용, (b) 첫 조각을 줄여서 밸런싱(5200+5200 같은)
+- 권장: 마지막 조각 예외 허용. "첫 조각 greedy 최대화" 패턴이 구현 단순하고, 마지막이 작아도 가독성 문제 없음
+- SPEC 반영 예정 (Phase B7 진입 시)
+
+**결정**: Playwright `full_page=True` 로 한 번 렌더 → 분할이 필요하면 **메모리의 PIL Image 에서 크롭**. 재렌더 없음. 성능 OK.
+
+---
+
 ## 실측 결과 (Phase 0.5)
 
 ### [B3] 네이버 스마트에디터 HTML 호환성 (2026-04-15 실측 완료)

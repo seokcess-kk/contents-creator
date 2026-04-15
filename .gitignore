@@ -36,3 +36,6 @@ Thumbs.db
 output/
 dev/active/context.md
 dev/active/hook-debug.log
+# Phase 0.6 실측 산출물 — 스크립트·HTML만 커밋, 생성된 PNG 는 재현 가능
+dev/active/bc-tests/*.png
+dev/active/bc-tests/fixtures/
