@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = Field(default=None, description="Anthropic API key")
 
     # Google Gen AI (이미지 생성 — Gemini 3.1 Flash Image Preview)
-    google_api_key: str | None = Field(default=None, description="Google AI Studio API key")
+    gemini_api_key: str | None = Field(default=None, description="Google AI Studio API key")
 
     # Supabase (패턴 카드 저장소)
     supabase_url: str | None = Field(default=None, description="Supabase project URL")

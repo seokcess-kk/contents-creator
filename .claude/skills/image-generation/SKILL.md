@@ -18,7 +18,7 @@ description: Google Gemini 3.1 Flash Image Preview 로 SEO 블로그용 AI 이�
 ## 환경 변수 (config/.env)
 
 ```
-GOOGLE_API_KEY=...
+GEMINI_API_KEY=...
 ```
 
 `config/settings.py` 에 다음 상수 있음:
@@ -33,7 +33,7 @@ GOOGLE_API_KEY=...
 from google import genai
 from google.genai import types
 
-client = genai.Client(api_key=settings.google_api_key)
+client = genai.Client(api_key=settings.gemini_api_key)
 
 response = client.models.generate_content(
     model=settings.image_model,

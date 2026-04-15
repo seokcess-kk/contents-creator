@@ -565,6 +565,8 @@ HTML 파싱으로 정량 데이터 추출. LLM 불필요.
 
 생성된 원고를 의료법 8개 카테고리 기준으로 검증하고 위반 시 자동 수정.
 
+> **컴플라이언스 정책 프로필**: `domain/compliance/rules.py` 는 `CompliancePolicy` enum 으로 복수 프로필을 동시 관리한다. SEO 트랙은 기본값 `SEO_STRICT` (8개 카테고리 전부). 브랜드 카드 트랙은 `BRAND_LENIENT` (법적 risk 만). `checker(text, policy=CompliancePolicy.SEO_STRICT)` 형태로 호출한다. 프로필 상세·매핑 규칙은 `SPEC-BRAND-CARD.md` §7 참조.
+
 **3중 방어:**
 1. **1차 (생성 시)** — [6][7] 프롬프트에 의료법 규칙 사전 주입 ✅
 2. **2차 (생성 후)** — 규칙 기반 + LLM 판단 검증
@@ -631,7 +633,7 @@ LLM 검증 (Sonnet, tool_use로 구조화 출력) — 본문/태그/이미지 pr
 
 **모델·설정**:
 - 모델: `gemini-3.1-flash-image-preview` (Google Gen AI SDK)
-- 환경 변수: `GOOGLE_API_KEY`
+- 환경 변수: `GEMINI_API_KEY`
 - 출력 사이즈: `1024x1024` (정사각, 네이버 본문 친화)
 - 응답 modality: `IMAGE`
 
@@ -640,7 +642,7 @@ LLM 검증 (Sonnet, tool_use로 구조화 출력) — 본문/태그/이미지 pr
 from google import genai
 from google.genai import types
 
-client = genai.Client(api_key=settings.google_api_key)
+client = genai.Client(api_key=settings.gemini_api_key)
 
 response = client.models.generate_content(
     model=settings.image_model,
@@ -881,7 +883,7 @@ contents-creator/
 │   └── test_composer/
 │
 ├── config/
-│   ├── .env                           ← BRIGHT_DATA_API_KEY, BRIGHT_DATA_WEB_UNLOCKER_ZONE, ANTHROPIC_API_KEY, GOOGLE_API_KEY, SUPABASE_URL, SUPABASE_KEY
+│   ├── .env                           ← BRIGHT_DATA_API_KEY, BRIGHT_DATA_WEB_UNLOCKER_ZONE, ANTHROPIC_API_KEY, GEMINI_API_KEY, SUPABASE_URL, SUPABASE_KEY
 │   ├── settings.py                    ← 환경 변수 로드
 │   ├── supabase.py                    ← DB 클라이언트
 │   └── schema.sql                     ← 위 DDL
@@ -1046,7 +1048,7 @@ mypy domain/
 - **Bright Data iframe 재요청 필요 여부**: 1단계 착수 직전 실측
 - **Claude Code 훅 환경 변수 이름**: 1단계 착수 시 실측 확인
 - **Bright Data zone 구성**: 사용자 진행 중 (`WEB_UNLOCKER_ZONE` 단일. SERP 도 Web Unlocker 로 처리)
-- **GOOGLE_API_KEY**: 사용자 제공 대기 (Google AI Studio 또는 Vertex AI 발급)
+- **GEMINI_API_KEY**: 사용자 제공 대기 (Google AI Studio 또는 Vertex AI 발급)
 
 ---
 
@@ -1164,5 +1166,5 @@ def run_validate_only(
 - `2026-04-15`: 2차 비평 반영. (C1) iframe 재요청 실측 후 결정. (M1) fixer는 구절 치환 기본·문단 재생성 폴백. (M2) N<10 차별화 섹션 생략. (M3) 패턴 카드 `schema_version` 필드 추가. (M4) 태그 개수는 `round(avg)` 분석값 그대로(클램프 제거). (M5) `outline.md` 변환은 composer 도메인 담당
 - `2026-04-15`: Phase 2 Web UI(Next.js + FastAPI) 대비. `application/` 레이어 신설, ProgressReporter 프로토콜, 파이프라인 함수 시그니처 불변 확정, scripts/ 를 얇은 CLI 래퍼로 전환
 - `2026-04-15`: Bright Data SERP API 가 Naver 전용 지원이 없어 (Google/Bing/Yandex/Baidu 만) **SERP API 사용 철회**. SERP 수집과 본문 수집 모두 Web Unlocker 단일 zone + BeautifulSoup 파싱으로 전환. `BRIGHT_DATA_SERP_ZONE` 환경 변수 제거
-- `2026-04-16`: **AI 이미지 생성 단계 [9] 신설**. Gemini 3.1 Flash Image Preview 사용. 신규 도메인 `domain/image_generation/`. 이미지 prompt 는 [6] outline 단계에서 생성, [8] compliance 가 본문/태그/이미지 prompt 동시 검증, [9] 검증 통과 prompt 만 실행. 이미지에 텍스트 절대 금지 정책. SHA256 해시 기반 캐시 + 예산 가드. 기존 [9] HTML 조립이 [10] 으로 재번호. `GOOGLE_API_KEY` 환경 변수 추가
+- `2026-04-16`: **AI 이미지 생성 단계 [9] 신설**. Gemini 3.1 Flash Image Preview 사용. 신규 도메인 `domain/image_generation/`. 이미지 prompt 는 [6] outline 단계에서 생성, [8] compliance 가 본문/태그/이미지 prompt 동시 검증, [9] 검증 통과 prompt 만 실행. 이미지에 텍스트 절대 금지 정책. SHA256 해시 기반 캐시 + 예산 가드. 기존 [9] HTML 조립이 [10] 으로 재번호. `GEMINI_API_KEY` 환경 변수 추가
 - `2026-04-16`: 이미지 인물 정책 완화. 사람·얼굴·실사 인물 사진 허용, 단 prompt 에 인물 키워드가 있으면 `Korean` 명시 필수. 의료 맥락(환자/전후/시술/신체 비교) 은 인물 유무 무관 영구 금지. `no people` 필수 키워드 제거, `Korean` 조건부 필수로 전환

@@ -52,7 +52,7 @@
 - [ ] `config/.env` 에 다음 키 모두 채움:
   - `BRIGHT_DATA_API_KEY`, `BRIGHT_DATA_WEB_UNLOCKER_ZONE` (SERP 도 Web Unlocker 로 처리)
   - `ANTHROPIC_API_KEY`
-  - **`GOOGLE_API_KEY`** (Google AI Studio 발급 — Gemini 3.1 Flash Image Preview 용)
+  - **`GEMINI_API_KEY`** (Google AI Studio 발급 — Gemini 3.1 Flash Image Preview 용)
   - `SUPABASE_URL`, `SUPABASE_KEY`
 - [ ] `python -c "from config.settings import settings; print(settings.bright_data_api_key is not None)"` 로 로드 확인
 
