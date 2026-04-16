@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     # LLM 모델 식별자 (SPEC-SEO-TEXT.md §5 — 역할별 매핑)
     model_opus: str = "claude-opus-4-6"
     model_sonnet: str = "claude-sonnet-4-6"
-    image_model: str = "gemini-3.1-flash-image-preview"
+    image_model: str = "gemini-2.5-flash-image"
     image_size: str = "1024x1024"
 
     # 파이프라인 동작 상수
