@@ -196,6 +196,9 @@ def _parse_llm_violations(
         if block.type == "tool_use" and block.name == "report_violations":
             raw_violations = block.input.get("violations", [])
             for v in raw_violations:
+                if not isinstance(v, dict):
+                    logger.warning("LLM returned non-dict violation: %s", type(v))
+                    continue
                 violations.append(
                     Violation(
                         category=v.get("category", ""),
