@@ -48,7 +48,7 @@ class TestBuildOutlinePrompt:
         messages, _ = build_outline_prompt(sample_pattern_card)
         content = messages[0]["content"]
         assert "image_prompts" in content
-        assert "no text" in content
+        assert "no text" in content.lower()
 
     def test_compliance_rules_injected(self, sample_pattern_card: PatternCard) -> None:
         rules = "테스트 의료법 규칙: 효과 보장 금지"

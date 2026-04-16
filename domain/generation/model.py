@@ -32,6 +32,7 @@ class ImagePromptItem(BaseModel):
     prompt: str  # 영어 Gemini prompt
     alt_text: str  # 한국어 alt
     image_type: str  # "photo", "illustration", "infographic", "diagram"
+    aspect_ratio: str = "1:1"
     rationale: str
 
 

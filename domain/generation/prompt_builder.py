@@ -58,6 +58,7 @@ OUTLINE_TOOL: dict[str, Any] = {
                         "prompt",
                         "alt_text",
                         "image_type",
+                        "aspect_ratio",
                         "rationale",
                     ],
                     "properties": {
@@ -73,6 +74,11 @@ OUTLINE_TOOL: dict[str, Any] = {
                                 "infographic",
                                 "diagram",
                             ],
+                        },
+                        "aspect_ratio": {
+                            "type": "string",
+                            "enum": ["1:1", "3:4", "4:3", "9:16", "16:9"],
+                            "description": "이미지 종횡비",
                         },
                         "rationale": {"type": "string"},
                     },
@@ -387,21 +393,27 @@ def _format_image_instructions(pc: PatternCard) -> str:
         "다양하게 섞어라\n"
         f"- 이번 실행 분위기 힌트: '{seed_hint}'\n\n"
         "[형태 다양화]\n"
-        "- 가로형(16:9), 세로형(3:4), 정사각(1:1) 자유 선택\n"
-        "- 콜라주(2~4컷 분할), 슬라이드형(넓은 배너)도 가능\n"
-        "- prompt 에 aspect ratio 명시\n\n"
-        "[prompt 규칙]\n"
-        "1. 언어: 영어\n"
-        "2. 텍스트 절대 금지 — no text, no letters 명시\n"
-        "3. 인물 등장 시 Korean 키워드 필수\n"
-        "4. 의료 맥락 금지 (부정형으로도 넣지 말 것):\n"
-        "   patient, before/after, medical procedure, "
-        "surgery, injection, body comparison, naked\n"
-        "5. 스타일 풀 (다양하게 선택):\n"
-        "   realistic photography, cinematic, food photography,\n"
-        "   flat illustration, watercolor, 3D render,\n"
-        "   aerial view, macro close-up, collage layout, "
-        "editorial style"
+        "- aspect_ratio 필드로 종횡비를 지정하라 (프롬프트 텍스트에 쓰지 말 것)\n"
+        "  정사각(1:1), 가로형(16:9, 4:3), 세로형(3:4, 9:16)\n"
+        "- 콜라주(2~4컷 분할), 슬라이드형(넓은 배너)도 가능\n\n"
+        "[prompt 작성법 — Gemini 공식 가이드]\n"
+        "프롬프트는 키워드 나열이 아닌 장면을 묘사하는 문장으로 작성하라.\n\n"
+        "사실적 사진 템플릿:\n"
+        "  'A photorealistic [shot type] of [subject], [action], "
+        "set in [environment]. Illuminated by [lighting], "
+        "creating [mood]. Captured with [camera/lens]. "
+        "No text, no letters.'\n\n"
+        "일러스트/인포그래픽 템플릿:\n"
+        "  'A [style] illustration of [subject], featuring "
+        "[characteristics] and [color palette]. [line style] "
+        "and [shading]. No text, no letters.'\n\n"
+        "필수 규칙:\n"
+        "1. 언어: 영어 (장면 묘사형 문장)\n"
+        "2. 'No text, no letters' 반드시 포함\n"
+        "3. 인물 등장 시 'Korean' 키워드 필수\n"
+        "4. 의료 맥락 소재 아예 사용 금지 (부정형으로도 넣지 말 것)\n"
+        "5. aspect_ratio 필드에 종횡비 지정 (1:1, 3:4, 4:3, 16:9, 9:16)\n"
+        "6. 카메라 각도, 조명, 분위기를 구체적으로 묘사"
     )
 
 

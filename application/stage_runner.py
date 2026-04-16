@@ -480,6 +480,7 @@ def run_stage_image_generation(
             prompt=ip.prompt,
             alt_text=ip.alt_text,
             image_type=ip.image_type,
+            aspect_ratio=ip.aspect_ratio,
             rationale=ip.rationale,
         )
         for ip in outline.image_prompts

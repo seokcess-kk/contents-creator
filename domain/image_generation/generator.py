@@ -144,7 +144,9 @@ def _process_single_prompt(
             )
 
     # API 호출 + 1회 재시도
-    png_bytes = _call_with_retry(provider, prompt_item.prompt)
+    png_bytes = _call_with_retry(
+        provider, prompt_item.prompt, aspect_ratio=prompt_item.aspect_ratio
+    )
     if png_bytes is None:
         return SkippedImage(
             sequence=prompt_item.sequence,
@@ -173,11 +175,12 @@ def _process_single_prompt(
 def _call_with_retry(
     provider: ImageProvider,
     prompt: str,
+    aspect_ratio: str = "1:1",
 ) -> bytes | None:
     """API 호출 + 1회 재시도. 2회 실패 시 None 반환."""
     for attempt in range(2):
         try:
-            return provider.generate(prompt)
+            return provider.generate(prompt, aspect_ratio=aspect_ratio)
         except ImageGenerationError as exc:
             if attempt == 0:
                 logger.warning(

@@ -19,7 +19,7 @@ class ImageGenerationError(Exception):
 class ImageProvider(Protocol):
     """이미지 생성 프로바이더 인터페이스."""
 
-    def generate(self, prompt: str) -> bytes:
+    def generate(self, prompt: str, aspect_ratio: str = "1:1") -> bytes:
         """prompt → PNG 바이트. 실패 시 ImageGenerationError."""
         ...
 
@@ -33,7 +33,7 @@ class GeminiImageProvider:
         self._client = genai.Client(api_key=api_key)
         self._model = model
 
-    def generate(self, prompt: str) -> bytes:
+    def generate(self, prompt: str, aspect_ratio: str = "1:1") -> bytes:
         """prompt → PNG 바이트. 실패 시 ImageGenerationError."""
         from google.genai import types
 
@@ -43,6 +43,9 @@ class GeminiImageProvider:
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     response_modalities=["IMAGE"],
+                    image_config=types.ImageConfig(
+                        aspect_ratio=aspect_ratio,
+                    ),
                 ),
             )
         except Exception as exc:

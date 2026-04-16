@@ -19,6 +19,9 @@ class ImagePrompt(BaseModel):
     prompt: str = Field(description="Gemini 에 전달할 영어 prompt 전문")
     alt_text: str = Field(description="한국어 alt 텍스트 (네이버 에디터 alt 입력란용)")
     image_type: str = Field(description="photo / illustration / infographic / diagram")
+    aspect_ratio: str = Field(
+        default="1:1", description="이미지 종횡비 (1:1, 3:4, 4:3, 9:16, 16:9)"
+    )
     rationale: str = Field(description="1줄 위치·소재 결정 근거")
 
 
