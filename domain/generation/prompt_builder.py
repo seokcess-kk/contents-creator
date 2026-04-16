@@ -364,7 +364,7 @@ def _format_tag_instructions(tags: Any) -> str:
 def _format_image_instructions(pc: PatternCard) -> str:
     avg = pc.image_pattern.avg_count_per_post
     if avg > 0:
-        target = max(3, min(round(avg), 5))
+        target = max(3, round(avg))  # 하한 3, 상한은 [9] 예산 가드가 제어
         avg_note = f"상위 글 평균 이미지 수: {avg:.1f}개 (실사 포함)\n"
     else:
         target = 3
