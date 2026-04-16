@@ -57,7 +57,7 @@ class Settings(BaseSettings):
     image_cache_dir: str = "output/_image_cache"
 
 
-settings = Settings()  # type: ignore[call-arg]
+settings = Settings()
 
 
 def require(field_name: str) -> str:
