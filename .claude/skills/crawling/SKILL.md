@@ -25,18 +25,24 @@ BRIGHT_DATA_WEB_UNLOCKER_ZONE=...   # SERP 수집 + 본문 수집 공용
 
 ## [1] SERP 수집 (serp_collector.py)
 
-### 수집 정책
-- 쿼리: `https://search.naver.com/search.naver?ssc=tab.blog.all&query={keyword}&start=1`
-- `ssc=tab.blog.all` 로 네이버 **블로그 전용 탭** 을 직접 요청 (2026-04-16 실측, lessons.md C2).
-  `where=blog` 통합검색 섹션은 React 버튼으로 6~7개만 렌더되고 `start` 파라미터도 무시되어 사용 불가
-- Web Unlocker `format: "raw"` 로 HTML 받아 파싱
-- **포스트 URL 은 `a[href]` 뿐 아니라 `*[data-url]` 속성에도 들어 있다** (네이버 신버전 UI). 파서는 둘 다 순회
-- 상위 20개 결과 요청 → 다음 필터 적용:
-  - URL 호스트가 `blog.naver.com` 또는 `m.blog.naver.com` 인 것만
-  - 광고(`ads`) 섹션 제외
-  - 중복 URL 제거
-- 선착순 10개 선택
-- **최소 성공 수: 7개**. 미만이면 `InsufficientCollectionError` 발생
+### 수집 정책 — 통합검색 우선 + 블로그 탭 보충
+
+제품 의도는 **통합검색 상위 노출 블로그** 분석. 항상 `where=blog` 통합검색부터 시도하고, 표본이 부족하면 `ssc=tab.blog.all` 블로그 탭에서 최대 `BLOG_TAB_BOOST_LIMIT=5개` 만 보충한다. 실측 근거는 lessons.md C2.
+
+1. **Step 1 — 통합검색** (`build_integrated_serp_url`):
+   `search.naver.com/search.naver?query={kw}&where=blog`. 네이버 신버전 UI 는 통합검색 블로그 섹션에 6~7개만 초기 렌더한다 (`start` 파라미터 무시). 있는 만큼 수집.
+
+2. **Step 2 — 블로그 탭 보충** (`build_blog_tab_serp_url`):
+   통합검색 합계 < `MAX_RESULTS(10)` 이면 `search.naver.com/search.naver?ssc=tab.blog.all&query={kw}&start=1` fetch. 한 페이지에 40개 이상 서버 렌더링되므로 중복 제거 후 남은 슬롯 채움. **단, 블로그 탭 보충은 최대 5개**.
+
+3. **Step 3 — 검증**: 합계 < `MIN_COLLECTED_PAGES(7)` → `InsufficientCollectionError`.
+
+### 파서 규칙 (양 트랙 공통)
+- **포스트 URL 은 `a[href]` 뿐 아니라 `*[data-url]` 속성에도 들어 있다** (네이버 신버전 UI `<button data-url="...">`). 파서는 둘 다 순회
+- `blog.naver.com` / `m.blog.naver.com` 외 배제, `/clip/` (동영상 클립) 배제, 유저 홈 배제 (정규식 `[a-zA-Z0-9_-]+/\d{9,}`)
+- 광고 섹션(`.sp_power_ad`, `#power_ad_container` 등) 제외
+- 통합검색 결과의 원 순위는 rank 1~N 에 보존되고 블로그 탭 보충분이 뒤에 이어짐
+- 각 `SerpResult` 에 `source: "integrated" | "blog_tab"` 필드로 출처 기록 — 패턴 카드까지 전파
 
 ### 출력 형식
 ```json

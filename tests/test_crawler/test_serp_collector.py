@@ -12,13 +12,14 @@ from domain.crawler.serp_collector import (
     _is_ad_context,
     _normalize_href,
     _parse_serp_html,
-    build_serp_url,
+    build_blog_tab_serp_url,
+    build_integrated_serp_url,
     collect_serp,
 )
 
 
 class StubClient:
-    """모든 fetch 호출에 동일한 HTML 을 반환 (페이지 구분 안 함)."""
+    """모든 fetch 호출에 동일한 HTML 을 반환. 통합검색과 블로그 탭 모두 같은 결과."""
 
     def __init__(self, html: str) -> None:
         self._html = html
@@ -32,17 +33,37 @@ class StubClient:
         pass
 
 
-def test_build_serp_url_encodes_keyword() -> None:
-    url = build_serp_url("강남 다이어트 한의원")
+class TrackStubClient:
+    """통합검색/블로그 탭 URL 을 구분해 다른 HTML 을 반환."""
+
+    def __init__(self, integrated_html: str, blog_tab_html: str) -> None:
+        self._integrated = integrated_html
+        self._blog_tab = blog_tab_html
+        self.fetch_calls: list[str] = []
+
+    def fetch(self, url: str) -> str:
+        self.fetch_calls.append(url)
+        if "ssc=tab.blog.all" in url:
+            return self._blog_tab
+        return self._integrated
+
+    def close(self) -> None:
+        pass
+
+
+def test_build_integrated_serp_url_encodes_keyword() -> None:
+    url = build_integrated_serp_url("강남 다이어트 한의원")
     assert url.startswith("https://search.naver.com/search.naver?")
-    assert "ssc=tab.blog.all" in url
-    assert "start=1" in url
+    assert "where=blog" in url
+    assert "ssc=tab.blog.all" not in url
     assert "%EA%B0%95%EB%82%A8" in url  # 강남 URL 인코딩
 
 
-def test_build_serp_url_pagination() -> None:
-    url = build_serp_url("k", start=11)
-    assert "start=11" in url
+def test_build_blog_tab_serp_url() -> None:
+    url = build_blog_tab_serp_url("k")
+    assert "ssc=tab.blog.all" in url
+    assert "start=1" in url
+    assert "where=blog" not in url
 
 
 class TestNormalizeHref:
@@ -202,6 +223,101 @@ def test_collect_serp_deduplicates_urls() -> None:
     urls = [str(r.url) for r in result.results]
     assert urls.count("https://blog.naver.com/shared/100000001") == 1
     assert len(result.results) == 8
+
+
+def _html_with_posts(prefix: str, count: int) -> str:
+    """테스트용 HTML 생성 — prefix 가 다른 고유 URL N개."""
+    anchors = "".join(
+        f'<a href="https://blog.naver.com/{prefix}{i}/10000000{i:02d}">p{i}</a>'
+        for i in range(count)
+    )
+    return f"<html><body>{anchors}</body></html>"
+
+
+def test_collect_serp_uses_integrated_first_skips_blog_tab_when_full() -> None:
+    """통합검색에서 MAX_RESULTS(10) 가 충족되면 블로그 탭은 호출 안 한다."""
+    integrated = _html_with_posts("int", 12)
+    blog_tab = _html_with_posts("tab", 40)
+    client = TrackStubClient(integrated_html=integrated, blog_tab_html=blog_tab)
+
+    result = collect_serp("테스트", client)  # type: ignore[arg-type]
+
+    assert len(result.results) == 10
+    assert len(client.fetch_calls) == 1  # 블로그 탭 fetch 없음
+    assert all(r.source == "integrated" for r in result.results)
+
+
+def test_collect_serp_boosts_from_blog_tab_when_integrated_short() -> None:
+    """통합 4개 + 블로그 탭 5개 보충 = 총 9개. source 필드 구분 확인."""
+    integrated = _html_with_posts("int", 4)
+    blog_tab = _html_with_posts("tab", 40)
+    client = TrackStubClient(integrated_html=integrated, blog_tab_html=blog_tab)
+
+    result = collect_serp("테스트", client)  # type: ignore[arg-type]
+
+    assert len(result.results) == 9  # 4 + BLOG_TAB_BOOST_LIMIT(5)
+    assert len(client.fetch_calls) == 2
+    integrated_items = [r for r in result.results if r.source == "integrated"]
+    blog_tab_items = [r for r in result.results if r.source == "blog_tab"]
+    assert len(integrated_items) == 4
+    assert len(blog_tab_items) == 5
+    # 통합검색이 rank 앞쪽(1~4), 블로그 탭이 뒤쪽(5~9)
+    assert [r.rank for r in integrated_items] == [1, 2, 3, 4]
+    assert [r.rank for r in blog_tab_items] == [5, 6, 7, 8, 9]
+
+
+def test_collect_serp_blog_tab_boost_capped_by_limit() -> None:
+    """블로그 탭에 아무리 많아도 BLOG_TAB_BOOST_LIMIT(5) 까지만 가져온다."""
+    integrated = _html_with_posts("int", 2)
+    blog_tab = _html_with_posts("tab", 40)
+    client = TrackStubClient(integrated_html=integrated, blog_tab_html=blog_tab)
+
+    result = collect_serp("테스트", client)  # type: ignore[arg-type]
+
+    assert len(result.results) == 7  # 2 + 5 cap
+    assert sum(r.source == "blog_tab" for r in result.results) == 5
+
+
+def test_collect_serp_blog_tab_boost_respects_remaining_slots() -> None:
+    """통합 8개일 때 블로그 탭 보충은 2개만 (MAX_RESULTS-통합=2)."""
+    integrated = _html_with_posts("int", 8)
+    blog_tab = _html_with_posts("tab", 40)
+    client = TrackStubClient(integrated_html=integrated, blog_tab_html=blog_tab)
+
+    result = collect_serp("테스트", client)  # type: ignore[arg-type]
+
+    assert len(result.results) == 10
+    assert sum(r.source == "integrated" for r in result.results) == 8
+    assert sum(r.source == "blog_tab" for r in result.results) == 2
+
+
+def test_collect_serp_dedup_across_tracks() -> None:
+    """통합검색 URL 이 블로그 탭에도 있으면 블로그 탭 쪽에서 skip."""
+    shared = '<a href="https://blog.naver.com/shared/100000001">s</a>'
+    integrated = f"<html><body>{shared}{_html_with_posts('int', 3).split('<body>')[1].split('</body>')[0]}</body></html>"
+    blog_tab = f"<html><body>{shared}{_html_with_posts('tab', 10).split('<body>')[1].split('</body>')[0]}</body></html>"
+    client = TrackStubClient(integrated_html=integrated, blog_tab_html=blog_tab)
+
+    result = collect_serp("테스트", client)  # type: ignore[arg-type]
+
+    urls = [str(r.url) for r in result.results]
+    assert urls.count("https://blog.naver.com/shared/100000001") == 1
+    # 통합에서 shared 차지 → source=integrated 로 기록
+    shared_item = next(r for r in result.results if "shared" in str(r.url))
+    assert shared_item.source == "integrated"
+
+
+def test_collect_serp_boost_still_insufficient_raises() -> None:
+    """통합 2개 + 블로그 탭에도 3개만 있으면 합 5 < 7 → InsufficientCollectionError."""
+    integrated = _html_with_posts("int", 2)
+    blog_tab = _html_with_posts("tab", 3)
+    client = TrackStubClient(integrated_html=integrated, blog_tab_html=blog_tab)
+
+    with pytest.raises(InsufficientCollectionError) as exc_info:
+        collect_serp("테스트", client)  # type: ignore[arg-type]
+
+    assert exc_info.value.actual == 5
+    assert exc_info.value.stage == "serp"
 
 
 def test_is_ad_context_positive() -> None:
