@@ -213,6 +213,7 @@ def _build_outline_system(
     compliance_block = _format_compliance(compliance_rules)
     tag_block = _format_tag_instructions(tags)
     image_block = _format_image_instructions(pc)
+    keyword_placement_block = _format_keyword_placement(pc)
 
     intro_type = _select_intro_type(pc.distributions)
 
@@ -221,6 +222,13 @@ def _build_outline_system(
         "상위 노출 글의 분석 데이터를 기반으로 검색 최적화된 "
         "아웃라인을 작성한다.\n"
         "특정 업체를 홍보하거나 광고하는 내용을 포함하지 않는다.\n\n"
+        "[톤앤매너]\n"
+        "- 백과사전 같은 딱딱한 정보 나열이 아닌, "
+        "경험을 공유하듯 친근하고 자연스러운 대화체로 작성\n"
+        "- '~입니다', '~됩니다' 일변도 금지. "
+        "'~예요/~이에요', '~거든요', '~더라고요' 등 구어체를 자연스럽게 섞어라\n"
+        "- 독자가 공감할 수 있는 상황 묘사와 경험 기반 서술\n"
+        "- 단, 특정 업체 체험기가 아닌 일반적 정보 공유 톤 유지\n\n"
         f"[상위 글 구조]\n{top_structures_str}\n"
         f"필수 섹션: {sections.required}\n"
         f"빈출 섹션: {sections.frequent}\n"
@@ -239,6 +247,7 @@ def _build_outline_system(
         f"연관: {pc.related_keywords}\n"
         f"목표 밀도: {stats.keyword_density.avg:.3f}\n"
         f"소제목 포함율 목표: {stats.subtitle_keyword_ratio}\n\n"
+        f"{keyword_placement_block}\n\n"
         f"[소구 포인트 중립화]\n"
         "아래는 상위 글이 공통적으로 강조하는 가치다. "
         "업체 주체가 아닌 일반화된 정보로 재서술하라.\n"
@@ -272,7 +281,8 @@ def _build_body_system(
     return (
         "아래 아웃라인을 기반으로 블로그 본문을 작성한다.\n"
         "이미 작성된 글의 첫 부분이 있으므로 다시 작성하지 않는다.\n"
-        "2번째 섹션부터 작성하며, 중립적 정보 콘텐츠로 서술한다.\n\n"
+        "2번째 섹션부터 작성하며, 경험을 공유하듯 친근한 톤으로 서술한다.\n"
+        "딱딱한 정보 나열 금지. 독자와 대화하는 자연스러운 문체를 사용한다.\n\n"
         f"[톤 힌트]\n{intro_tone_hint}\n"
         "이어지는 본문은 동일한 톤을 유지할 것.\n\n"
         f"[아웃라인 (2번째 섹션부터)]\n{sections_text}\n\n"
@@ -285,6 +295,7 @@ def _build_body_system(
         f"연관 키워드: {pc.related_keywords} - 자연스럽게 분산\n"
         '일반화 부사("일반적으로", "보통", "대부분") '
         "단락당 1회 이내\n\n"
+        f"{_format_keyword_placement(pc)}\n\n"
         f"[문단 규칙]\n"
         f"문단당 {stats.paragraph_avg_chars:.0f}자 내외\n\n"
         f"[DIA+ 요소 삽입 지시]\n{dia_markers}\n\n"
@@ -298,6 +309,26 @@ def _build_body_system(
         "[출력 지시]\n"
         "각 섹션을 순서대로 생성할 것."
     )
+
+
+def _format_keyword_placement(pc: PatternCard) -> str:
+    """패턴 카드의 키워드 배치 통계를 프롬프트 블록으로 변환한다."""
+    kp = pc.keyword_placement
+    lines: list[str] = []
+    if kp.title_front_ratio >= 0.5:
+        lines.append(
+            f"- 제목 앞부분에 키워드 배치 (상위글 {kp.title_front_ratio * 100:.0f}%가 제목 앞에 키워드)"
+        )
+    if kp.first_para_ratio >= 0.3:
+        lines.append(
+            f"- 첫 문단(도입부)에 키워드 반드시 포함 (상위글 {kp.first_para_ratio * 100:.0f}%)"
+        )
+    if kp.avg_first_sentence > 0:
+        lines.append(f"- 키워드 첫 등장: 평균 {kp.avg_first_sentence:.0f}번째 문장 이내")
+    if kp.last_para_ratio >= 0.3:
+        lines.append(f"- 마지막 문단에도 키워드 포함 (상위글 {kp.last_para_ratio * 100:.0f}%)")
+    lines.append("- 키워드를 자연스럽게 분산. 한 문단에 3회 이상 반복 금지")
+    return "[키워드 배치 전략]\n" + "\n".join(lines)
 
 
 def _format_top_structures(pc: PatternCard) -> str:

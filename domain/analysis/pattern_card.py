@@ -74,6 +74,15 @@ class AggregatedAppealPoints(BaseModel):
     promotional_ratio: float = 0.0
 
 
+class KeywordPlacement(BaseModel):
+    """키워드 배치 패턴 집계 (첫/마지막 문단, 제목 앞부분, 첫 등장 문장)."""
+
+    first_para_ratio: float = 0.0
+    last_para_ratio: float = 0.0
+    title_front_ratio: float = 0.0
+    avg_first_sentence: float = 0.0
+
+
 class ImagePositionDist(BaseModel):
     """이미지 위치 분포 (글 전체 대비 비율 구간)."""
 
@@ -113,6 +122,7 @@ class PatternCard(BaseModel):
     aggregated_appeal_points: AggregatedAppealPoints = Field(default_factory=AggregatedAppealPoints)
     aggregated_tags: AggregatedTags = Field(default_factory=AggregatedTags)
     image_pattern: ImagePattern = Field(default_factory=ImagePattern)
+    keyword_placement: KeywordPlacement = Field(default_factory=KeywordPlacement)
 
 
 # ── 저장 / 로드 ──

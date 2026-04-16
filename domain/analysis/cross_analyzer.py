@@ -25,6 +25,7 @@ from domain.analysis.pattern_card import (
     AggregatedTags,
     ImagePattern,
     ImagePositionDist,
+    KeywordPlacement,
     PatternCard,
     PatternCardStats,
     RangeStats,
@@ -64,6 +65,7 @@ def cross_analyze(
         aggregated_appeal_points=_aggregate_appeal_points(appeals, n),
         aggregated_tags=_aggregate_tags(physicals, n),
         image_pattern=_aggregate_image_pattern(physicals),
+        keyword_placement=_aggregate_keyword_placement(physicals),
     )
 
 
@@ -272,6 +274,38 @@ def _aggregate_image_pattern(physicals: list[PhysicalAnalysis]) -> ImagePattern:
             end=round(sum(end_totals) / n, 1),
         ),
         avg_images_per_section=imgs_per_sec,
+    )
+
+
+def _aggregate_keyword_placement(physicals: list[PhysicalAnalysis]) -> KeywordPlacement:
+    """첫/마지막 문단 키워드 비율, 제목 앞부분 비율, 평균 첫 등장 문장."""
+    n = len(physicals)
+    if n == 0:
+        return KeywordPlacement()
+
+    first_para_count = 0
+    last_para_count = 0
+    title_front_count = 0
+    first_sentences: list[int] = []
+
+    for p in physicals:
+        paras = [e for e in p.element_sequence if e.type == "paragraph"]
+        if paras and paras[0].keyword_count and paras[0].keyword_count > 0:
+            first_para_count += 1
+        if paras and paras[-1].keyword_count and paras[-1].keyword_count > 0:
+            last_para_count += 1
+        if p.keyword_analysis.title_keyword_position == "front":
+            title_front_count += 1
+        fs = p.keyword_analysis.first_appearance_sentence
+        if fs > 0:
+            first_sentences.append(fs)
+
+    avg_fs = round(sum(first_sentences) / len(first_sentences), 1) if first_sentences else 0.0
+    return KeywordPlacement(
+        first_para_ratio=round(first_para_count / n, 2),
+        last_para_ratio=round(last_para_count / n, 2),
+        title_front_ratio=round(title_front_count / n, 2),
+        avg_first_sentence=avg_fs,
     )
 
 
