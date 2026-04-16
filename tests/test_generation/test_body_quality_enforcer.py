@@ -22,7 +22,7 @@ class TestFindWeakSections:
         # keyword 2회 + 충분한 글자수
         content = (
             "다이어트 한의원에 대한 정보를 정리했습니다. "
-            + "건강한 생활 습관을 유지하는 것이 중요합니다. " * 30
+            + "건강한 생활 습관을 유지하는 것이 중요합니다. " * 50
             + "다이어트 한의원을 방문하기 전에 알아야 할 점이 있습니다."
         )
         sections = [_make_section(content=content)]

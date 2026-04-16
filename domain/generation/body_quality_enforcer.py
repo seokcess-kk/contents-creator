@@ -41,9 +41,9 @@ def _calc_min_section_chars(
     section_count: int,
     target_total_chars: float,
 ) -> float:
-    """섹션당 최소 글자수 계산."""
+    """섹션당 최소 글자수 계산. 목표 총 글자수의 80%를 섹션에 배분."""
     target_per_section = target_total_chars / (section_count + 1)
-    return max(target_per_section * 0.5, 200)
+    return max(target_per_section * 0.8, 300)
 
 
 def _check_section(
