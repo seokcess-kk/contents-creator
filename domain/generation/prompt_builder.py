@@ -13,7 +13,7 @@ import logging
 from typing import Any
 
 from domain.analysis.model import SECTION_ROLES
-from domain.analysis.pattern_card import PatternCard
+from domain.analysis.pattern_card import PatternCard, SectionClassification
 from domain.generation.model import Outline, OutlineSection
 
 logger = logging.getLogger(__name__)
@@ -196,6 +196,18 @@ def build_body_prompt(
 # ── 내부 헬퍼 ──
 
 
+def _compute_subtitle_target(subtitle_avg: float, sections: SectionClassification) -> int:
+    """소제목 수 목표를 결정한다.
+
+    상위 글이 소제목을 거의 쓰지 않는 경우(avg < 2), 필수+빈출
+    섹션 수 기반으로 SEO 친화적 최솟값을 보장한다.
+    """
+    if subtitle_avg >= 2:
+        return round(subtitle_avg)
+    total_sections = len(sections.required) + len(sections.frequent)
+    return max(total_sections + 1, 4)  # minimum 4 for SEO
+
+
 def _build_outline_system(
     pc: PatternCard,
     compliance_rules: str | None,
@@ -211,7 +223,7 @@ def _build_outline_system(
     top_structures_str = _format_top_structures(pc)
     dia_instructions = _format_dia_instructions(dia)
     compliance_block = _format_compliance(compliance_rules)
-    tag_block = _format_tag_instructions(tags)
+    tag_block = _format_tag_instructions(tags, pc)
     image_block = _format_image_instructions(pc)
     keyword_placement_block = _format_keyword_placement(pc)
 
@@ -241,7 +253,7 @@ def _build_outline_system(
         f"정보 수준: {reader.expertise_level}\n\n"
         f"[구조 규칙]\n"
         f"총 글자수: {stats.chars.min:.0f}~{stats.chars.max:.0f}자\n"
-        f"소제목: {stats.subtitles.avg:.0f}개\n"
+        f"소제목: {_compute_subtitle_target(stats.subtitles.avg, sections)}개\n"
         f"도입 방식: {intro_type}\n\n"
         f"[DIA+ 요소 지시]\n{dia_instructions}\n\n"
         f"[키워드]\n"
@@ -253,7 +265,7 @@ def _build_outline_system(
         f"[소구 포인트 중립화]\n"
         "아래는 상위 글이 공통적으로 강조하는 가치다. "
         "업체 주체가 아닌 일반화된 정보로 재서술하라.\n"
-        f"공통 소구 포인트: {appeal.common}\n\n"
+        f"공통 소구 포인트: {appeal.common if appeal.common else '(분석에서 명확한 공통 포인트 미검출 — 키워드 관련 일반 정보성 소구 포인트를 자체 구성하라)'}\n\n"
         f"{tag_block}\n\n"
         f"{image_block}\n\n"
         f"{compliance_block}\n\n"
@@ -377,8 +389,25 @@ def _format_compliance(rules: str | None) -> str:
     return f"[의료법 사전 규칙]\n{rules}"
 
 
-def _format_tag_instructions(tags: Any) -> str:
+def _format_tag_instructions(tags: Any, pc: PatternCard) -> str:
     avg_count = tags.avg_tag_count_per_post
+
+    # 태그 데이터 없으면 키워드 기반 폴백
+    if avg_count == 0 and not tags.common:
+        target = 8  # 네이버 블로그 일반 태그 수
+        return (
+            "[SEO 태그 제안]\n"
+            "상위 글에서 태그 데이터를 수집하지 못했으므로 "
+            "키워드 기반으로 태그를 구성한다.\n"
+            f"- 목표 개수: {target}개\n"
+            f"- 주 키워드: {pc.keyword}\n"
+            f"- 연관 키워드: {pc.related_keywords}\n"
+            "- 구성 방법: 주 키워드 분해 + 연관 키워드 "
+            "+ 주제 관련 해시태그\n"
+            "- 중복 제거, 의료법 금지 표현 배제"
+        )
+
+    # 기존 로직 (태그 데이터가 있을 때)
     return (
         "[SEO 태그 제안]\n"
         f"상위 글 공통 태그(80%+): {tags.common}\n"

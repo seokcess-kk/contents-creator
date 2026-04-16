@@ -196,7 +196,7 @@ def _aggregate_appeal_points(appeals: list[AppealAnalysis], n: int) -> Aggregate
     for ap in appeals:
         for pt in ap.appeal_points:
             point_counter[pt.point] += 1
-    common = [p for p, c in point_counter.items() if c >= 2]
+    common = [p for p, _ in point_counter.most_common(5)]
 
     promo_count = sum(1 for ap in appeals if ap.overall_promotional_level in ("medium", "high"))
     return AggregatedAppealPoints(
