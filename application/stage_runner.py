@@ -9,6 +9,10 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from domain.generation.body_quality_enforcer import SectionIssue
 
 from application.progress import ProgressReporter
 from config.settings import require, settings
@@ -307,14 +311,27 @@ def run_stage_outline_generation(
     output_dir: Path,
     reporter: ProgressReporter,
 ) -> Outline:
-    """[6] 아웃라인 + 도입부 + image_prompts 생성 (Opus)."""
+    """[6] 아웃라인 + 도입부 + image_prompts 생성 (Opus).
+
+    생성 후 코드 검증 → 미달 시 1회 재생성.
+    """
     from domain.compliance.rules import build_pre_generation_injection
+    from domain.generation.outline_validator import validate_outline
     from domain.generation.outline_writer import generate_outline
 
     reporter.stage_start("outline_generation")
 
     compliance_rules = build_pre_generation_injection()
     outline = generate_outline(pattern_card, compliance_rules)
+
+    issues = validate_outline(outline, pattern_card)
+    if issues:
+        logger.warning(
+            "outline_validation.issues_found count=%d issues=%s",
+            len(issues),
+            [(i.field, i.expected, i.actual) for i in issues],
+        )
+        outline = generate_outline(pattern_card, compliance_rules)
 
     content_dir = output_dir / "content"
     content_dir.mkdir(parents=True, exist_ok=True)
@@ -341,8 +358,12 @@ def run_stage_body_generation(
     output_dir: Path,
     reporter: ProgressReporter,
 ) -> BodyResult:
-    """[7] 본문 생성 (2번째 섹션부터, Opus). M2 불변."""
+    """[7] 본문 생성 (2번째 섹션부터, Opus). M2 불변.
+
+    생성 후 코드 검증 → 약한 섹션만 LLM 으로 보강.
+    """
     from domain.compliance.rules import build_pre_generation_injection
+    from domain.generation.body_quality_enforcer import find_weak_sections
     from domain.generation.body_writer import generate_body
     from domain.generation.model import Outline as OutlineModel
 
@@ -370,6 +391,17 @@ def run_stage_body_generation(
 
     body = generate_body(outline_without_intro, intro_tone_hint, pattern_card, compliance_rules)
 
+    # 본문 품질 검증 + 약한 섹션 보강
+    issues = find_weak_sections(
+        body.body_sections,
+        pattern_card.keyword,
+        pattern_card.stats.chars.avg,
+    )
+    if issues:
+        weak_count = len({i.index for i in issues})
+        logger.info("body_quality.weak_sections_found count=%d", weak_count)
+        body = _fix_weak_sections(body, issues, pattern_card, intro_tone_hint)
+
     content_dir = output_dir / "content"
     content_dir.mkdir(parents=True, exist_ok=True)
     path = content_dir / "body.json"
@@ -380,6 +412,56 @@ def run_stage_body_generation(
         {"sections": len(body.body_sections)},
     )
     return body
+
+
+def _fix_weak_sections(
+    body: BodyResult,
+    issues: list[SectionIssue],
+    pattern_card: PatternCard,
+    intro_tone_hint: str,
+) -> BodyResult:
+    """약한 섹션을 LLM 으로 보강한다. Sonnet 사용."""
+    from domain.generation.body_quality_enforcer import build_section_fix_prompt
+
+    sections_to_fix = {i.index for i in issues}
+
+    for sec_idx in sections_to_fix:
+        section = next((s for s in body.body_sections if s.index == sec_idx), None)
+        if section is None:
+            continue
+
+        fix_prompt = build_section_fix_prompt(
+            sec_idx,
+            section.subtitle,
+            section.content_md,
+            issues,
+            pattern_card.keyword,
+            intro_tone_hint,
+        )
+        fixed = _call_section_fix(fix_prompt)
+        if fixed:
+            section.content_md = fixed
+
+    return body
+
+
+def _call_section_fix(fix_prompt: str) -> str | None:
+    """Sonnet 으로 섹션 보강. 실패 시 None (원본 유지)."""
+    try:
+        import anthropic
+
+        client = anthropic.Anthropic(api_key=require("anthropic_api_key"))
+        response = client.messages.create(
+            model=settings.model_sonnet,
+            max_tokens=2048,
+            messages=[{"role": "user", "content": fix_prompt}],
+        )
+        text = response.content[0].text  # type: ignore[union-attr]
+        if text and len(text) > 50:
+            return text
+    except Exception:
+        logger.warning("section_fix.failed", exc_info=True)
+    return None
 
 
 # ── [8] 의료법 검증 + 자동 수정 ──

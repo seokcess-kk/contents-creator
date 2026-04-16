@@ -144,15 +144,18 @@ class TestCrossAnalysis:
 
 
 class TestOutlineGeneration:
+    @patch("domain.generation.outline_validator.validate_outline")
     @patch("domain.generation.outline_writer.generate_outline")
     @patch("domain.compliance.rules.build_pre_generation_injection")
     def test_saves_outline_json(
         self,
         mock_injection: MagicMock,
         mock_gen: MagicMock,
+        mock_validate: MagicMock,
         tmp_path: Path,
     ) -> None:
         mock_injection.return_value = "rules text"
+        mock_validate.return_value = []  # no issues
         mock_outline = MagicMock()
         mock_outline.title = "Test Title"
         mock_outline.sections = [MagicMock(), MagicMock()]
@@ -165,6 +168,36 @@ class TestOutlineGeneration:
         result = run_stage_outline_generation(MagicMock(), tmp_path, NullProgressReporter())
         assert result == mock_outline
         assert (tmp_path / "content" / "outline.json").exists()
+
+    @patch("domain.generation.outline_validator.validate_outline")
+    @patch("domain.generation.outline_writer.generate_outline")
+    @patch("domain.compliance.rules.build_pre_generation_injection")
+    def test_retries_on_validation_issues(
+        self,
+        mock_injection: MagicMock,
+        mock_gen: MagicMock,
+        mock_validate: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """검증 실패 시 1회 재생성한다."""
+        mock_injection.return_value = "rules text"
+
+        from domain.generation.outline_validator import OutlineIssue
+
+        mock_validate.return_value = [
+            OutlineIssue(field="section_count", expected=">=5", actual="3")
+        ]
+        mock_outline = MagicMock()
+        mock_outline.title = "Retried Title"
+        mock_outline.sections = [MagicMock()] * 5
+        mock_outline.image_prompts = []
+        mock_outline.model_dump_json.return_value = '{"title":"Retried Title"}'
+        mock_gen.return_value = mock_outline
+
+        from application.stage_runner import run_stage_outline_generation
+
+        run_stage_outline_generation(MagicMock(), tmp_path, NullProgressReporter())
+        assert mock_gen.call_count == 2
 
 
 # ── [8] 컴플라이언스 ──

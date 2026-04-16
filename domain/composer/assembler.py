@@ -32,11 +32,12 @@ def assemble_content(
 
     - 제목: ``# {title}``
     - 도입부: ``outline.intro`` (200~300자 확정본)
-    - 이미지: ``image_prompts[].position`` 에 따라 해당 위치에 삽입
+    - 이미지: 코드로 균등 배치 (LLM position 무시)
     - 본문: ``body.body_sections`` 각각 ``## {subtitle}\\n\\n{content_md}``
     - ``suggested_tags`` 는 포함하지 않음 (outline_md 에만)
     """
-    image_map = _build_image_map(outline.image_prompts, image_result)
+    section_count = len(body.body_sections)
+    image_map = _build_even_image_map(outline.image_prompts, image_result, section_count)
 
     parts: list[str] = []
     parts.append(f"# {outline.title}")
@@ -95,6 +96,38 @@ def _build_image_map(
     return mapping
 
 
+def _build_even_image_map(
+    prompts: list[ImagePromptItem],
+    result: ImageGenerationResult | None,
+    section_count: int,
+) -> dict[str, list[GeneratedImage]]:
+    """이미지를 코드로 균등 배치. LLM position 무시.
+
+    배치 규칙:
+    - 첫 번째 이미지: after_intro
+    - 나머지: 섹션 사이에 균등 배분
+    """
+    if result is None:
+        return {}
+
+    generated_by_seq = {img.sequence: img for img in result.generated}
+    matched = [generated_by_seq[p.sequence] for p in prompts if p.sequence in generated_by_seq]
+    if not matched:
+        return {}
+
+    mapping: dict[str, list[GeneratedImage]] = {}
+    mapping["after_intro"] = [matched[0]]
+
+    remaining = matched[1:]
+    if remaining and section_count > 0:
+        for i, img in enumerate(remaining):
+            sec_idx = min(i + 1, section_count)
+            key = f"section_{sec_idx}_end"
+            mapping.setdefault(key, []).append(img)
+
+    return mapping
+
+
 _SECTION_NUM_RE = re.compile(r"(?:섹션|section)\s*(\d+)", re.IGNORECASE)
 
 
@@ -139,8 +172,10 @@ def insert_images_into_text(
 
     assemble_content 를 재호출하면 compliance 수정이 소실되므로,
     이미 완성된 마크다운 텍스트에 이미지만 삽입한다.
+    이미지 위치는 코드로 균등 배치한다 (LLM position 무시).
     """
-    image_map = _build_image_map(image_prompts, image_result)
+    section_count = sum(1 for line in text.split("\n") if line.startswith("## "))
+    image_map = _build_even_image_map(image_prompts, image_result, section_count)
     if not image_map:
         return text
 
