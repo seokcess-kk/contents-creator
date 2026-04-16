@@ -1,0 +1,24 @@
+[
+  {
+    "filename": "sample_diet_clinic_1.html",
+    "keyword": "부천 다이어트 한의원",
+    "total_chars_min": 2763,
+    "total_chars_max": 2863,
+    "total_paragraphs_min": 48,
+    "keyword_total_count_min": 6,
+    "keyword_density_min": 0.001,
+    "paragraph_avg_chars_max": 400,
+    "image_count": 9
+  },
+  {
+    "filename": "sample_diet_clinic_2.html",
+    "keyword": "부천 다이어트 한의원",
+    "total_chars_min": 2565,
+    "total_chars_max": 2665,
+    "total_paragraphs_min": 9,
+    "keyword_total_count_min": 7,
+    "keyword_density_min": 0.001,
+    "paragraph_avg_chars_max": 400,
+    "image_count": 3
+  }
+]
