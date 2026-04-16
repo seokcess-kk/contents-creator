@@ -60,7 +60,7 @@ def _check_image_count(
 ) -> list[OutlineIssue]:
     """이미지 수 검증."""
     avg = pattern_card.image_pattern.avg_count_per_post
-    target = max(3, round(avg)) if avg > 0 else 3
+    target = max(3, min(round(avg), 10)) if avg > 0 else 3
 
     if len(outline.image_prompts) < target:
         return [
