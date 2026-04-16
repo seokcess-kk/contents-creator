@@ -13,11 +13,13 @@ from pydantic import HttpUrl
 from domain.analysis.physical_extractor import (
     _compute_paragraph_stats,
     _compute_section_ratios,
+    _count_keyword,
     _detect_body_font_size,
     _detect_qa_sections,
     _extract_tags,
     _extract_title,
     _find_first_sentence_with_keyword,
+    _keyword_in,
     _title_keyword_position,
     extract_physical,
 )
@@ -110,22 +112,33 @@ class TestExtractPhysicalBasic:
         assert result.total_paragraphs == 2
         assert result.total_chars > 0
 
-    def test_se_text_merges_inner_p_tags(self) -> None:
-        """네이버가 줄바꿈마다 p 를 쪼개는 경우 — se-text 컴포넌트를 1개 paragraph 로 병합."""
+    def test_se_text_splits_inner_p_tags(self) -> None:
+        """각 <p> 태그가 별도 paragraph 로 분리된다 (5자 이상만)."""
+        multi_p = """
+        <div class="se-component se-text se-l-default">
+          <p class="se-text-paragraph"><span class="se-fs-fs13">첫 번째 줄입니다</span></p>
+          <p class="se-text-paragraph"><span class="se-fs-fs13">두 번째 줄입니다</span></p>
+          <p class="se-text-paragraph"><span class="se-fs-fs13">세 번째 줄입니다</span></p>
+        </div>
+        """
+        html = _wrap_naver(multi_p)
+        result = extract_physical(_page(html), "키워드")
+        assert result.total_paragraphs == 3
+        assert result.total_chars > 0
+        paragraphs = [e for e in result.element_sequence if e.type == "paragraph"]
+        assert len(paragraphs) == 3
+
+    def test_se_text_skips_short_p_tags(self) -> None:
+        """5자 미만의 <p> 태그는 스킵된다."""
         multi_p = """
         <div class="se-component se-text se-l-default">
           <p class="se-text-paragraph"><span class="se-fs-fs13">줄1</span></p>
-          <p class="se-text-paragraph"><span class="se-fs-fs13">줄2</span></p>
-          <p class="se-text-paragraph"><span class="se-fs-fs13">줄3</span></p>
+          <p class="se-text-paragraph"><span class="se-fs-fs13">충분히 긴 문단입니다</span></p>
         </div>
         """
         html = _wrap_naver(multi_p)
         result = extract_physical(_page(html), "키워드")
         assert result.total_paragraphs == 1
-        # 전체 텍스트가 공백으로 병합됨
-        assert result.total_chars > 0
-        paragraphs = [e for e in result.element_sequence if e.type == "paragraph"]
-        assert len(paragraphs) == 1
 
 
 class TestHeadingDetection:
@@ -376,6 +389,68 @@ class TestDetectBodyFontSize:
 
         soup = BeautifulSoup("<div><p>text</p></div>", "html.parser")
         assert _detect_body_font_size(soup.div) == 13  # type: ignore[arg-type]
+
+
+class TestSpaceInsensitiveKeyword:
+    def test_keyword_in_with_spaces(self) -> None:
+        assert _keyword_in("부천 다이어트 한의원", "부천다이어트한의원에서") is True
+
+    def test_keyword_in_exact(self) -> None:
+        assert _keyword_in("부천 다이어트", "부천 다이어트 추천") is True
+
+    def test_keyword_in_absent(self) -> None:
+        assert _keyword_in("강남 피부과", "부천다이어트한의원") is False
+
+    def test_count_keyword_normalized(self) -> None:
+        text = "부천다이어트한의원 추천 부천다이어트한의원"
+        assert _count_keyword("부천 다이어트 한의원", text) == 2
+
+    def test_count_keyword_exact_match(self) -> None:
+        assert _count_keyword("강남 피부과", "강남 피부과 추천 강남 피부과") == 2
+
+    def test_title_keyword_position_no_space(self) -> None:
+        assert _title_keyword_position("부천다이어트한의원 추천", "부천 다이어트 한의원") == "front"
+
+    def test_first_sentence_no_space_keyword(self) -> None:
+        text = "첫 문장입니다. 부천다이어트한의원을 소개합니다."
+        assert _find_first_sentence_with_keyword(text, "부천 다이어트 한의원") == 2
+
+    def test_keyword_count_in_physical(self) -> None:
+        body = _se_text("부천다이어트한의원은 좋다. 부천다이어트한의원 추천.")
+        html = _wrap_naver(body, title="부천다이어트한의원 추천")
+        result = extract_physical(_page(html), "부천 다이어트 한의원")
+        assert result.keyword_analysis.total_count >= 2
+        assert result.keyword_analysis.density > 0
+
+
+class TestHeadingAlternativeSignals:
+    def test_center_aligned_short_text_is_heading(self) -> None:
+        """가운데 정렬 + 짧은 텍스트 → heading."""
+        body_html = """
+        <div class="se-component se-text se-l-default">
+          <p class="se-text-paragraph se-text-paragraph-align-center">
+            소제목입니다
+          </p>
+        </div>
+        """
+        body = _se_text("본문 텍스트 " * 10) + body_html + _se_text("또 다른 본문 " * 10)
+        html = _wrap_naver(body)
+        result = extract_physical(_page(html), "키워드")
+        assert result.subtitle_count >= 1
+
+    def test_bold_wrapped_short_text_is_heading(self) -> None:
+        """전체 텍스트가 bold + 짧은 → heading."""
+        body_html = """
+        <div class="se-component se-text se-l-default">
+          <p class="se-text-paragraph">
+            <b>소제목입니다</b>
+          </p>
+        </div>
+        """
+        body = _se_text("본문 텍스트 " * 10) + body_html + _se_text("또 다른 본문 " * 10)
+        html = _wrap_naver(body)
+        result = extract_physical(_page(html), "키워드")
+        assert result.subtitle_count >= 1
 
 
 class TestFallbackStandardHtml:

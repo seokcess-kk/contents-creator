@@ -42,16 +42,42 @@ SENTENCE_SPLIT_RE = re.compile(r"[.!?\n]+")
 # 짧은 문단 기준 (SPEC 에선 "1~2 문장" 으로 정의, 글자수 50자 이하로 근사)
 SHORT_PARAGRAPH_CHAR_THRESHOLD = 50
 
+# 제로폭 비가시 문자 제거 정규식
+_INVISIBLE_CHARS = re.compile(r"[\u200b\u200c\u200d\ufeff]")
+
 # Q&A heading 접두어
 QA_PREFIX_RE = re.compile(r"^\s*(?:Q\.|Q:|Q\)|질문\)|\[Q\])", re.IGNORECASE)
 QA_KEYWORD_RE = re.compile(r"FAQ|자주\s*묻는|질문과\s*답", re.IGNORECASE)
+
+
+def _strip_invisible(text: str) -> str:
+    """제로폭 비가시 문자를 제거한다."""
+    return _INVISIBLE_CHARS.sub("", text).strip()
+
+
+def _keyword_in(keyword: str, text: str) -> bool:
+    """공백 무시 키워드 존재 확인."""
+    if keyword in text:
+        return True
+    if " " in keyword:
+        return keyword.replace(" ", "") in text.replace(" ", "")
+    return False
+
+
+def _count_keyword(keyword: str, text: str) -> int:
+    """공백 무시 키워드 등장 횟수 (원본/정규화 중 큰 값)."""
+    count = text.count(keyword)
+    if " " in keyword:
+        normalized = keyword.replace(" ", "")
+        count = max(count, text.replace(" ", "").count(normalized))
+    return count
 
 
 def extract_body_text(page: BlogPage) -> str:
     """LLM 프롬프트 입력용 plain text 추출.
 
     [4a] semantic_extractor 와 [4b] appeal_extractor 가 공통으로 사용.
-    se-text 컴포넌트를 의미적 문단으로 병합하고, heading 은 `## ` 접두로 구분.
+    개별 <p> 태그를 문단으로 분리하고, heading 은 `## ` 접두로 구분.
     """
     soup = BeautifulSoup(page.html, "html.parser")
     container = _extract_main_container(soup)
@@ -246,7 +272,7 @@ def _walk_container(
                     type="heading",
                     text=text,
                     level=level,
-                    has_keyword=main_keyword in text,
+                    has_keyword=_keyword_in(main_keyword, text) if main_keyword else False,
                 )
             )
             continue
@@ -268,7 +294,7 @@ def _walk_container(
                 ElementSequenceItem(
                     type="paragraph",
                     chars=len(text),
-                    keyword_count=text.count(main_keyword),
+                    keyword_count=_count_keyword(main_keyword, text) if main_keyword else 0,
                 )
             )
 
@@ -305,46 +331,44 @@ def _walk_text_component(
     main_keyword: str,
     body_font_size: int,
 ) -> None:
-    """se-text 컴포넌트를 **하나의 의미적 문단** 으로 취급한다.
+    """se-text 컴포넌트를 개별 <p> 단위로 문단 분리한다.
 
-    네이버 스마트에디터 ONE 은 줄바꿈·정렬 단위로 `<p class="se-text-paragraph">`
-    를 쪼갠다. 실측 기준 한 se-text 컴포넌트 안에 p 가 10~15개씩 분리되는 경우가
-    흔하다. 따라서 p 단위로 쪼개면 total_paragraphs 가 수백 개가 되어 문단 통계
-    가 무의미해진다.
-
-    대신 다음과 같이 처리:
-    1. 컴포넌트 전체 텍스트를 공백 하나로 join → 1개 paragraph 로 저장
-    2. 폰트 크기 클래스(`se-fs-fs24` 이상) + 짧은 길이(≤60자) + 전체가 굵음
-       → subtitle(heading) 로 분류 + paragraph 로는 추가 안 함
+    heading 판정은 컴포넌트 전체 텍스트로 수행하고,
+    일반 텍스트는 각 <p> 를 별도 paragraph 로 등록한다.
+    제로폭 문자와 5자 미만의 빈 <p> 는 스킵한다.
     """
-    # 컴포넌트 직속 p 만 순회 (자식 se-text 가 없음)
     inner_ps = [p for p in component.find_all("p") if isinstance(p, Tag)]
-    joined_text = " ".join(
+    full_text = " ".join(
         p.get_text(" ", strip=True) for p in inner_ps if p.get_text(strip=True)
     ).strip()
-    if not joined_text:
+    if not full_text:
         return
 
-    if _looks_like_heading(component, joined_text, body_font_size):
-        subtitles.append(joined_text)
+    if _looks_like_heading(component, full_text, body_font_size):
+        subtitles.append(full_text)
         elements.append(
             ElementSequenceItem(
                 type="heading",
-                text=joined_text,
-                level=3,  # 네이버는 시각적 레벨 없음 — MVP 에선 h3 로 통일
-                has_keyword=main_keyword in joined_text,
+                text=full_text,
+                level=3,
+                has_keyword=_keyword_in(main_keyword, full_text),
             )
         )
         return
 
-    paragraphs.append(joined_text)
-    elements.append(
-        ElementSequenceItem(
-            type="paragraph",
-            chars=len(joined_text),
-            keyword_count=joined_text.count(main_keyword),
+    for p in inner_ps:
+        text = _strip_invisible(p.get_text(" ", strip=True))
+        if len(text) < 5:
+            continue
+        paragraphs.append(text)
+        kw_count = _count_keyword(main_keyword, text) if main_keyword else 0
+        elements.append(
+            ElementSequenceItem(
+                type="paragraph",
+                chars=len(text),
+                keyword_count=kw_count,
+            )
         )
-    )
 
 
 # SPEC 의 "소제목" 근사: 본문 최빈 폰트 크기보다 큰 폰트 + 짧은 길이.
@@ -352,19 +376,8 @@ _HEADING_FS_PATTERN = re.compile(r"se-fs-fs(\d+)")
 _HEADING_MAX_CHARS = 80
 
 
-def _looks_like_heading(component: Tag, text: str, body_font_size: int) -> bool:
-    """se-text 컴포넌트가 시각적 소제목처럼 보이는지 판정.
-
-    네이버 모바일은 폰트 크기가 11~16 범위로 좁아 절대 임계값으로는 분류 불가.
-    본문 최빈 fs 보다 **크고** 텍스트가 짧으면 소제목으로 본다.
-
-    기준:
-    - 텍스트 길이 ≤ 60자
-    - 컴포넌트 내부 span/p 의 `se-fs-fs{N}` 최대값 > body_font_size
-    """
-    if len(text) > _HEADING_MAX_CHARS:
-        return False
-
+def _get_max_font_size(component: Tag) -> int:
+    """컴포넌트 내부 `se-fs-fs{N}` 클래스의 최대 폰트 크기를 반환."""
     max_fs = 0
     for tag in component.find_all(True):
         if not isinstance(tag, Tag):
@@ -377,7 +390,37 @@ def _looks_like_heading(component: Tag, text: str, body_font_size: int) -> bool:
                 size = int(match.group(1))
                 if size > max_fs:
                     max_fs = size
-    return max_fs > body_font_size
+    return max_fs
+
+
+def _looks_like_heading(component: Tag, text: str, body_font_size: int) -> bool:
+    """se-text 컴포넌트가 시각적 소제목처럼 보이는지 다중 신호로 판정.
+
+    Signal 1: 본문 최빈 fs 보다 큰 폰트 크기 (기존)
+    Signal 2: 짧은 단일행 + 가운데 정렬
+    Signal 3: 짧은 단일행 + 전체 텍스트가 bold
+    """
+    if len(text) > _HEADING_MAX_CHARS:
+        return False
+
+    # Signal 1: font size larger than body
+    max_fs = _get_max_font_size(component)
+    if max_fs > body_font_size:
+        return True
+
+    ps = [p for p in component.find_all("p") if p.get_text(strip=True)]
+    if len(ps) != 1 or len(text) > 60:
+        return False
+
+    # Signal 2: center-aligned single-line text
+    raw_cls = ps[0].get("class")
+    p_classes = " ".join(list(raw_cls) if isinstance(raw_cls, list) else [])
+    if "align-center" in p_classes:
+        return True
+
+    # Signal 3: entire text is bold
+    bold = component.select_one("b, strong")
+    return bool(bold and bold.get_text(strip=True) == text)
 
 
 def _extract_dia_plus(container: Tag, subtitles: list[str], full_text: str) -> DiaPlus:
@@ -443,11 +486,13 @@ def _extract_keyword_analysis(
     total_chars: int,
 ) -> KeywordAnalysis:
     """주 키워드 통계. 연관 키워드는 MVP 에서 빈 dict."""
-    total_count = full_text.count(main_keyword) + title.count(main_keyword)
+    total_count = _count_keyword(main_keyword, full_text) + _count_keyword(main_keyword, title)
     density = total_count / total_chars if total_chars > 0 else 0.0
 
     subtitle_inclusion = (
-        sum(1 for s in subtitles if main_keyword in s) / len(subtitles) if subtitles else 0.0
+        sum(1 for s in subtitles if _keyword_in(main_keyword, s)) / len(subtitles)
+        if subtitles
+        else 0.0
     )
 
     first_appearance = _find_first_sentence_with_keyword(full_text, main_keyword)
@@ -470,7 +515,7 @@ def _find_first_sentence_with_keyword(text: str, keyword: str) -> int:
         return 0
     sentences = [s.strip() for s in SENTENCE_SPLIT_RE.split(text) if s.strip()]
     for idx, sentence in enumerate(sentences, start=1):
-        if keyword in sentence:
+        if _keyword_in(keyword, sentence):
             return idx
     return 0
 
@@ -478,10 +523,12 @@ def _find_first_sentence_with_keyword(text: str, keyword: str) -> int:
 def _title_keyword_position(
     title: str, keyword: str
 ) -> Literal["front", "middle", "back", "absent"]:
-    """제목을 1/3 구간으로 나눠 키워드 시작 위치 판정."""
-    if not keyword or keyword not in title:
+    """제목을 1/3 구간으로 나눠 키워드 시작 위치 판정 (공백 무시)."""
+    if not keyword or not _keyword_in(keyword, title):
         return "absent"
     pos = title.find(keyword)
+    if pos < 0 and " " in keyword:
+        pos = title.replace(" ", "").find(keyword.replace(" ", ""))
     length = len(title)
     if length == 0:
         return "absent"

@@ -112,7 +112,7 @@ def _aggregate_stats(physicals: list[PhysicalAnalysis]) -> PatternCardStats:
     return PatternCardStats(
         chars=_range(chars),
         subtitles=_range(subs),
-        keyword_density=_range(dens),
+        keyword_density=_range(dens, precision=4),
         subtitle_keyword_ratio=_avg([p.keyword_analysis.subtitle_keyword_ratio for p in physicals]),
         first_keyword_sentence=_avg(
             [float(p.keyword_analysis.first_appearance_sentence) for p in physicals]
@@ -304,11 +304,11 @@ def _extract_related_keywords(physicals: list[PhysicalAnalysis]) -> list[str]:
     return [kw for kw, _ in counter.most_common(10)]
 
 
-def _range(values: list[float]) -> RangeStats:
+def _range(values: list[float], precision: int = 2) -> RangeStats:
     return RangeStats(
-        avg=round(sum(values) / len(values), 2),
-        min=round(min(values), 2),
-        max=round(max(values), 2),
+        avg=round(sum(values) / len(values), precision),
+        min=round(min(values), precision),
+        max=round(max(values), precision),
     )
 
 
