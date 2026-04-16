@@ -150,12 +150,13 @@ def _extract_tool_input(response: Any) -> dict[str, Any]:
 
 def _parse_response(tool_input: dict[str, Any], url: str) -> SemanticAnalysis:
     sections = [SectionSemantic(**s) for s in tool_input.get("semantic_structure", [])]
-    tr = tool_input.get("target_reader", {})
+    tr_raw = tool_input.get("target_reader", {})
+    tr = tr_raw if isinstance(tr_raw, dict) else {}
     return SemanticAnalysis(
         url=url,  # type: ignore[arg-type]
         semantic_structure=sections,
-        title_pattern=tool_input["title_pattern"],
-        hook_type=tool_input["hook_type"],
+        title_pattern=tool_input.get("title_pattern", "방법론형"),
+        hook_type=tool_input.get("hook_type", "공감형"),
         target_reader=TargetReader(**tr),
         depth_assessment=str(tool_input.get("depth_assessment", "")),
     )

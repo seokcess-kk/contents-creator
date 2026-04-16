@@ -129,6 +129,6 @@ def _parse_response(tool_input: dict[str, Any], url: str) -> AppealAnalysis:
     return AppealAnalysis(
         url=url,  # type: ignore[arg-type]
         appeal_points=points,
-        subject_type=tool_input["subject_type"],
-        overall_promotional_level=tool_input["overall_promotional_level"],
+        subject_type=tool_input.get("subject_type", "정보 주체"),
+        overall_promotional_level=tool_input.get("overall_promotional_level", "low"),
     )
