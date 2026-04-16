@@ -2,13 +2,28 @@
 
 from __future__ import annotations
 
+import io
 from pathlib import Path
 from unittest.mock import MagicMock
+
+from PIL import Image
 
 from domain.image_generation.cache import compute_cache_key, save_to_cache
 from domain.image_generation.generator import generate_images
 from domain.image_generation.model import ImagePrompt
 from domain.image_generation.provider import ImageGenerationError
+
+
+def _make_valid_png(width: int = 100, height: int = 100) -> bytes:
+    """Pillow 로 열 수 있는 유효한 PNG 바이트 생성."""
+    img = Image.new("RGB", (width, height), color=(200, 200, 200))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+# 테스트 전역에서 공유하는 유효한 PNG 바이트
+_VALID_PNG = _make_valid_png()
 
 
 def _make_prompt(
@@ -25,9 +40,9 @@ def _make_prompt(
     )
 
 
-def _make_mock_provider(data: bytes = b"\x89PNG_FAKE") -> MagicMock:
+def _make_mock_provider(data: bytes | None = None) -> MagicMock:
     provider = MagicMock()
-    provider.generate.return_value = data
+    provider.generate.return_value = data if data is not None else _VALID_PNG
     return provider
 
 
@@ -48,7 +63,7 @@ class TestGenerateImagesSuccess:
         assert result.generated[0].sequence == 1
         assert result.generated[0].alt_text == "alt_1"
         # 파일이 실제로 존재
-        assert (tmp_path / "images" / "image_1.png").exists()
+        assert (tmp_path / "images" / "image_1.jpg").exists()
         # 캐시에도 존재
         key = compute_cache_key(prompts[0].prompt)
         assert (tmp_path / "cache" / f"{key}.png").exists()
@@ -72,7 +87,7 @@ class TestCacheHit:
         prompt = _make_prompt(1)
         cache_dir = tmp_path / "cache"
         key = compute_cache_key(prompt.prompt)
-        save_to_cache(cache_dir, key, b"\x89PNG_CACHED")
+        save_to_cache(cache_dir, key, _VALID_PNG)
 
         provider = _make_mock_provider()
         result = generate_images(
@@ -85,16 +100,16 @@ class TestCacheHit:
         assert len(result.generated) == 1
         # API 호출 없음
         provider.generate.assert_not_called()
-        # 출력 파일은 캐시에서 복사됨
-        assert (tmp_path / "images" / "image_1.png").read_bytes() == b"\x89PNG_CACHED"
+        # 출력 파일이 존재 (optimize 후 JPEG 이므로 바이트는 다를 수 있음)
+        assert (tmp_path / "images" / "image_1.jpg").exists()
 
     def test_regenerate_ignores_cache(self, tmp_path: Path) -> None:
         prompt = _make_prompt(1)
         cache_dir = tmp_path / "cache"
         key = compute_cache_key(prompt.prompt)
-        save_to_cache(cache_dir, key, b"OLD_CACHED")
+        save_to_cache(cache_dir, key, _make_valid_png(50, 50))
 
-        provider = _make_mock_provider(b"NEW_GENERATED")
+        provider = _make_mock_provider(_make_valid_png(200, 200))
         result = generate_images(
             prompts=[prompt],
             output_dir=tmp_path,
@@ -105,7 +120,7 @@ class TestCacheHit:
 
         assert len(result.generated) == 1
         provider.generate.assert_called_once()
-        assert (tmp_path / "images" / "image_1.png").read_bytes() == b"NEW_GENERATED"
+        assert (tmp_path / "images" / "image_1.jpg").exists()
 
 
 class TestBudgetGuard:
@@ -132,7 +147,7 @@ class TestBudgetGuard:
         # prompt 1 을 캐시에 미리 넣기
         p1 = _make_prompt(1)
         key = compute_cache_key(p1.prompt)
-        save_to_cache(cache_dir, key, b"CACHED")
+        save_to_cache(cache_dir, key, _VALID_PNG)
 
         provider = _make_mock_provider()
         prompts = [
@@ -176,7 +191,7 @@ class TestApiError:
         provider = MagicMock()
         provider.generate.side_effect = [
             ImageGenerationError("transient"),
-            b"\x89PNG_OK",
+            _VALID_PNG,
         ]
 
         result = generate_images(
@@ -195,7 +210,7 @@ class TestApiError:
         provider.generate.side_effect = [
             ImageGenerationError("fail"),
             ImageGenerationError("fail"),  # seq 1 재시도도 실패
-            b"\x89PNG_OK",  # seq 2 성공
+            _VALID_PNG,  # seq 2 성공
         ]
 
         prompts = [

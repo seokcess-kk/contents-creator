@@ -500,6 +500,8 @@ def run_stage_image_generation(
         cache_dir=cache_dir,
         budget=budget,
         regenerate=regenerate,
+        max_width=settings.image_max_width,
+        jpeg_quality=settings.image_jpeg_quality,
     )
 
     reporter.stage_end(

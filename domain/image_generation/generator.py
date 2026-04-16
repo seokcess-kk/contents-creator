@@ -6,13 +6,15 @@
 
 from __future__ import annotations
 
+import io
 import logging
 import time
 from pathlib import Path
 
+from PIL import Image
+
 from domain.image_generation.cache import (
     compute_cache_key,
-    copy_from_cache,
     get_cached,
     save_to_cache,
 )
@@ -40,6 +42,8 @@ def generate_images(
     cache_dir: Path | None = None,
     budget: int | None = None,
     regenerate: bool = False,
+    max_width: int = 720,
+    jpeg_quality: int = 85,
 ) -> ImageGenerationResult:
     """검증 통과된 prompt 리스트로 이미지를 생성한다.
 
@@ -50,6 +54,8 @@ def generate_images(
         cache_dir: 캐시 디렉토리. None 이면 캐시 사용 안 함.
         budget: 최대 API 호출 수. None 이면 무제한.
         regenerate: True 면 캐시 무시.
+        max_width: 리사이즈 최대 폭 (px). 네이버 블로그 본문 기준.
+        jpeg_quality: JPEG 변환 품질 (1~100).
 
     Returns:
         ImageGenerationResult with generated/skipped lists.
@@ -86,6 +92,8 @@ def generate_images(
             provider=provider,
             cache_dir=cache_dir,
             regenerate=regenerate,
+            max_width=max_width,
+            jpeg_quality=jpeg_quality,
         )
 
         if isinstance(result, GeneratedImage):
@@ -108,11 +116,13 @@ def _process_single_prompt(
     provider: ImageProvider,
     cache_dir: Path | None,
     regenerate: bool,
+    max_width: int = 720,
+    jpeg_quality: int = 85,
 ) -> SkippedImage | tuple[GeneratedImage, bool]:
     """단일 prompt 처리. 성공 시 (GeneratedImage, api_called), 실패 시 SkippedImage."""
     cache_key = compute_cache_key(prompt_item.prompt)
-    dest_path = images_dir / f"image_{prompt_item.sequence}.png"
-    relative_path = f"images/image_{prompt_item.sequence}.png"
+    dest_path = images_dir / f"image_{prompt_item.sequence}.jpg"
+    relative_path = f"images/image_{prompt_item.sequence}.jpg"
 
     # 안전망 검증
     try:
@@ -128,11 +138,14 @@ def _process_single_prompt(
             reason="prompt_safety_failed",
         )
 
-    # 캐시 확인
+    # 캐시 확인 (원본 PNG 캐시 → 리사이즈 후 저장)
     if not regenerate and cache_dir is not None:
         cached_path = get_cached(cache_dir, cache_key)
         if cached_path is not None:
-            copy_from_cache(cached_path, dest_path)
+            raw_bytes = cached_path.read_bytes()
+            optimized = _optimize_image(raw_bytes, max_width, jpeg_quality)
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            dest_path.write_bytes(optimized)
             return (
                 GeneratedImage(
                     sequence=prompt_item.sequence,
@@ -153,13 +166,14 @@ def _process_single_prompt(
             reason="api_error",
         )
 
-    # 저장
-    dest_path.parent.mkdir(parents=True, exist_ok=True)
-    dest_path.write_bytes(png_bytes)
-
-    # 캐시에도 저장
+    # 원본을 캐시에 저장 (PNG 원본 보존)
     if cache_dir is not None:
         save_to_cache(cache_dir, cache_key, png_bytes)
+
+    # 리사이즈 + JPEG 변환 후 저장
+    optimized = _optimize_image(png_bytes, max_width, jpeg_quality)
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    dest_path.write_bytes(optimized)
 
     return (
         GeneratedImage(
@@ -192,6 +206,22 @@ def _call_with_retry(
             else:
                 logger.error("image generation failed after 2 attempts: %s", exc)
     return None
+
+
+def _optimize_image(raw_bytes: bytes, max_width: int, jpeg_quality: int) -> bytes:
+    """PNG 원본 → 리사이즈 + JPEG 변환. 네이버 블로그 본문에 맞는 크기로."""
+    img = Image.open(io.BytesIO(raw_bytes))
+    if img.mode == "RGBA":
+        img = img.convert("RGB")
+
+    w, h = img.size
+    if w > max_width:
+        ratio = max_width / w
+        img = img.resize((max_width, round(h * ratio)), Image.LANCZOS)
+
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=jpeg_quality, optimize=True)
+    return buf.getvalue()
 
 
 def _create_default_provider() -> ImageProvider:
