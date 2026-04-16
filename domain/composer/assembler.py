@@ -118,13 +118,15 @@ def _normalize_position(raw: str, sequence: int) -> str:
         return "after_intro"
     if "결론" in raw or "마무리" in raw or "conclusion" in low:
         return "before_conclusion"
+    if "후반" in raw or "마지막" in raw:
+        return "before_conclusion"
 
     # "섹션 N" 숫자 추출
     match = _SECTION_NUM_RE.search(raw)
     if match:
         return f"section_{match.group(1)}_end"
 
-    # 폴백: sequence 기반
+    # 폴백: sequence 기반 균등 배치
     return f"section_{sequence + 1}_end"
 
 
@@ -203,14 +205,15 @@ def _insert_at_section_ends(
         sec_idx = int(sec_idx_str)
 
         # 섹션 번호에 해당하는 heading 다음의 heading 직전에 삽입
+        # 범위 초과 시 문서 끝에 삽입 (이미지 누락 방지)
         if sec_idx - 1 < len(heading_indices):
-            # 다음 heading 위치 또는 문서 끝
             next_h = len(lines)
             if sec_idx < len(heading_indices):
                 next_h = heading_indices[sec_idx]
-            lines = lines[:next_h] + _image_lines(images) + lines[next_h:]
-            # 인덱스 갱신
-            heading_indices = [i for i, line in enumerate(lines) if line.startswith("## ")]
+        else:
+            next_h = len(lines)  # 문서 끝
+        lines = lines[:next_h] + _image_lines(images) + lines[next_h:]
+        heading_indices = [i for i, line in enumerate(lines) if line.startswith("## ")]
     return lines
 
 
