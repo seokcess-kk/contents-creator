@@ -24,6 +24,7 @@ dependencies = [
     "pypdf>=5.0",            # pdf 브랜드 소스 파싱 (1차)
     "pdfplumber>=0.11",      # pdf fallback (pypdf 실패 시)
     "pillow>=10.4",          # PNG 메타·분할·리사이즈
+    "markdown>=3.6",         # 마크다운 → HTML 변환 (composer 도메인)
 ]
 
 [project.optional-dependencies]
@@ -72,7 +73,7 @@ disallow_untyped_defs = true
 no_implicit_optional = true
 
 [[tool.mypy.overrides]]
-module = ["bs4.*", "supabase.*", "tenacity.*"]
+module = ["bs4.*", "supabase.*", "tenacity.*", "markdown.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
