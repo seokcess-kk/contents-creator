@@ -26,9 +26,11 @@ BRIGHT_DATA_WEB_UNLOCKER_ZONE=...   # SERP 수집 + 본문 수집 공용
 ## [1] SERP 수집 (serp_collector.py)
 
 ### 수집 정책
-- 쿼리: `https://search.naver.com/search.naver?query={keyword}&where=blog`
-- `&where=blog` 로 블로그 탭만 대상으로 함
-- Bright Data SERP API `format: "raw"` 로 HTML 받아 파싱
+- 쿼리: `https://search.naver.com/search.naver?ssc=tab.blog.all&query={keyword}&start=1`
+- `ssc=tab.blog.all` 로 네이버 **블로그 전용 탭** 을 직접 요청 (2026-04-16 실측, lessons.md C2).
+  `where=blog` 통합검색 섹션은 React 버튼으로 6~7개만 렌더되고 `start` 파라미터도 무시되어 사용 불가
+- Web Unlocker `format: "raw"` 로 HTML 받아 파싱
+- **포스트 URL 은 `a[href]` 뿐 아니라 `*[data-url]` 속성에도 들어 있다** (네이버 신버전 UI). 파서는 둘 다 순회
 - 상위 20개 결과 요청 → 다음 필터 적용:
   - URL 호스트가 `blog.naver.com` 또는 `m.blog.naver.com` 인 것만
   - 광고(`ads`) 섹션 제외

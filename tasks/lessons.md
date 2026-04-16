@@ -215,6 +215,44 @@ ALLOWED_TAGS = {
 - crawling 스킬 업데이트
 - `BRIGHT_DATA_API_KEY` 는 `7243a70f-16c...` (검증용 prefix)
 
+### [C2] 네이버 SERP 수집 — `ssc=tab.blog.all` + `data-url` 파싱 (2026-04-16 실측 완료) ✅
+
+Phase 1 크롤러 E2E 스모크 중 발견. `where=blog` 방식으로는 수집이 불가능해 두 가지를 동시 전환했다.
+
+**문제 1 — `where=blog` 통합검색 섹션의 노출 한계**:
+- `search.naver.com/search.naver?query=...&where=blog` 는 네이버 통합검색 하위 블로그 섹션만 반환한다.
+- 이 섹션은 React 버튼으로 6~7개 포스트만 초기 렌더링되고, 나머지는 "더보기" 클릭 시 AJAX 로 로드된다.
+- `start=11`, `start=21` 파라미터는 이 섹션에서 **무시**된다 (HTML 바이트는 다르지만 포스트 URL 집합은 동일).
+- 결과: 키워드 5종 실측에서 대부분 4~6개만 파싱 → `InsufficientCollectionError` (최소 7 미달).
+
+**문제 2 — 포스트 URL 이 `a[href]` 가 아닌 `[data-url]` 속성에 들어 있음**:
+- 네이버 신버전 SERP 는 `<button class="... _keep_trigger" data-url="https://blog.naver.com/...">` 형태로 URL 을 버튼 속성에 넣는다.
+- `a[href]` 만 순회하는 파서는 "다이어트 한약" 키워드에서 raw unique 24개 중 5개만 잡았다.
+
+**확정 방침 (두 가지 동시 수정)**:
+1. **탭 URL 전환**: `search.naver.com/search.naver?ssc=tab.blog.all&query=...&start=1` 사용. 이것은 네이버 "블로그 탭" 을 직접 요청하며 한 페이지에 **40개 이상 포스트를 서버 렌더링**한다.
+2. **파서 확장**: `a[href]` 뿐 아니라 `*[data-url]` 도 순회. `href` 가 있으면 우선, 없으면 `data-url`. 회귀 테스트 2건 추가.
+
+**실측 (`ssc=tab.blog.all` 블로그 탭)**:
+
+| 키워드 | bytes | raw unique posts |
+|---|---|---|
+| 강남 피부과 | 552 KB | 43 |
+| 강남 다이어트 한의원 | ~550 KB | ≥10 (E2E 성공) |
+
+**E2E 검증 결과 (`--keyword "강남 피부과"`)**:
+- [1] SERP 수집: 10/10 (MAX_RESULTS 캡 도달) → `analysis/serp-results.json` 저장
+- [2] 본문 수집: 10/10 성공, 실패 0 → `analysis/pages/0~9.html` + `index.json` 저장
+- 각 모바일 본문 HTML 150~180 KB (정상 `se-main-container` 포함 예상)
+
+**SPEC 영향**:
+- `SPEC-SEO-TEXT.md` §3 [1] 과 crawling 스킬에 쿼리 URL 을 `ssc=tab.blog.all&query=...` 로 업데이트 필요 (별도 문서 업데이트 작업)
+- `serp_collector.py` / 테스트는 이미 반영
+
+**재발 방지**:
+- 네이버 검색 UI 는 서버 렌더링 → React 버튼 트리거 방식으로 계속 이동 중. 파서는 `a[href]` + `*[data-url]` 모두 지원하도록 유지
+- 페이징이 필요할 경우 `ssc=tab.blog.all&start=11` 이 실제로 동작한다 (실측에서 40개 → 41개로 새 URL 검출). 현재는 1페이지만으로 충분
+
 ### [C3] Claude Code 훅 환경 변수 (2026-04-15 실측 완료)
 
 **결론: `$CLAUDE_FILE_PATH` 같은 환경 변수는 존재하지 않는다. Claude Code 2.1+ 는 훅에 JSON 을 stdin 으로 전달한다.**
