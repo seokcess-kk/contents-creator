@@ -419,7 +419,7 @@ def _format_image_instructions(pc: PatternCard) -> str:
         "[필수 규칙 — 이것만 지키면 됨]\n"
         "1. 언어: 영어 (장면 묘사형 문장)\n"
         "2. 'No text, no letters' 반드시 포함\n"
-        "3. 인물 등장 시 'Korean' 키워드 필수\n"
+        "3. 인물은 무조건 한국인 — 모든 인물 prompt 에 'Korean' 포함 필수 (예외 없음)\n"
         "4. 금지 소재 (부정형으로도 넣지 말 것):\n"
         "   - 환자 묘사 (patient, injured, sick)\n"
         "   - 시술 장면 (surgery, injection, treatment scene)\n"
