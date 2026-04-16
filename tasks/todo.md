@@ -138,6 +138,18 @@
 - [ ] `bash .claude/hooks/build-check.sh` 통과
 - [ ] `tasks/lessons.md` 에 수집 결과 기록
 
+## 🚨 Phase 2 실측 이슈 (2026-04-16 발견, 후속 조치 대기)
+
+- [ ] **[P2-I1] 블로그 태그 수집 불가** — 모바일 네이버 본문 HTML 에 태그 영역 자체가 없음. 데스크톱은 iframe 껍데기만 반환. 별도 스프린트로 분리 예정. lessons.md P2 참조
+  - [ ] 선택지 결정: (a) PostView.nhn iframe 실측, (b) 별도 JSON API 탐색, (c) SPEC 에서 전면 삭제
+  - [ ] 결정 후 [5] cross_analyzer 의 `aggregated_tags` 와 [6] `suggested_tags` 폴백 로직 수정
+  - 현재 상태: `PhysicalAnalysis.tags` 는 빈 리스트로 동작 (코드는 폴백 셀렉터 유지)
+
+- [ ] **[P2-I2] 네이버 블로거가 소제목을 잘 안 씀** — 10개 중 8개가 소제목 0개. 폰트 기반 감지는 정상 동작하나 원본 데이터가 부재. lessons.md P2 참조
+  - [ ] [4a] semantic_extractor 진입 시 "소제목 0개 → 전체를 단일 섹션으로 분류" 폴백 로직 추가
+  - [ ] [5] cross_analyzer 구조 패턴 집계 시 소제목 있는 블로그만 대상으로 필터링
+  - [ ] [6] outline_writer 의 "상위 글 구조 복제 금지" 지시를 "참고할 구조가 있으면" 로 조건부화
+
 ## 🔮 Phase 2~8 — SEO 트랙 이후 단계 (각 단계 착수 시 분해)
 
 - **Phase 2**: 물리 분석 (`physical_extractor`) — 이미지 메타 추출 포함 (`image_pattern`)
