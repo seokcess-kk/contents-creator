@@ -441,7 +441,12 @@ def _format_image_instructions(pc: PatternCard) -> str:
         f"{avg_note}"
         f"AI 생성 이미지 목표 개수: {target}개\n\n"
         "image_prompts 필드에 이미지 prompt 리스트를 출력하라.\n\n"
-        f"[이미지 배치 패턴 — 분석 결과 기반]\n{position_note}\n\n"
+        f"[이미지 배치 패턴 — 분석 결과 기반]\n{position_note}\n"
+        "🔴 배치 규칙:\n"
+        "- 한 섹션에 이미지 최대 1장. 같은 섹션에 2장 이상 몰아넣지 마라\n"
+        "- position 은 반드시 'after_intro', 'section_N_end', "
+        "'before_conclusion' 형식 사용\n"
+        "- 이미지를 본문 전체에 균등 분산 배치\n\n"
         "[alt_text SEO 최적화]\n"
         f'- alt_text 에 주 키워드 "{pc.keyword}" 또는 '
         "연관 키워드를 자연스럽게 포함하라\n"
