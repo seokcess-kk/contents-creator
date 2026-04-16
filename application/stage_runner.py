@@ -524,11 +524,13 @@ def run_stage_compose(
     image_result: ImageGenerationResult | None,
     output_dir: Path,
     reporter: ProgressReporter,
+    pattern_card: PatternCard | None = None,
 ) -> dict[str, Path]:
-    """[10] intro + body 조립 → md/html + outline.md 저장."""
+    """[10] intro + body 조립 → md/html + outline.md 저장 + 품질 검증."""
     from domain.composer.assembler import assemble_content, insert_images_into_text
     from domain.composer.naver_html import convert_to_naver_html
     from domain.composer.outline_md import convert_outline_to_md
+    from domain.composer.quality_check import check_quality
 
     reporter.stage_start("compose")
 
@@ -588,9 +590,17 @@ def run_stage_compose(
         output_path=str(output_dir),
     )
 
+    # 품질 검증 (best-effort, 파이프라인 중단 안 함)
+    quality_summary: dict[str, str] = {}
+    if pattern_card is not None:
+        qr = check_quality(content_md, pattern_card)
+        quality_summary = {"quality_passed": str(qr.passed), "issues": str(len(qr.issues))}
+        qr_path = content_dir / "quality-report.json"
+        qr_path.write_text(qr.model_dump_json(indent=2), encoding="utf-8")
+
     reporter.stage_end(
         "compose",
-        {k: str(v) for k, v in paths.items()},
+        {**{k: str(v) for k, v in paths.items()}, **quality_summary},
     )
     return paths
 

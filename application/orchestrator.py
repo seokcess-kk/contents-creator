@@ -300,7 +300,9 @@ def _run_generation_stages(
 
     # [10] 조립
     try:
-        paths = run_stage_compose(outline, body, compliance, image_result, output_dir, reporter)
+        paths = run_stage_compose(
+            outline, body, compliance, image_result, output_dir, reporter, pattern_card=card
+        )
         stages.append(StageResult(name="compose", status=StageStatus.SUCCEEDED))
     except Exception as exc:
         stages.append(StageResult(name="compose", status=StageStatus.FAILED, error=str(exc)))
