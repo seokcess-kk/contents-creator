@@ -334,6 +334,15 @@ def run_stage_outline_generation(
         )
         outline = generate_outline(pattern_card, compliance_rules, feedback=feedback)
 
+    # 이미지 프롬프트 0개 폴백 — 코드로 강제 생성
+    if not outline.image_prompts:
+        from domain.generation.image_prompt_fallback import generate_fallback_image_prompts
+
+        avg = pattern_card.image_pattern.avg_count_per_post
+        target = max(3, min(round(avg), 10)) if avg > 0 else 3
+        outline.image_prompts = generate_fallback_image_prompts(outline, target)
+        logger.info("image_prompt.fallback_generated count=%d", len(outline.image_prompts))
+
     content_dir = output_dir / "content"
     content_dir.mkdir(parents=True, exist_ok=True)
     path = content_dir / "outline.json"

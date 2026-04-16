@@ -159,7 +159,7 @@ class TestOutlineGeneration:
         mock_outline = MagicMock()
         mock_outline.title = "Test Title"
         mock_outline.sections = [MagicMock(), MagicMock()]
-        mock_outline.image_prompts = []
+        mock_outline.image_prompts = [MagicMock()]
         mock_outline.model_dump_json.return_value = '{"title":"Test Title"}'
         mock_gen.return_value = mock_outline
 
@@ -190,7 +190,7 @@ class TestOutlineGeneration:
         mock_outline = MagicMock()
         mock_outline.title = "Retried Title"
         mock_outline.sections = [MagicMock()] * 5
-        mock_outline.image_prompts = []
+        mock_outline.image_prompts = [MagicMock()]
         mock_outline.model_dump_json.return_value = '{"title":"Retried Title"}'
         mock_gen.return_value = mock_outline
 
