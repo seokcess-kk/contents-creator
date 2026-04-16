@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import logging
 import re
-from pathlib import Path
 
 from domain.composer.model import AssembledContent
 from domain.generation.model import BodyResult, ImagePromptItem, Outline
@@ -253,11 +252,10 @@ def _insert_at_section_ends(
 
 
 def _image_lines(images: list[GeneratedImage]) -> list[str]:
-    """이미지 목록을 마크다운 라인으로 변환한다."""
+    """이미지 위치 마커 라인을 생성한다."""
     result: list[str] = []
     for img in images:
-        rel_path = f"{_HTML_IMAGE_REL_PREFIX}/{Path(img.path).name}"
-        result.extend(["", f"![{img.alt_text}]({rel_path})", ""])
+        result.extend(["", f"[이미지 {img.sequence}: {img.alt_text}]", ""])
     return result
 
 
@@ -266,10 +264,13 @@ def _append_images(
     image_map: dict[str, list[GeneratedImage]],
     position: str,
 ) -> None:
-    """해당 position 의 이미지를 마크다운 img 로 추가."""
+    """해당 position 의 이미지 위치 마커를 추가한다.
+
+    실제 이미지는 삽입하지 않고 위치만 명시.
+    사용자가 네이버 에디터에서 images/ 폴더의 파일을 수동 삽입.
+    """
     images = image_map.get(position, [])
     for img in images:
-        rel_path = f"{_HTML_IMAGE_REL_PREFIX}/{Path(img.path).name}"
         parts.append("")
-        parts.append(f"![{img.alt_text}]({rel_path})")
+        parts.append(f"[이미지 {img.sequence}: {img.alt_text}]")
         parts.append("")
