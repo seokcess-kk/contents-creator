@@ -47,6 +47,19 @@ QA_PREFIX_RE = re.compile(r"^\s*(?:Q\.|Q:|Q\)|질문\)|\[Q\])", re.IGNORECASE)
 QA_KEYWORD_RE = re.compile(r"FAQ|자주\s*묻는|질문과\s*답", re.IGNORECASE)
 
 
+def extract_body_text(page: BlogPage) -> str:
+    """LLM 프롬프트 입력용 plain text 추출.
+
+    [4a] semantic_extractor 와 [4b] appeal_extractor 가 공통으로 사용.
+    se-text 컴포넌트를 의미적 문단으로 병합하고, heading 은 `## ` 접두로 구분.
+    """
+    soup = BeautifulSoup(page.html, "html.parser")
+    container = _extract_main_container(soup)
+    body_fs = _detect_body_font_size(container)
+    _, paragraphs, _ = _walk_container(container, main_keyword="", body_font_size=body_fs)
+    return "\n\n".join(paragraphs)
+
+
 def extract_physical(page: BlogPage, main_keyword: str) -> PhysicalAnalysis:
     """단일 블로그 HTML → PhysicalAnalysis.
 

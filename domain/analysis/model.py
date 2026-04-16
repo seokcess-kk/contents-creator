@@ -1,8 +1,6 @@
 """Analysis 도메인 Pydantic 모델.
 
 SPEC-SEO-TEXT.md §3 [3][4a][4b] 의 각 추출 결과 타입.
-Phase 2 에서는 먼저 [3] 물리 분석 (`PhysicalAnalysis`) 만 정의하고,
-[4a][4b] 모델은 해당 단계 착수 시 추가한다.
 """
 
 from __future__ import annotations
@@ -96,3 +94,77 @@ class PhysicalAnalysis(BaseModel):
     section_ratios: SectionRatios
     tags: list[str] = Field(default_factory=list)
     tag_count: int = Field(ge=0, default=0)
+
+
+# ── [4a] 의미 분석 모델 ──
+
+SectionRole = Literal[
+    "도입/공감",
+    "정보제공",
+    "원인분석",
+    "방법제시",
+    "비교분석",
+    "사례/후기",
+    "전문가의견",
+    "FAQ",
+    "요약",
+    "검색유도",
+    "기타",
+]
+
+SECTION_ROLES: list[str] = list(SectionRole.__args__)  # type: ignore[attr-defined]
+
+DepthLevel = Literal["표면적", "중간", "전문적"]
+TitlePattern = Literal["질문형", "숫자형", "감정형", "방법론형"]
+HookType = Literal["공감형", "통계형", "질문형", "스토리형"]
+
+
+class SectionSemantic(BaseModel):
+    """[4a] 섹션 하나의 의미 분석."""
+
+    section: int = Field(ge=1)
+    role: SectionRole
+    summary: str
+    depth: DepthLevel
+
+
+class TargetReader(BaseModel):
+    """타겟 독자 프로필 (SPEC §3 [4a] + [5] 공통)."""
+
+    concerns: list[str] = Field(default_factory=list)
+    search_intent: str = ""
+    expertise_level: str = ""
+
+
+class SemanticAnalysis(BaseModel):
+    """[4a] 단일 블로그의 의미적 구조 분석 결과."""
+
+    url: HttpUrl
+    semantic_structure: list[SectionSemantic] = Field(default_factory=list)
+    title_pattern: TitlePattern
+    hook_type: HookType
+    target_reader: TargetReader
+    depth_assessment: str = ""
+
+
+# ── [4b] 소구 포인트 모델 ──
+
+PromotionalLevel = Literal["low", "medium", "high"]
+SubjectType = Literal["업체 주체", "정보 주체", "혼재"]
+
+
+class AppealPoint(BaseModel):
+    """[4b] 소구 포인트 1건."""
+
+    point: str
+    section: int = Field(ge=1)
+    promotional_level: PromotionalLevel
+
+
+class AppealAnalysis(BaseModel):
+    """[4b] 단일 블로그의 소구 포인트 + 홍보성 레벨 분석 결과."""
+
+    url: HttpUrl
+    appeal_points: list[AppealPoint] = Field(default_factory=list)
+    subject_type: SubjectType
+    overall_promotional_level: PromotionalLevel
