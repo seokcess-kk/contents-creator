@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     llm_tool_use_timeout_seconds: int = 60
 
     # 이미지 생성 안전장치
-    image_generation_budget_per_run: int = 10  # 한 파이프라인 실행 시 최대 이미지 수
+    image_generation_budget_per_run: int = 30  # 분석 결과 그대로 반영, 실사용 상한 안전망
     image_cache_dir: str = "output/_image_cache"
 
 
