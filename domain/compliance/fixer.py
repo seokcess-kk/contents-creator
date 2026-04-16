@@ -51,6 +51,7 @@ def fix_violations(
     violations: list[Violation],
     policy: CompliancePolicy = CompliancePolicy.SEO_STRICT,
     protect_intro: bool = True,
+    keyword: str | None = None,
 ) -> tuple[str, list[ChangelogEntry]]:
     """위반 표현을 수정한다.
 
@@ -59,6 +60,7 @@ def fix_violations(
         violations: 감지된 위반 목록.
         policy: 컴플라이언스 정책.
         protect_intro: True 면 첫 문단(도입부)은 치환만, 재생성 금지.
+        keyword: 타겟 SEO 키워드. 재생성 시 키워드 컨텍스트 제공.
 
     Returns:
         (수정된 텍스트, 변경 이력 리스트) 튜플.
@@ -67,7 +69,13 @@ def fix_violations(
     current_text = text
 
     for violation in violations:
-        fixed, entry = _fix_single_violation(current_text, violation, policy, protect_intro)
+        fixed, entry = _fix_single_violation(
+            current_text,
+            violation,
+            policy,
+            protect_intro,
+            keyword=keyword,
+        )
         if entry is not None:
             current_text = fixed
             changelog.append(entry)
@@ -83,6 +91,7 @@ def _fix_single_violation(
     violation: Violation,
     policy: CompliancePolicy,
     protect_intro: bool,
+    keyword: str | None = None,
 ) -> tuple[str, ChangelogEntry | None]:
     """단일 위반을 수정한다. 치환 우선, 폴백 재생성."""
     # 1차 시도: 구절 치환
@@ -99,7 +108,7 @@ def _fix_single_violation(
         )
         return text, None
 
-    return _try_paragraph_regeneration(text, violation, policy)
+    return _try_paragraph_regeneration(text, violation, policy, keyword=keyword)
 
 
 def _try_phrase_replacement(
@@ -137,10 +146,24 @@ def _try_phrase_replacement(
     return text, None
 
 
+def _build_prohibited_list(policy: CompliancePolicy) -> str:
+    """rules.py 의 금지 표현을 LLM 프롬프트용 텍스트로 조립한다."""
+    lines: list[str] = []
+    for cat, pattern in get_all_patterns(policy):
+        lines.append(f"- [{cat.value}] {pattern.pattern}")
+    lines.append(
+        "- 절대 사용하지 말 것: "
+        "'저희', '우리 병원', '우리 한의원', '당사', "
+        "'예약하세요', '전화주세요', '상담 받으세요'"
+    )
+    return "\n".join(lines)
+
+
 def _try_paragraph_regeneration(
     text: str,
     violation: Violation,
     policy: CompliancePolicy,
+    keyword: str | None = None,
 ) -> tuple[str, ChangelogEntry | None]:
     """위반 문단만 LLM 으로 재생성한다.
 
@@ -152,9 +175,18 @@ def _try_paragraph_regeneration(
 
     alternatives = get_safe_alternatives(ViolationCategory(violation.category), policy)
     alt_text = ", ".join(alternatives) if alternatives else "안전한 표현"
+    prohibited = _build_prohibited_list(policy)
 
     api_key = require("anthropic_api_key")
     client = anthropic.Anthropic(api_key=api_key)
+
+    keyword_context = ""
+    if keyword is not None:
+        keyword_context = (
+            f"\n[SEO 키워드 컨텍스트]\n"
+            f'타겟 SEO 키워드: "{keyword}"\n'
+            f"키워드는 자연스럽게 유지하되 1인칭과 결합하지 마라.\n"
+        )
 
     system_prompt = (
         "너는 한국 의료 콘텐츠 전문 편집자다.\n"
@@ -164,6 +196,8 @@ def _try_paragraph_regeneration(
         f"[위반 카테고리] {violation.category}\n"
         f"[위반 사유] {violation.reason}\n"
         f"[안전 대체 표현] {alt_text}\n"
+        f"\n[금지 표현 목록]\n{prohibited}\n"
+        f"{keyword_context}"
     )
 
     response = client.messages.create(  # type: ignore[call-overload]

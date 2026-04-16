@@ -228,7 +228,13 @@ def _run_generation_stages(
 
     # [8] 의료법 검증
     try:
-        compliance = run_stage_compliance_check(outline, body, output_dir, reporter)
+        compliance = run_stage_compliance_check(
+            outline,
+            body,
+            output_dir,
+            reporter,
+            keyword=keyword,
+        )
         stages.append(StageResult(name="compliance_check", status=StageStatus.SUCCEEDED))
     except Exception as exc:
         stages.append(

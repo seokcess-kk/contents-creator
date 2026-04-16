@@ -23,6 +23,8 @@ from domain.analysis.pattern_card import (
     REQUIRED_RATIO,
     AggregatedAppealPoints,
     AggregatedTags,
+    ImagePattern,
+    ImagePositionDist,
     PatternCard,
     PatternCardStats,
     RangeStats,
@@ -61,6 +63,7 @@ def cross_analyze(
         related_keywords=_extract_related_keywords(physicals),
         aggregated_appeal_points=_aggregate_appeal_points(appeals, n),
         aggregated_tags=_aggregate_tags(physicals, n),
+        image_pattern=_aggregate_image_pattern(physicals),
     )
 
 
@@ -227,6 +230,48 @@ def _aggregate_tags(physicals: list[PhysicalAnalysis], n: int) -> AggregatedTags
         frequent=frequent,
         top_tags=top_tags,
         avg_tag_count_per_post=round(avg_count, 1),
+    )
+
+
+def _aggregate_image_pattern(physicals: list[PhysicalAnalysis]) -> ImagePattern:
+    """element_sequence 에서 이미지 개수·위치 분포를 집계한다."""
+    if not physicals:
+        return ImagePattern()
+
+    counts: list[int] = []
+    front_totals: list[int] = []
+    mid_totals: list[int] = []
+    end_totals: list[int] = []
+
+    for p in physicals:
+        seq = p.element_sequence
+        total = len(seq)
+        if total == 0:
+            continue
+        img_indices = [i for i, e in enumerate(seq) if e.type == "image"]
+        counts.append(len(img_indices))
+        front_totals.append(sum(1 for i in img_indices if i / total < 0.2))
+        mid_totals.append(sum(1 for i in img_indices if 0.2 <= i / total < 0.8))
+        end_totals.append(sum(1 for i in img_indices if i / total >= 0.8))
+
+    n = len(counts)
+    if n == 0:
+        return ImagePattern()
+
+    avg_sections = _avg([float(p.subtitle_count) for p in physicals])
+    avg_imgs = sum(counts) / n
+    imgs_per_sec = round(avg_imgs / max(avg_sections, 1.0), 1)
+
+    return ImagePattern(
+        avg_count_per_post=round(avg_imgs, 1),
+        min_count=min(counts),
+        max_count=max(counts),
+        position_dist=ImagePositionDist(
+            front=round(sum(front_totals) / n, 1),
+            mid=round(sum(mid_totals) / n, 1),
+            end=round(sum(end_totals) / n, 1),
+        ),
+        avg_images_per_section=imgs_per_sec,
     )
 
 

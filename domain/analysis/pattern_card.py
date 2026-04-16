@@ -74,6 +74,22 @@ class AggregatedAppealPoints(BaseModel):
     promotional_ratio: float = 0.0
 
 
+class ImagePositionDist(BaseModel):
+    """이미지 위치 분포 (글 전체 대비 비율 구간)."""
+
+    front: float = 0.0  # 0~20% 구간 평균 이미지 수
+    mid: float = 0.0  # 20~80% 구간
+    end: float = 0.0  # 80~100% 구간
+
+
+class ImagePattern(BaseModel):
+    avg_count_per_post: float = 0.0
+    min_count: int = 0
+    max_count: int = 0
+    position_dist: ImagePositionDist = Field(default_factory=ImagePositionDist)
+    avg_images_per_section: float = 0.0  # 소제목 기준 섹션당 이미지
+
+
 # ── PatternCard 루트 모델 ──
 
 
@@ -96,6 +112,7 @@ class PatternCard(BaseModel):
     related_keywords: list[str] = Field(default_factory=list)
     aggregated_appeal_points: AggregatedAppealPoints = Field(default_factory=AggregatedAppealPoints)
     aggregated_tags: AggregatedTags = Field(default_factory=AggregatedTags)
+    image_pattern: ImagePattern = Field(default_factory=ImagePattern)
 
 
 # ── 저장 / 로드 ──

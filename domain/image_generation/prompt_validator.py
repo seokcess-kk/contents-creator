@@ -59,15 +59,27 @@ def validate_prompt(prompt: str) -> None:
     """
     p = prompt.lower()
 
+    # "no patient", "no medical procedure" 같은 부정 지시를 제거하여 오탐 방지
+    cleaned = _strip_negations(p)
+
     # 1. 텍스트 금지 키워드 필수
     if "no text" not in p and "no letters" not in p:
         raise InvalidImagePromptError("prompt must contain 'no text' or 'no letters'")
 
-    # 2. 인물 등장 시 'Korean' 명시 필수
-    if any(kw in p for kw in PEOPLE_KEYWORDS) and "korean" not in p:
+    # 2. 인물 등장 시 'Korean' 명시 필수 (부정 제거 후 검사)
+    if any(kw in cleaned for kw in PEOPLE_KEYWORDS) and "korean" not in p:
         raise InvalidImagePromptError("prompt mentions people but does not specify 'Korean'")
 
-    # 3. 의료 맥락·금지 키워드 차단
+    # 3. 의료 맥락·금지 키워드 차단 (부정 제거 후 검사)
     for kw in FORBIDDEN_KEYWORDS:
-        if kw.lower() in p:
+        if kw.lower() in cleaned:
             raise InvalidImagePromptError(f"prompt contains forbidden keyword '{kw}'")
+
+
+def _strip_negations(text: str) -> str:
+    """'no X', 'without X' 패턴을 제거해 부정 표현 오탐을 방지한다."""
+    import re
+
+    # "no patient", "no medical procedure" 등 제거
+    cleaned = re.sub(r"\bno\s+\w[\w\s/]*(?=,|\.|$|\b(?:no|and)\b)", "", text)
+    return re.sub(r"\bwithout\s+\w[\w\s/]*(?=,|\.|$|\b(?:no|and)\b)", "", cleaned)

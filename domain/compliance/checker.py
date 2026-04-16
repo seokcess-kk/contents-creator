@@ -69,6 +69,7 @@ _VIOLATION_TOOL: dict[str, Any] = {
 def check_compliance(
     text: str,
     policy: CompliancePolicy = CompliancePolicy.SEO_STRICT,
+    keyword: str | None = None,
 ) -> list[Violation]:
     """텍스트의 의료법 위반을 감지한다.
 
@@ -77,9 +78,14 @@ def check_compliance(
     2. LLM 2차 검증 (Sonnet 4.6, tool_use)
 
     두 결과를 병합·중복 제거하여 반환한다.
+
+    Args:
+        text: 검증 대상 텍스트.
+        policy: 컴플라이언스 정책.
+        keyword: 타겟 SEO 키워드. LLM 이 키워드 사용을 위반으로 오인하지 않도록 컨텍스트 제공.
     """
     regex_violations = _check_regex(text, policy)
-    llm_violations = _check_llm(text, policy)
+    llm_violations = _check_llm(text, policy, keyword=keyword)
     return _merge_violations(regex_violations, llm_violations)
 
 
@@ -122,12 +128,26 @@ def _extract_snippet(text: str, start: int, end: int) -> str:
 def _check_llm(
     text: str,
     policy: CompliancePolicy,
+    keyword: str | None = None,
 ) -> list[Violation]:
     """Sonnet 4.6 으로 암시적 위반을 감지한다."""
     api_key = require("anthropic_api_key")
     client = anthropic.Anthropic(api_key=api_key)
 
     rules_desc = _build_rules_description(policy)
+
+    keyword_context = ""
+    if keyword is not None:
+        keyword_context = (
+            f"\n\n[SEO 키워드 컨텍스트]\n"
+            f'이 콘텐츠의 타겟 SEO 키워드는 "{keyword}"이다.\n'
+            f"키워드가 본문에 자연스럽게 사용되는 것은 위반이 아니다.\n"
+            f"키워드 자체가 특정 업체를 지칭하는 것처럼 보여도, "
+            f"SEO 목적의 정보성 콘텐츠에서 키워드를 사용하는 것은 "
+            f"first_person_promotion에 해당하지 않는다.\n"
+            f'단, "저희 {keyword}", "우리 {keyword}" 등 '
+            f"1인칭과 결합한 경우는 여전히 위반이다."
+        )
 
     system_prompt = (
         "너는 한국 의료광고법 검증 전문가다.\n"
@@ -136,6 +156,7 @@ def _check_llm(
         "교묘한 보장 뉘앙스에 집중한다.\n\n"
         "위반이 없으면 빈 리스트를 보고한다.\n\n"
         f"[검증 카테고리]\n{rules_desc}"
+        f"{keyword_context}"
     )
 
     response = client.messages.create(  # type: ignore[call-overload]

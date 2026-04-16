@@ -206,7 +206,7 @@ def _build_outline_system(
     dia_instructions = _format_dia_instructions(dia)
     compliance_block = _format_compliance(compliance_rules)
     tag_block = _format_tag_instructions(tags)
-    image_block = _format_image_instructions()
+    image_block = _format_image_instructions(pc)
 
     intro_type = _select_intro_type(pc.distributions)
 
@@ -302,19 +302,26 @@ def _format_top_structures(pc: PatternCard) -> str:
 
 
 def _format_dia_instructions(dia: dict[str, float]) -> str:
+    """DIA+ 7개 요소 전체를 커버. 임계값 0.3 (30% 이상 사용 시 지시)."""
     lines: list[str] = []
-    table_ratio = dia.get("tables", 0.0)
-    if table_ratio > 0.5:
+    if dia.get("tables", 0.0) > 0.3:
         lines.append("- 표 1개 이상 포함")
-    qa_ratio = dia.get("qa_sections", 0.0)
-    if qa_ratio > 0.5:
+    if dia.get("qa_sections", 0.0) > 0.3:
         lines.append("- Q&A 섹션 포함")
-    list_ratio = dia.get("lists", 0.0)
-    if list_ratio > 0.7:
+    if dia.get("lists", 0.0) > 0.3:
         lines.append("- 리스트 2개 이상 포함")
-    stats_ratio = dia.get("statistics", 0.0)
-    if stats_ratio > 0.5:
+    if dia.get("statistics", 0.0) > 0.3:
         lines.append("- 통계 데이터 최소 2회 포함")
+    bold_ratio = dia.get("bold", 0.0)
+    if bold_ratio > 0.3:
+        instruction = "- 핵심 키워드나 중요 포인트에 **볼드** 처리"
+        if bold_ratio > 0.5:
+            instruction += " (섹션당 2~3회 권장)"
+        lines.append(instruction)
+    if dia.get("blockquotes", 0.0) > 0.3:
+        lines.append("- 인용구 또는 핵심 요약에 > 인용 블록 사용")
+    if dia.get("separators", 0.0) > 0.3:
+        lines.append("- 섹션 간 구분선(---) 사용")
     return "\n".join(lines) if lines else "- 특별 지시 없음"
 
 
@@ -348,28 +355,92 @@ def _format_tag_instructions(tags: Any) -> str:
     )
 
 
-def _format_image_instructions() -> str:
+def _format_image_instructions(pc: PatternCard) -> str:
+    avg = pc.image_pattern.avg_count_per_post
+    if avg > 0:
+        target = max(3, min(round(avg), 5))
+        avg_note = f"상위 글 평균 이미지 수: {avg:.1f}개 (실사 포함)\n"
+    else:
+        target = 3
+        avg_note = ""
+
+    position_note = _format_image_position_guide(pc)
+    seed_hint = _pick_variation_seed()
+
     return (
         "[AI 이미지 prompt 생성]\n"
-        "image_prompts 필드에 이미지 prompt 리스트를 출력하라. "
-        "개수는 3개를 기본으로 한다.\n\n"
-        "각 prompt 규칙:\n"
+        f"{avg_note}"
+        f"AI 생성 이미지 목표 개수: {target}개\n\n"
+        "image_prompts 필드에 이미지 prompt 리스트를 출력하라.\n\n"
+        f"[이미지 배치 패턴 — 분석 결과 기반]\n{position_note}\n\n"
+        "[alt_text SEO 최적화]\n"
+        f'- alt_text 에 주 키워드 "{pc.keyword}" 또는 '
+        "연관 키워드를 자연스럽게 포함하라\n"
+        "- 단순 키워드 나열 금지. 이미지 내용을 구체적으로 "
+        "묘사하면서 키워드를 녹여라\n"
+        '- 예: "강남 다이어트 한의원에서 활용하는 한약재" (X, 홍보성)\n'
+        '  → "다이어트 한의원에서 자주 쓰이는 한방 약재 모음" (O, 정보성)\n'
+        "- 모든 alt_text 는 한국어로 작성\n\n"
+        "[정형화 금지]\n"
+        "- 같은 업종이라도 매번 동일한 이미지 순서 금지\n"
+        "- 이미지 타입(photo, illustration, infographic)을 "
+        "다양하게 섞어라\n"
+        f"- 이번 실행 분위기 힌트: '{seed_hint}'\n\n"
+        "[형태 다양화]\n"
+        "- 가로형(16:9), 세로형(3:4), 정사각(1:1) 자유 선택\n"
+        "- 콜라주(2~4컷 분할), 슬라이드형(넓은 배너)도 가능\n"
+        "- prompt 에 aspect ratio 명시\n\n"
+        "[prompt 규칙]\n"
         "1. 언어: 영어\n"
-        "2. 텍스트 절대 금지 - no text, no letters 명시\n"
-        "3. 인물 등장 시 Korean 키워드 필수 "
-        "(예: Korean woman, Korean man)\n"
-        "4. 의료 맥락 금지 - patient, before/after, "
-        "medical procedure, surgery, injection, "
-        "body comparison, naked 등\n"
-        "5. 권장 시나리오: 한식, 한방 재료, 한국 자연, "
-        "라이프스타일(요가, 산책, 명상)\n"
-        "6. 권장 스타일: realistic photography, "
-        "lifestyle photography, flat illustration, "
-        "minimalist infographic\n"
-        "7. 종횡비: 1024x1024\n"
-        "8. 각 prompt 에 반드시 포함: 스타일 1개 + "
-        "시나리오 + 색감 + no text (인물 시 Korean)"
+        "2. 텍스트 절대 금지 — no text, no letters 명시\n"
+        "3. 인물 등장 시 Korean 키워드 필수\n"
+        "4. 의료 맥락 금지 (부정형으로도 넣지 말 것):\n"
+        "   patient, before/after, medical procedure, "
+        "surgery, injection, body comparison, naked\n"
+        "5. 스타일 풀 (다양하게 선택):\n"
+        "   realistic photography, cinematic, food photography,\n"
+        "   flat illustration, watercolor, 3D render,\n"
+        "   aerial view, macro close-up, collage layout, "
+        "editorial style"
     )
+
+
+def _format_image_position_guide(pc: PatternCard) -> str:
+    """분석된 이미지 위치 분포를 프롬프트 가이드로 변환한다."""
+    dist = pc.image_pattern.position_dist
+    if dist.front == 0 and dist.mid == 0 and dist.end == 0:
+        return "- 도입부 직후 1장 + 본문 중간 균등 배치 (기본값)"
+
+    lines: list[str] = []
+    if dist.front >= 1:
+        lines.append(f"- 글 앞부분(도입 직후): 평균 {dist.front:.1f}장 배치")
+    if dist.mid >= 1:
+        lines.append(f"- 본문 중반(섹션 사이): 평균 {dist.mid:.1f}장 배치")
+    if dist.end >= 0.5:
+        lines.append(f"- 글 후반(마무리 근처): 평균 {dist.end:.1f}장 배치")
+    lines.append("- 이 분포를 참고해 position 을 결정하되, AI 이미지 수에 맞게 비율 조정")
+    return "\n".join(lines)
+
+
+def _pick_variation_seed() -> str:
+    import random
+
+    return random.choice(_IMAGE_VARIATION_SEEDS)
+
+
+# 매 실행마다 다른 이미지 구성을 유도하는 분위기 시드 풀
+_IMAGE_VARIATION_SEEDS = [
+    "따뜻한 자연광 / 아날로그 감성 / 오프화이트 톤",
+    "시원한 블루 계열 / 클린 미니멀 / 도시적 세련미",
+    "포근한 가을 팔레트 / 어스 톤 / 내추럴 라이프",
+    "생동감 있는 컬러풀 / 에너지 넘치는 / 다이내믹 구도",
+    "차분한 모노톤 / 젠 스타일 / 여백의 미",
+    "빈티지 필름 톤 / 레트로 감성 / 따뜻한 그레인",
+    "밝고 경쾌한 파스텔 / 소프트 라이트 / 봄 느낌",
+    "고급스러운 다크 톤 / 무드 라이팅 / 프리미엄 느낌",
+    "일러스트 믹스 / 사진+그래픽 혼합 / 에디토리얼",
+    "항공뷰+클로즈업 교차 / 스케일 대비 / 시네마틱",
+]
 
 
 def _select_intro_type(distributions: dict[str, dict[str, float]]) -> str:

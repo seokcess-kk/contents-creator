@@ -128,6 +128,101 @@ def _normalize_position(raw: str, sequence: int) -> str:
     return f"section_{sequence + 1}_end"
 
 
+def insert_images_into_text(
+    text: str,
+    image_prompts: list[ImagePromptItem],
+    image_result: ImageGenerationResult,
+) -> str:
+    """compliance 수정 완료된 텍스트에 이미지를 삽입한다.
+
+    assemble_content 를 재호출하면 compliance 수정이 소실되므로,
+    이미 완성된 마크다운 텍스트에 이미지만 삽입한다.
+    """
+    image_map = _build_image_map(image_prompts, image_result)
+    if not image_map:
+        return text
+
+    lines = text.split("\n")
+    result = _insert_after_intro(lines, image_map)
+    result = _insert_before_conclusion(result, image_map)
+    result = _insert_at_section_ends(result, image_map)
+    return "\n".join(result)
+
+
+def _insert_after_intro(
+    lines: list[str],
+    image_map: dict[str, list[GeneratedImage]],
+) -> list[str]:
+    """첫 ## 이전, 첫 비공백 문단 뒤에 after_intro 이미지를 삽입."""
+    images = image_map.get("after_intro", [])
+    if not images:
+        return lines
+
+    for i, line in enumerate(lines):
+        if line.startswith("## "):
+            return lines[:i] + _image_lines(images) + lines[i:]
+    return lines + _image_lines(images)
+
+
+def _insert_before_conclusion(
+    lines: list[str],
+    image_map: dict[str, list[GeneratedImage]],
+) -> list[str]:
+    """마지막 ## 섹션 직전에 before_conclusion 이미지를 삽입."""
+    images = image_map.get("before_conclusion", [])
+    if not images:
+        return lines
+
+    last_heading_idx: int | None = None
+    for i, line in enumerate(lines):
+        if line.startswith("## "):
+            last_heading_idx = i
+    if last_heading_idx is not None:
+        return lines[:last_heading_idx] + _image_lines(images) + lines[last_heading_idx:]
+    return lines + _image_lines(images)
+
+
+def _insert_at_section_ends(
+    lines: list[str],
+    image_map: dict[str, list[GeneratedImage]],
+) -> list[str]:
+    """## 섹션 끝(다음 ## 직전)에 section_N_end 이미지를 삽입."""
+    heading_indices: list[int] = [i for i, line in enumerate(lines) if line.startswith("## ")]
+    if not heading_indices:
+        return lines
+
+    # 뒤에서부터 삽입해야 인덱스가 밀리지 않는다
+    for section_num in sorted(
+        (k for k in image_map if k.startswith("section_") and k.endswith("_end")),
+        reverse=True,
+    ):
+        images = image_map[section_num]
+        sec_idx_str = section_num.replace("section_", "").replace("_end", "")
+        if not sec_idx_str.isdigit():
+            continue
+        sec_idx = int(sec_idx_str)
+
+        # 섹션 번호에 해당하는 heading 다음의 heading 직전에 삽입
+        if sec_idx - 1 < len(heading_indices):
+            # 다음 heading 위치 또는 문서 끝
+            next_h = len(lines)
+            if sec_idx < len(heading_indices):
+                next_h = heading_indices[sec_idx]
+            lines = lines[:next_h] + _image_lines(images) + lines[next_h:]
+            # 인덱스 갱신
+            heading_indices = [i for i, line in enumerate(lines) if line.startswith("## ")]
+    return lines
+
+
+def _image_lines(images: list[GeneratedImage]) -> list[str]:
+    """이미지 목록을 마크다운 라인으로 변환한다."""
+    result: list[str] = []
+    for img in images:
+        rel_path = f"{_HTML_IMAGE_REL_PREFIX}/{Path(img.path).name}"
+        result.extend(["", f"![{img.alt_text}]({rel_path})", ""])
+    return result
+
+
 def _append_images(
     parts: list[str],
     image_map: dict[str, list[GeneratedImage]],

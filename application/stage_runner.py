@@ -390,6 +390,7 @@ def run_stage_compliance_check(
     body: BodyResult,
     output_dir: Path,
     reporter: ProgressReporter,
+    keyword: str | None = None,
 ) -> ComplianceReport:
     """[8] 의료법 3중 방어: 검증 → 수정 → 재검증 (최대 2회)."""
     from domain.compliance.checker import check_compliance
@@ -405,7 +406,7 @@ def run_stage_compliance_check(
     iterations = 0
 
     for iteration in range(MAX_COMPLIANCE_ITERATIONS + 1):
-        violations = check_compliance(text)
+        violations = check_compliance(text, keyword=keyword)
         iterations = iteration + 1
         reporter.stage_progress(iteration + 1, f"iteration {iterations}")
 
@@ -425,7 +426,7 @@ def run_stage_compliance_check(
             reporter.stage_end("compliance_check", {"passed": False, "iterations": iterations})
             return report
 
-        fixed_text, changelog = fix_violations(text, violations)
+        fixed_text, changelog = fix_violations(text, violations, keyword=keyword)
         all_changelog.extend(changelog)
         text = fixed_text
 
@@ -522,7 +523,7 @@ def run_stage_compose(
     reporter: ProgressReporter,
 ) -> dict[str, Path]:
     """[10] intro + body 조립 → md/html + outline.md 저장."""
-    from domain.composer.assembler import assemble_content
+    from domain.composer.assembler import assemble_content, insert_images_into_text
     from domain.composer.naver_html import convert_to_naver_html
     from domain.composer.outline_md import convert_outline_to_md
 
@@ -532,16 +533,17 @@ def run_stage_compose(
     if compliance_report.passed and compliance_report.final_text:
         content_md = compliance_report.final_text
         title = outline.title
+        # compliance 수정본에 이미지만 삽입 (재조립하지 않아 수정 보존)
+        if image_result and image_result.generated:
+            content_md = insert_images_into_text(
+                content_md,
+                outline.image_prompts,
+                image_result,
+            )
     else:
         assembled = assemble_content(outline, body, image_result=image_result)
         content_md = assembled.content_md
         title = assembled.title
-
-    # compliance 통과 텍스트에 이미지를 삽입 (이미지는 검증 대상이 아닌 보조 자산)
-    if compliance_report.passed and compliance_report.final_text and image_result:
-        assembled_with_images = assemble_content(outline, body, image_result=image_result)
-        content_md = assembled_with_images.content_md
-        title = assembled_with_images.title
 
     content_dir = output_dir / "content"
     content_dir.mkdir(parents=True, exist_ok=True)
