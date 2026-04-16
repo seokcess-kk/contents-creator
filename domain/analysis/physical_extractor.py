@@ -25,6 +25,7 @@ from domain.analysis.model import (
     KeywordAnalysis,
     ParagraphStats,
     PhysicalAnalysis,
+    RelatedKeywordStats,
     SectionRatios,
 )
 from domain.crawler.model import BlogPage
@@ -48,6 +49,91 @@ _INVISIBLE_CHARS = re.compile(r"[\u200b\u200c\u200d\ufeff]")
 # Q&A heading 접두어
 QA_PREFIX_RE = re.compile(r"^\s*(?:Q\.|Q:|Q\)|질문\)|\[Q\])", re.IGNORECASE)
 QA_KEYWORD_RE = re.compile(r"FAQ|자주\s*묻는|질문과\s*답", re.IGNORECASE)
+
+# 연관 키워드 추출 — 한국어 토큰 + 조사 제거
+_KOREAN_TOKEN_RE = re.compile(r"[가-힣]{2,6}")
+_PARTICLE_SUFFIXES = (
+    "을",
+    "를",
+    "이",
+    "가",
+    "은",
+    "는",
+    "에서",
+    "에게",
+    "으로",
+    "로",
+    "과",
+    "와",
+    "도",
+    "만",
+    "까지",
+    "부터",
+    "의",
+    "처럼",
+    "에는",
+    "에도",
+    "이나",
+    "라는",
+    "했어요",
+    "있어요",
+    "됩니다",
+    "합니다",
+    "입니다",
+    "에요",
+)
+_RELATED_KW_STOPWORDS = frozenset(
+    {
+        # 지시·접속
+        "이런",
+        "그런",
+        "이것",
+        "그리고",
+        "또한",
+        "하지만",
+        "때문",
+        "같은",
+        "다른",
+        "특히",
+        "오히려",
+        "단순히",
+        "현재",
+        "먼저",
+        "위해",
+        "따라",
+        "함께",
+        "대한",
+        "통해",
+        "실제",
+        "이상",
+        # 서술어/조사 잔여
+        "것이",
+        "것을",
+        "했어요",
+        "있었어요",
+        "됩니다",
+        "합니다",
+        "입니다",
+        "에요",
+        "아니라",
+        "경우",
+        "필요",
+        "시작",
+        "상태",
+        "방법",
+        "정도",
+        "부분",
+        "과정",
+        "결과",
+        "그래서",
+        "하지",
+        "때문에",
+        "있으며",
+        "라고",
+        "라는",
+    }
+)
+_RELATED_KW_TOP_N = 10
 
 
 def _strip_invisible(text: str) -> str:
@@ -505,8 +591,45 @@ def _extract_keyword_analysis(
         density=round(density, 6),
         subtitle_keyword_ratio=round(subtitle_inclusion, 4),
         title_keyword_position=title_position,
-        related_keywords={},  # [5] 교차 분석에서 파생
+        related_keywords=_extract_related_keywords(full_text, main_keyword),
     )
+
+
+def _extract_related_keywords(
+    full_text: str,
+    main_keyword: str,
+) -> dict[str, RelatedKeywordStats]:
+    """본문에서 주 키워드 외 빈출 한국어 단어를 추출한다.
+
+    형태소 분석기 없이 공백 토큰화 + 조사 제거로 근사.
+    """
+    from collections import Counter
+
+    tokens = re.split(r"[\s,.!?()~·:;\"']+", full_text)
+    korean = [t for t in tokens if _KOREAN_TOKEN_RE.fullmatch(t)]
+    stripped = [_strip_particle(t) for t in korean]
+    stripped = [t for t in stripped if len(t) >= 2 and t not in _RELATED_KW_STOPWORDS]
+
+    counter: Counter[str] = Counter(stripped)
+
+    # 주 키워드 구성 토큰 제거
+    for part in main_keyword.replace(" ", ""):
+        counter.pop(part, None)
+    for part in main_keyword.split():
+        counter.pop(part, None)
+    counter.pop(main_keyword.replace(" ", ""), None)
+
+    return {
+        kw: RelatedKeywordStats(count=cnt) for kw, cnt in counter.most_common(_RELATED_KW_TOP_N)
+    }
+
+
+def _strip_particle(word: str) -> str:
+    """한국어 조사/어미를 간이 제거한다."""
+    for suffix in sorted(_PARTICLE_SUFFIXES, key=len, reverse=True):
+        if word.endswith(suffix) and len(word) > len(suffix) + 1:
+            return word[: -len(suffix)]
+    return word
 
 
 def _find_first_sentence_with_keyword(text: str, keyword: str) -> int:

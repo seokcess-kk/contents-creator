@@ -71,8 +71,10 @@ def convert_to_naver_html(
     4. 중첩 ul/ol 감지 시 경고 + 평탄화
     5. DOCTYPE + head(UTF-8) + body 래핑
     """
+    cleaned_md = _strip_h1_title(markdown_text)
+
     raw_html = markdown.markdown(
-        markdown_text,
+        cleaned_md,
         extensions=["tables"],
         output_format="html",
     )
@@ -81,6 +83,7 @@ def convert_to_naver_html(
     warnings: list[str] = []
 
     _flatten_nested_lists(soup, warnings)
+    _convert_images_to_placeholders(soup)
     _strip_disallowed_tags(soup, warnings)
     _strip_attributes(soup)
 
@@ -92,6 +95,33 @@ def convert_to_naver_html(
     )
 
     return NaverHtmlDocument(html=full_html, warnings=warnings)
+
+
+def _strip_h1_title(md: str) -> str:
+    """마크다운 첫 줄의 `# 제목` 을 제거한다.
+
+    네이버 에디터에서 제목은 별도 입력란이므로 본문 body 에 포함하지 않는다.
+    `<h1>` 이 화이트리스트에 없어 plain text 로 노출되는 문제를 근본 해결.
+    """
+    lines = md.split("\n", 1)
+    if lines and lines[0].startswith("# "):
+        return lines[1] if len(lines) > 1 else ""
+    return md
+
+
+def _convert_images_to_placeholders(soup: BeautifulSoup) -> None:
+    """``<img>`` 를 이미지 삽입 가이드 텍스트로 교체한다.
+
+    네이버 에디터 붙여넣기 시 외부 src 이미지는 전달되지 않는다.
+    이미지 위치에 alt 텍스트 기반 안내 문구를 넣어 사용자가 수동 삽입 시 참고하도록 한다.
+    """
+    for img in list(soup.find_all("img")):
+        if not isinstance(img, Tag):
+            continue
+        alt = img.get("alt", "이미지")
+        placeholder = soup.new_tag("p")
+        placeholder.string = f"[이미지 삽입 위치: {alt}]"
+        img.replace_with(placeholder)
 
 
 def _flatten_nested_lists(

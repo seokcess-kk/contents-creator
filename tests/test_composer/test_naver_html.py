@@ -127,10 +127,10 @@ class TestNestedListFlattening:
 class TestDisallowedTagStripping:
     """비허용 태그 제거 (자식 텍스트 보존) 검증."""
 
-    def test_div_stripped_text_preserved(self) -> None:
-        # h1 은 화이트리스트에 없으므로 unwrap 됨
+    def test_h1_title_removed_from_body(self) -> None:
+        # h1 제목은 네이버 에디터 별도 입력이므로 body 에서 완전 제거
         md = "# 대제목\n\n본문"
         result = convert_to_naver_html(md)
-        # h1 태그 자체는 제거되지만 텍스트는 남음
-        assert "대제목" in result.html
+        assert "대제목" not in result.html
         assert "<h1>" not in result.html
+        assert "본문" in result.html
