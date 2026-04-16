@@ -119,13 +119,39 @@ class PatternCard(BaseModel):
 
 
 def save_pattern_card(card: PatternCard, output_dir: Path) -> Path:
-    """pattern-card.json 저장. 반환: 저장 경로."""
+    """pattern-card.json 저장 + Supabase best-effort 저장. 반환: 저장 경로."""
     analysis_dir = output_dir / "analysis"
     analysis_dir.mkdir(parents=True, exist_ok=True)
     path = analysis_dir / "pattern-card.json"
     path.write_text(card.model_dump_json(indent=2), encoding="utf-8")
     logger.info("pattern_card.saved path=%s", path)
+
+    _save_to_supabase(card, str(output_dir))
     return path
+
+
+def _save_to_supabase(card: PatternCard, output_path: str) -> None:
+    """Supabase pattern_cards 테이블에 저장. 실패해도 파이프라인 중단 안 함."""
+    try:
+        from config.supabase import get_client
+
+        client = get_client()
+        client.table("pattern_cards").insert(
+            {
+                "keyword": card.keyword,
+                "slug": card.slug,
+                "analyzed_count": card.analyzed_count,
+                "data": card.model_dump(),
+                "output_path": output_path,
+            }
+        ).execute()
+        logger.info("pattern_card.supabase_saved keyword=%s", card.keyword)
+    except Exception:
+        logger.warning(
+            "pattern_card.supabase_save_failed keyword=%s",
+            card.keyword,
+            exc_info=True,
+        )
 
 
 def load_pattern_card(path: Path) -> PatternCard:

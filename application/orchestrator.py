@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import logging
 import re
+import subprocess
+import sys
 import unicodedata
 from datetime import UTC, datetime
 from pathlib import Path
@@ -60,10 +62,22 @@ def _update_latest_link(slug: str, output_dir: Path) -> None:
             if latest.is_symlink() or is_junction:
                 latest.unlink()
             elif latest.is_dir():
-                latest.rmdir()
-        latest.symlink_to(output_dir.resolve(), target_is_directory=True)
-    except OSError:
-        logger.warning("latest symlink 갱신 실패 (Windows junction 필요할 수 있음)")
+                import shutil
+
+                shutil.rmtree(latest)
+
+        if sys.platform == "win32":
+            subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(latest), str(output_dir.resolve())],
+                check=True,
+                capture_output=True,
+            )
+        else:
+            latest.symlink_to(output_dir.resolve(), target_is_directory=True)
+
+        logger.info("latest link updated: %s -> %s", latest, output_dir)
+    except (OSError, subprocess.CalledProcessError):
+        logger.warning("latest link update failed (path=%s)", latest)
 
 
 # ── 분석 파이프라인 [1]~[5] ──
@@ -132,12 +146,20 @@ def _run_analysis_stages(
     physicals = run_stage_physical_extraction(pages, keyword, output_dir, reporter)
     stages.append(StageResult(name="physical_extraction", status=StageStatus.SUCCEEDED))
 
-    # [4a] 의미 추출
-    semantics = run_stage_semantic_extraction(pages, physicals, keyword, output_dir, reporter)
-    stages.append(StageResult(name="semantic_extraction", status=StageStatus.SUCCEEDED))
+    # [4a] + [4b] 병렬 실행 (독립적인 LLM 호출)
+    from concurrent.futures import ThreadPoolExecutor
 
-    # [4b] 소구 포인트
-    appeals = run_stage_appeal_extraction(pages, physicals, keyword, output_dir, reporter)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        sem_future = executor.submit(
+            run_stage_semantic_extraction, pages, physicals, keyword, output_dir, reporter
+        )
+        appeal_future = executor.submit(
+            run_stage_appeal_extraction, pages, physicals, keyword, output_dir, reporter
+        )
+        semantics = sem_future.result()
+        appeals = appeal_future.result()
+
+    stages.append(StageResult(name="semantic_extraction", status=StageStatus.SUCCEEDED))
     stages.append(StageResult(name="appeal_extraction", status=StageStatus.SUCCEEDED))
 
     # 유효 샘플 검증

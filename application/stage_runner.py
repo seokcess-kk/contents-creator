@@ -578,8 +578,58 @@ def run_stage_compose(
         "outline_md": outline_md_path,
     }
 
+    _save_generated_to_supabase(
+        keyword=outline.title,
+        outline_md=outline_md.content,
+        content_md=content_md,
+        content_html=html_doc.html,
+        compliance_passed=compliance_report.passed,
+        compliance_iterations=compliance_report.iterations,
+        output_path=str(output_dir),
+    )
+
     reporter.stage_end(
         "compose",
         {k: str(v) for k, v in paths.items()},
     )
     return paths
+
+
+def _save_generated_to_supabase(
+    keyword: str,
+    outline_md: str,
+    content_md: str,
+    content_html: str,
+    compliance_passed: bool,
+    compliance_iterations: int,
+    output_path: str,
+) -> None:
+    """Supabase generated_contents 테이블에 저장. 실패해도 파이프라인 중단 안 함."""
+    try:
+        from config.supabase import get_client
+
+        client = get_client()
+        pc_result = (
+            client.table("pattern_cards")
+            .select("id")
+            .eq("keyword", keyword)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        pc_id = pc_result.data[0]["id"] if pc_result.data else None  # type: ignore[index,call-overload]
+
+        client.table("generated_contents").insert(
+            {
+                "pattern_card_id": pc_id,
+                "outline_md": outline_md,
+                "content_md": content_md,
+                "content_html": content_html,
+                "compliance_passed": compliance_passed,
+                "compliance_iterations": compliance_iterations,
+                "output_path": output_path,
+            }
+        ).execute()
+        logger.info("generated_content.supabase_saved")
+    except Exception:
+        logger.warning("generated_content.supabase_save_failed", exc_info=True)
