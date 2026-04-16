@@ -533,9 +533,15 @@ def run_stage_compose(
         content_md = compliance_report.final_text
         title = outline.title
     else:
-        assembled = assemble_content(outline, body)
+        assembled = assemble_content(outline, body, image_result=image_result)
         content_md = assembled.content_md
         title = assembled.title
+
+    # compliance 통과 텍스트에 이미지를 삽입 (이미지는 검증 대상이 아닌 보조 자산)
+    if compliance_report.passed and compliance_report.final_text and image_result:
+        assembled_with_images = assemble_content(outline, body, image_result=image_result)
+        content_md = assembled_with_images.content_md
+        title = assembled_with_images.title
 
     content_dir = output_dir / "content"
     content_dir.mkdir(parents=True, exist_ok=True)

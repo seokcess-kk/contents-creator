@@ -21,6 +21,9 @@ from domain.composer.model import NaverHtmlDocument
 logger = logging.getLogger(__name__)
 
 # 화이트리스트: 이 파일이 단일 출처 (CLAUDE.md, SPEC 참조)
+# img 는 네이버 에디터 붙여넣기 시 외부 src 가 깨지지만,
+# 브라우저에서 file:// 로 열어 프리뷰할 때 이미지가 보여야 하므로 허용.
+# 네이버 업로드 시에는 사용자가 이미지를 수동 삽입한다.
 ALLOWED_TAGS = frozenset(
     {
         "h2",
@@ -39,6 +42,7 @@ ALLOWED_TAGS = frozenset(
         "tr",
         "th",
         "td",
+        "img",
     }
 )
 
@@ -133,11 +137,19 @@ def _strip_disallowed_tags(
             tag.unwrap()
 
 
+# img 태그에서 보존할 속성 (프리뷰용)
+_IMG_KEEP_ATTRS = {"src", "alt"}
+
+
 def _strip_attributes(soup: BeautifulSoup) -> None:
-    """모든 태그에서 class, style, id 등 속성을 제거."""
+    """모든 태그에서 class, style, id 등 속성을 제거.
+
+    img 태그의 src/alt 는 보존 (브라우저 프리뷰 + 네이버 에디터 alt 텍스트).
+    """
     for tag in soup.find_all(True):
         if not isinstance(tag, Tag):
             continue
-        attrs_to_remove = list(tag.attrs.keys())
+        keep = _IMG_KEEP_ATTRS if tag.name == "img" else set()
+        attrs_to_remove = [a for a in tag.attrs if a not in keep]
         for attr in attrs_to_remove:
             del tag[attr]

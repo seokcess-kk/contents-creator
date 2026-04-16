@@ -34,6 +34,7 @@ class TestAllowedTags:
             "tr",
             "th",
             "td",
+            "img",
         }
         assert expected == ALLOWED_TAGS
 
