@@ -326,12 +326,13 @@ def run_stage_outline_generation(
 
     issues = validate_outline(outline, pattern_card)
     if issues:
+        feedback_lines = [f"- {i.field}: 기대 {i.expected}, 실제 {i.actual}" for i in issues]
+        feedback = "다음 항목이 부족합니다. 반드시 충족해주세요:\n" + "\n".join(feedback_lines)
         logger.warning(
-            "outline_validation.issues_found count=%d issues=%s",
+            "outline_validation.issues_found count=%d, retrying with feedback",
             len(issues),
-            [(i.field, i.expected, i.actual) for i in issues],
         )
-        outline = generate_outline(pattern_card, compliance_rules)
+        outline = generate_outline(pattern_card, compliance_rules, feedback=feedback)
 
     content_dir = output_dir / "content"
     content_dir.mkdir(parents=True, exist_ok=True)

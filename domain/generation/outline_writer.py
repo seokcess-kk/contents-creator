@@ -30,12 +30,16 @@ logger = logging.getLogger(__name__)
 def generate_outline(
     pattern_card: PatternCard,
     compliance_rules: str | None = None,
+    feedback: str | None = None,
 ) -> Outline:
     """[6] 아웃라인 + 도입부 + image_prompts 생성.
 
     Opus 4.6 에 tool_use 로 구조화 출력을 강제한다.
+    feedback 가 있으면 이전 생성 결과의 문제점을 프롬프트에 추가한다.
     """
     messages, tool_schema = build_outline_prompt(pattern_card, compliance_rules)
+    if feedback:
+        messages[0]["content"] += f"\n\n[이전 생성 결과 피드백]\n{feedback}"
 
     client = anthropic.Anthropic(api_key=require("anthropic_api_key"))
     response = client.messages.create(  # type: ignore[call-overload]
