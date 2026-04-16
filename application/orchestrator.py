@@ -336,12 +336,73 @@ def _run_generation_stages(
 # ── 공개 API (시그니처 불변) ──
 
 
+def _resolve_pattern_card(
+    keyword: str,
+    slug: str,
+    output_dir: Path,
+    reporter: ProgressReporter,
+    all_stages: list[StageResult],
+    *,
+    pattern_card_path: Path | None,
+    force_analyze: bool,
+) -> PatternCard | None:
+    """패턴 카드를 획득한다: 명시 경로 > 캐시 > 신규 분석."""
+    if pattern_card_path is not None:
+        from domain.analysis.pattern_card import load_pattern_card
+
+        return load_pattern_card(pattern_card_path)
+
+    if not force_analyze:
+        cached = _find_cached_pattern_card(keyword, slug)
+        if cached is not None:
+            return cached
+
+    return _run_analysis_or_fail(keyword, slug, output_dir, reporter, all_stages)
+
+
+def _run_analysis_or_fail(
+    keyword: str,
+    slug: str,
+    output_dir: Path,
+    reporter: ProgressReporter,
+    all_stages: list[StageResult],
+) -> PatternCard | None:
+    """[1]~[5] 분석 실행. 성공 시 PatternCard, 실패 시 None."""
+    analyze_result, maybe_card = _run_analysis_stages(keyword, slug, output_dir, reporter)
+    all_stages.extend(analyze_result.stages)
+
+    if maybe_card is None:
+        error_msg = analyze_result.error or "분석 실패"
+        reporter.pipeline_error("analysis", Exception(error_msg))
+        all_stages.append(StageResult(name="analysis", status=StageStatus.FAILED, error=error_msg))
+        return None
+    return maybe_card
+
+
+def _find_cached_pattern_card(keyword: str, slug: str) -> PatternCard | None:
+    """output/{slug}/latest/analysis/pattern-card.json 캐시 확인."""
+    cached_path = _OUTPUT_ROOT / slug / "latest" / "analysis" / "pattern-card.json"
+    if not cached_path.exists():
+        return None
+
+    from domain.analysis.pattern_card import load_pattern_card
+
+    try:
+        card = load_pattern_card(cached_path)
+        logger.info("pattern_card.cache_hit keyword=%s path=%s", keyword, cached_path)
+        return card
+    except Exception:
+        logger.warning("pattern_card.cache_load_failed path=%s", cached_path)
+        return None
+
+
 def run_pipeline(
     keyword: str,
     reporter: ProgressReporter | None = None,
     pattern_card_path: Path | None = None,
     generate_images: bool = True,
     regenerate_images: bool = False,
+    force_analyze: bool = False,
 ) -> PipelineResult:
     """전체 [1]~[10] 파이프라인 실행."""
     _reporter = reporter or LoggingProgressReporter()
@@ -351,25 +412,24 @@ def run_pipeline(
 
     try:
         # 패턴 카드 획득
-        if pattern_card_path is not None:
-            from domain.analysis.pattern_card import load_pattern_card
-
-            card = load_pattern_card(pattern_card_path)
-        else:
-            analyze_result, maybe_card = _run_analysis_stages(keyword, slug, output_dir, _reporter)
-            all_stages.extend(analyze_result.stages)
-
-            if maybe_card is None:
-                _reporter.pipeline_error("analysis", Exception(analyze_result.error or ""))
-                return PipelineResult(
-                    status=StageStatus.FAILED,
-                    keyword=keyword,
-                    slug=slug,
-                    output_path=output_dir,
-                    stages=all_stages,
-                    error=analyze_result.error,
-                )
-            card = maybe_card
+        card = _resolve_pattern_card(
+            keyword,
+            slug,
+            output_dir,
+            _reporter,
+            all_stages,
+            pattern_card_path=pattern_card_path,
+            force_analyze=force_analyze,
+        )
+        if card is None:
+            return PipelineResult(
+                status=StageStatus.FAILED,
+                keyword=keyword,
+                slug=slug,
+                output_path=output_dir,
+                stages=all_stages,
+                error=all_stages[-1].error if all_stages else "분석 실패",
+            )
 
         # [6]~[10] 생성
         gen_result = _run_generation_stages(

@@ -1,7 +1,7 @@
 """이미지 생성 메인 진입점.
 
-검증된 image_prompts 를 순회하며 캐시 확인 → API 호출 → 저장.
-예산 가드, 1회 재시도, 실패 시 스킵 (파이프라인 계속).
+검증된 image_prompts 를 병렬로 처리: 캐시 확인 → API 호출 → 저장.
+예산 가드(사전 필터), 1회 재시도, 실패 시 스킵 (파이프라인 계속).
 """
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ from __future__ import annotations
 import io
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from PIL import Image
@@ -33,6 +34,7 @@ from domain.image_generation.provider import ImageGenerationError, ImageProvider
 logger = logging.getLogger(__name__)
 
 _RETRY_DELAY_SECONDS = 1.0
+_MAX_WORKERS = 5
 
 
 def generate_images(
@@ -45,7 +47,7 @@ def generate_images(
     max_width: int = 720,
     jpeg_quality: int = 85,
 ) -> ImageGenerationResult:
-    """검증 통과된 prompt 리스트로 이미지를 생성한다.
+    """검증 통과된 prompt 리스트로 이미지를 병렬 생성한다.
 
     Args:
         prompts: [6] outline 에서 생성, [8] compliance 통과된 prompt 리스트.
@@ -66,48 +68,74 @@ def generate_images(
     images_dir = output_dir / "images"
     images_dir.mkdir(parents=True, exist_ok=True)
 
+    # 예산 가드: 사전 필터링 (제출 전 budget 초과분 스킵)
+    to_process, skipped = _apply_budget_guard(prompts, budget)
+
+    gen, process_skipped = _process_prompts_parallel(
+        to_process, images_dir, provider, cache_dir, regenerate, max_width, jpeg_quality
+    )
+    skipped.extend(process_skipped)
+
+    return ImageGenerationResult(generated=gen, skipped=skipped)
+
+
+def _apply_budget_guard(
+    prompts: list[ImagePrompt],
+    budget: int | None,
+) -> tuple[list[ImagePrompt], list[SkippedImage]]:
+    """예산 초과 prompt 를 사전 필터링한다."""
+    if budget is None:
+        return prompts, []
+
+    to_process = prompts[:budget]
+    skipped: list[SkippedImage] = []
+    for prompt_item in prompts[budget:]:
+        logger.warning(
+            "image budget exceeded (%d), skipping sequence %d",
+            budget,
+            prompt_item.sequence,
+        )
+        skipped.append(SkippedImage(sequence=prompt_item.sequence, reason="budget_exceeded"))
+    return to_process, skipped
+
+
+def _process_prompts_parallel(
+    prompts: list[ImagePrompt],
+    images_dir: Path,
+    provider: ImageProvider,
+    cache_dir: Path | None,
+    regenerate: bool,
+    max_width: int,
+    jpeg_quality: int,
+) -> tuple[list[GeneratedImage], list[SkippedImage]]:
+    """ThreadPoolExecutor 로 prompt 를 병렬 처리한다."""
     generated: list[GeneratedImage] = []
     skipped: list[SkippedImage] = []
-    api_call_count = 0
 
-    for prompt_item in prompts:
-        # 예산 가드 — 실제 API 호출 수만 카운트 (캐시 히트 제외)
-        if budget is not None and api_call_count >= budget:
-            logger.warning(
-                "image budget exceeded (%d), skipping sequence %d",
-                budget,
-                prompt_item.sequence,
-            )
-            skipped.append(
-                SkippedImage(
-                    sequence=prompt_item.sequence,
-                    reason="budget_exceeded",
-                )
-            )
-            continue
+    with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as executor:
+        futures = {
+            executor.submit(
+                _process_single_prompt,
+                prompt_item=p,
+                images_dir=images_dir,
+                provider=provider,
+                cache_dir=cache_dir,
+                regenerate=regenerate,
+                max_width=max_width,
+                jpeg_quality=jpeg_quality,
+            ): p
+            for p in prompts
+        }
 
-        result = _process_single_prompt(
-            prompt_item=prompt_item,
-            images_dir=images_dir,
-            provider=provider,
-            cache_dir=cache_dir,
-            regenerate=regenerate,
-            max_width=max_width,
-            jpeg_quality=jpeg_quality,
-        )
+        for future in as_completed(futures):
+            result = future.result()
+            if isinstance(result, SkippedImage):
+                skipped.append(result)
+            else:
+                gen_img, _called_api = result
+                generated.append(gen_img)
 
-        if isinstance(result, GeneratedImage):
-            generated.append(result)
-        elif isinstance(result, SkippedImage):
-            skipped.append(result)
-        else:
-            # api_call_happened 플래그
-            gen_img, called_api = result
-            generated.append(gen_img)
-            if called_api:
-                api_call_count += 1
-
-    return ImageGenerationResult(generated=generated, skipped=skipped)
+    return generated, skipped
 
 
 def _process_single_prompt(

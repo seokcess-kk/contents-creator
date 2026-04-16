@@ -140,8 +140,8 @@ class TestBudgetGuard:
         assert all(s.reason == "budget_exceeded" for s in result.skipped)
         assert provider.generate.call_count == 2
 
-    def test_cache_hit_does_not_count_budget(self, tmp_path: Path) -> None:
-        """캐시 히트는 예산 카운트에 포함하지 않는다."""
+    def test_budget_pre_filters_by_count(self, tmp_path: Path) -> None:
+        """예산은 사전 필터로 동작: 처음 N개만 제출, 나머지 스킵."""
         cache_dir = tmp_path / "cache"
 
         # prompt 1 을 캐시에 미리 넣기
@@ -164,10 +164,11 @@ class TestBudgetGuard:
             budget=2,
         )
 
-        # 캐시 히트 1 + API 호출 2 = 3개 generated, 0 skipped
-        assert len(result.generated) == 3
-        assert len(result.skipped) == 0
-        assert provider.generate.call_count == 2
+        # budget=2 → 처음 2개만 제출 (캐시 히트 1 + API 호출 1), 3번째 스킵
+        assert len(result.generated) == 2
+        assert len(result.skipped) == 1
+        assert result.skipped[0].reason == "budget_exceeded"
+        assert provider.generate.call_count == 1
 
 
 class TestApiError:
@@ -205,13 +206,23 @@ class TestApiError:
         assert provider.generate.call_count == 2
 
     def test_pipeline_continues_after_error(self, tmp_path: Path) -> None:
-        """하나 실패해도 나머지 prompt 는 처리 계속."""
+        """하나 실패해도 나머지 prompt 는 처리 계속 (병렬 실행)."""
+        import threading
+
+        call_counts: dict[str, int] = {}
+        lock = threading.Lock()
+
+        def _side_effect(prompt: str, *, aspect_ratio: str = "1:1") -> bytes:
+            with lock:
+                count = call_counts.get(prompt, 0)
+                call_counts[prompt] = count + 1
+
+            if "prompt 1" in prompt:
+                raise ImageGenerationError("fail")
+            return _VALID_PNG
+
         provider = MagicMock()
-        provider.generate.side_effect = [
-            ImageGenerationError("fail"),
-            ImageGenerationError("fail"),  # seq 1 재시도도 실패
-            _VALID_PNG,  # seq 2 성공
-        ]
+        provider.generate.side_effect = _side_effect
 
         prompts = [
             _make_prompt(1, "prompt 1, no text"),

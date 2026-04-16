@@ -37,6 +37,11 @@ def main() -> int:
         action="store_true",
         help="이미지 prompt 해시 캐시를 무시하고 강제 재생성",
     )
+    parser.add_argument(
+        "--force-analyze",
+        action="store_true",
+        help="캐시된 패턴 카드가 있어도 분석을 처음부터 다시 실행",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -50,6 +55,7 @@ def main() -> int:
         pattern_card_path=args.pattern_card,
         generate_images=not args.no_images,
         regenerate_images=args.regenerate_images,
+        force_analyze=args.force_analyze,
     )
     return 0 if result.status == StageStatus.SUCCEEDED else 1
 
