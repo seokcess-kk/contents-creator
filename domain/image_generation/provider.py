@@ -9,6 +9,8 @@ from __future__ import annotations
 import logging
 from typing import Protocol
 
+from domain.common.usage import ApiUsage, record_usage
+
 logger = logging.getLogger(__name__)
 
 
@@ -51,6 +53,7 @@ class GeminiImageProvider:
         except Exception as exc:
             raise ImageGenerationError(f"Gemini API 호출 실패: {exc}") from exc
 
+        record_usage(ApiUsage(provider="gemini", model=self._model))
         return self._extract_image_bytes(response)
 
     def _extract_image_bytes(self, response: object) -> bytes:

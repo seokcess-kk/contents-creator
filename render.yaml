@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: contents-creator-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: BRIGHT_DATA_API_KEY
+        sync: false
+      - key: BRIGHT_DATA_WEB_UNLOCKER_ZONE
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false

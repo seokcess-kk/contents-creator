@@ -13,6 +13,8 @@ from __future__ import annotations
 import logging
 
 import requests
+
+from domain.common.usage import ApiUsage, record_usage
 from tenacity import (
     RetryError,
     retry,
@@ -100,6 +102,8 @@ class BrightDataClient:
         if response.status_code >= 500:
             logger.warning("brightdata.5xx status=%s url=%s", response.status_code, url)
             raise BrightDataTransientError(f"server error {response.status_code}: {url}")
+        if response.status_code < 400:
+            record_usage(ApiUsage(provider="brightdata", model="web_unlocker"))
         if response.status_code >= 400:
             logger.error(
                 "brightdata.4xx status=%s url=%s body=%s",

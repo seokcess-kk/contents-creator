@@ -12,6 +12,7 @@ from typing import Any
 import anthropic
 
 from config.settings import require, settings
+from domain.common.usage import ApiUsage, record_usage
 from domain.compliance.model import Violation
 from domain.compliance.rules import (
     CompliancePolicy,
@@ -170,6 +171,10 @@ def _check_llm(
         system=system_prompt,
     )
 
+    record_usage(ApiUsage(
+        provider="anthropic", model=settings.model_sonnet,
+        input_tokens=response.usage.input_tokens, output_tokens=response.usage.output_tokens,
+    ))
     return _parse_llm_violations(response)
 
 

@@ -1,0 +1,16 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.git/
+.claude/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+output/
+dev/
+tasks/
+tests/
+web/frontend/
+*.md
+!domain/**/*.md

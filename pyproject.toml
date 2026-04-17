@@ -28,6 +28,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+web = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "websockets>=13.0",
+]
 dev = [
     "ruff>=0.6",
     "mypy>=1.11",
@@ -37,7 +42,7 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["domain*", "application*", "config*"]
+include = ["domain*", "application*", "config*", "web*"]
 exclude = ["tests*", "scripts*", "output*", "dev*", "tasks*"]
 
 [tool.ruff]

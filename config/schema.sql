@@ -153,6 +153,30 @@ create index if not exists idx_brand_cards_keyword
 
 
 -- ============================================================
+-- api_usage — API 호출 사용량 + 비용 추적
+-- ============================================================
+create table if not exists api_usage (
+    id uuid primary key default gen_random_uuid(),
+    created_at timestamptz default now(),
+    job_id text,
+    keyword text,
+    stage text,
+    provider text not null,
+    model text,
+    input_tokens int default 0,
+    output_tokens int default 0,
+    requests int default 1,
+    estimated_cost_usd numeric(10,6) default 0
+);
+
+create index if not exists idx_api_usage_created
+    on api_usage (created_at desc);
+
+create index if not exists idx_api_usage_provider
+    on api_usage (provider, created_at desc);
+
+
+-- ============================================================
 -- 향후 확장 시 이 파일에 테이블 추가 (Phase 2):
 --   - client_profiles  (클라이언트 프로필, 브랜드와 구분)
 --   - visual_patterns  (비주얼 분석 / VLM)

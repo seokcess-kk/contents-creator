@@ -32,6 +32,11 @@ Thumbs.db
 .idea/
 *.swp
 
+# Next.js
+web/frontend/.next/
+web/frontend/node_modules/
+web/frontend/out/
+
 # Project
 output/
 dev/active/context.md

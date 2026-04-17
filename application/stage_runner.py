@@ -15,7 +15,9 @@ if TYPE_CHECKING:
     from domain.generation.body_quality_enforcer import SectionIssue
 
 from application.progress import ProgressReporter
+from application.usage_tracker import save_usage_to_supabase, summarize_usages
 from config.settings import require, settings
+from domain.common.usage import collect_usage, reset_usage
 from domain.analysis.model import (
     AppealAnalysis,
     PhysicalAnalysis,

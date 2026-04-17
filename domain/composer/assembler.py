@@ -50,7 +50,7 @@ def assemble_content(
         parts.append("")
         parts.append(f"## {section.subtitle}")
         parts.append("")
-        parts.append(section.content_md)
+        parts.append(_strip_leading_heading(section.content_md, section.subtitle))
 
         # section_N_end 위치 이미지
         _append_images(parts, image_map, f"section_{section.index}_end")
@@ -125,6 +125,16 @@ def _build_even_image_map(
             mapping.setdefault(key, []).append(img)
 
     return mapping
+
+
+def _strip_leading_heading(content_md: str, subtitle: str) -> str:
+    """content_md 앞에 LLM이 중복 출력한 ## 소제목을 제거한다."""
+    stripped = content_md.lstrip("\n")
+    prefix = f"## {subtitle}"
+    if stripped.startswith(prefix):
+        after = stripped[len(prefix) :]
+        return after.lstrip("\n")
+    return content_md
 
 
 _SECTION_NUM_RE = re.compile(r"(?:섹션|section)\s*(\d+)", re.IGNORECASE)

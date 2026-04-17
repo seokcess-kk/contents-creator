@@ -52,6 +52,17 @@ class Settings(BaseSettings):
     retry_max_attempts: int = 2
     llm_tool_use_timeout_seconds: int = 60
 
+    # 웹 UI
+    cors_origins: str = "http://localhost:3000"  # 쉼표 구분 복수 origin
+
+    # API 비용 (USD per 1M tokens, 2026-04 기준)
+    cost_anthropic_opus_input: float = 15.0
+    cost_anthropic_opus_output: float = 75.0
+    cost_anthropic_sonnet_input: float = 3.0
+    cost_anthropic_sonnet_output: float = 15.0
+    cost_gemini_image_per_request: float = 0.04
+    cost_brightdata_per_request: float = 0.01
+
     # 이미지 생성 안전장치
     image_generation_budget_per_run: int = 30  # 분석 결과 그대로 반영, 실사용 상한 안전망
     image_cache_dir: str = "output/_image_cache"

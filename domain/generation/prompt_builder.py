@@ -50,6 +50,7 @@ OUTLINE_TOOL: dict[str, Any] = {
             },
             "image_prompts": {
                 "type": "array",
+                "minItems": 3,
                 "items": {
                     "type": "object",
                     "required": [

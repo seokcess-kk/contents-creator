@@ -16,6 +16,7 @@ import anthropic
 
 from config.settings import require, settings
 from domain.analysis.pattern_card import PatternCard
+from domain.common.usage import ApiUsage, record_usage
 from domain.generation.model import (
     ImagePromptItem,
     KeywordPlan,
@@ -50,6 +51,10 @@ def generate_outline(
         messages=messages,
     )
 
+    record_usage(ApiUsage(
+        provider="anthropic", model=settings.model_opus,
+        input_tokens=response.usage.input_tokens, output_tokens=response.usage.output_tokens,
+    ))
     tool_input = _extract_tool_input(response)
     return _parse_outline(tool_input)
 
