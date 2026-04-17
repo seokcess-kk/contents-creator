@@ -71,6 +71,11 @@ export default function JobDetailPage({
             {job.type === "pipeline" ? "전체 파이프라인" : job.type === "analyze" ? "분석" : "생성"}
             {" · "}
             <StatusBadge status={job.status} />
+            {job.started_at && (
+              <span className="ml-2 text-gray-400">
+                {formatDuration(job.started_at, job.status === "running" ? null : job.finished_at)}
+              </span>
+            )}
           </p>
         </div>
       </div>
@@ -91,6 +96,17 @@ export default function JobDetailPage({
       )}
     </div>
   );
+}
+
+function formatDuration(start: string | null, end: string | null): string {
+  if (!start) return "";
+  const s = new Date(start).getTime();
+  const e = end ? new Date(end).getTime() : Date.now();
+  const sec = Math.round((e - s) / 1000);
+  if (sec < 60) return `${sec}초`;
+  const min = Math.floor(sec / 60);
+  const rem = sec % 60;
+  return rem > 0 ? `${min}분 ${rem}초` : `${min}분`;
 }
 
 function StatusBadge({ status }: { status: string }) {

@@ -34,6 +34,17 @@ function formatTime(iso: string | null): string {
   });
 }
 
+function formatDuration(start: string | null, end: string | null): string {
+  if (!start) return "-";
+  const s = new Date(start).getTime();
+  const e = end ? new Date(end).getTime() : Date.now();
+  const sec = Math.round((e - s) / 1000);
+  if (sec < 60) return `${sec}초`;
+  const min = Math.floor(sec / 60);
+  const rem = sec % 60;
+  return rem > 0 ? `${min}분 ${rem}초` : `${min}분`;
+}
+
 interface Props {
   jobs: Job[];
 }
@@ -56,7 +67,7 @@ export default function JobList({ jobs }: Props) {
             <th className="px-4 py-3 font-medium">모드</th>
             <th className="px-4 py-3 font-medium">상태</th>
             <th className="px-4 py-3 font-medium">시작</th>
-            <th className="px-4 py-3 font-medium">완료</th>
+            <th className="px-4 py-3 font-medium">소요시간</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
@@ -84,7 +95,13 @@ export default function JobList({ jobs }: Props) {
                 {formatTime(job.started_at)}
               </td>
               <td className="px-4 py-3 text-gray-500">
-                {formatTime(job.finished_at)}
+                {job.status === "running" ? (
+                  <span className="text-blue-600 animate-pulse">
+                    {formatDuration(job.started_at, null)}
+                  </span>
+                ) : (
+                  formatDuration(job.started_at, job.finished_at)
+                )}
               </td>
             </tr>
           ))}
