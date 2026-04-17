@@ -65,6 +65,6 @@
 
 ## 참조
 
-- @../../SPEC-SEO-TEXT.md §3 [8]
-- @../../.claude/skills/medical-compliance/SKILL.md
-- @../../.claude/agents/domain/compliance-reviewer.md
+- SPEC-SEO-TEXT.md §3 [8]
+- .claude/skills/medical-compliance/SKILL.md
+- .claude/agents/domain/compliance-reviewer.md

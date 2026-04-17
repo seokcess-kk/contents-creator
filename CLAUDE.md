@@ -8,7 +8,7 @@ Claude가 실수하거나 의도와 다른 결과를 낼 때마다,
 
 네이버 키워드 → Bright Data 크롤링 → 상위글 분석 → 패턴 카드 → SEO 원고 → 의료법 검증 → AI 이미지 생성(Gemini) → 네이버 호환 출력의 10단계 파이프라인.
 기술 스택: Python 3.11+, Bright Data, Supabase, Anthropic Claude SDK, Google Gemini, BeautifulSoup, Pydantic.
-상세 설계: @SPEC-SEO-TEXT.md
+상세 설계: SPEC-SEO-TEXT.md
 
 ## 빌드 & 실행
 

@@ -55,5 +55,5 @@
 
 ## 참조
 
-- @../../SPEC-SEO-TEXT.md §3 [3][4a][4b][5]
-- @../../.claude/skills/analysis/SKILL.md
+- SPEC-SEO-TEXT.md §3 [3][4a][4b][5]
+- .claude/skills/analysis/SKILL.md

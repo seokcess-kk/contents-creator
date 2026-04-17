@@ -26,5 +26,5 @@ Bright Data SERP + Web Unlocker 기반 네이버 블로그 수집. SPEC-SEO-TEXT
 
 ## 참조
 
-- @../../SPEC-SEO-TEXT.md §3 [1][2]
-- @../../.claude/skills/crawling/SKILL.md
+- SPEC-SEO-TEXT.md §3 [1][2]
+- .claude/skills/crawling/SKILL.md

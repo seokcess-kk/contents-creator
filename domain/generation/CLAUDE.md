@@ -70,7 +70,7 @@
 
 ## 참조
 
-- @../../SPEC-SEO-TEXT.md §3 [6][7]
-- @../../.claude/skills/generation/SKILL.md
-- @../../.claude/agents/domain/seo-writer-guardian.md (M2 리뷰 전담)
-- @../../.claude/hooks/post-edit-lint.sh (M2 자동 차단)
+- SPEC-SEO-TEXT.md §3 [6][7]
+- .claude/skills/generation/SKILL.md
+- .claude/agents/domain/seo-writer-guardian.md (M2 리뷰 전담)
+- .claude/hooks/post-edit-lint.sh (M2 자동 차단)

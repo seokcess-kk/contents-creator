@@ -147,6 +147,6 @@ if generated_count >= budget:
 
 ## 참조
 
-- @../../SPEC-SEO-TEXT.md §3 [9]
-- @../../.claude/skills/image-generation/SKILL.md
-- @../compliance/CLAUDE.md (이미지 prompt 검증 규칙)
+- SPEC-SEO-TEXT.md §3 [9]
+- .claude/skills/image-generation/SKILL.md
+- domain/compliance/CLAUDE.md (이미지 prompt 검증 규칙)

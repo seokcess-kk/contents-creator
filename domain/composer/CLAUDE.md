@@ -54,6 +54,6 @@ intro + body 조립, outline.md 변환, 네이버 호환 HTML 생성. SPEC-SEO-T
 
 ## 참조
 
-- @../../SPEC-SEO-TEXT.md §3 [9]
-- @../../.claude/skills/content-pipeline/SKILL.md (단계 매핑)
+- SPEC-SEO-TEXT.md §3 [9]
+- .claude/skills/content-pipeline/SKILL.md (단계 매핑)
 - 화이트리스트 실측 결과: `tasks/lessons.md` 참조

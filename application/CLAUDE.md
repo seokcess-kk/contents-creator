@@ -102,6 +102,6 @@ class NullProgressReporter:
 
 ## 참조
 
-- @../SPEC-SEO-TEXT.md §12 (Phase 2 대비)
-- @../SPEC-SEO-TEXT.md §3 (8단계 파이프라인 상세)
-- @../.claude/skills/content-pipeline/SKILL.md (단계 매핑)
+- SPEC-SEO-TEXT.md §12 (Phase 2 대비)
+- SPEC-SEO-TEXT.md §3 (8단계 파이프라인 상세)
+- .claude/skills/content-pipeline/SKILL.md (단계 매핑)
