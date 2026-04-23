@@ -152,6 +152,21 @@ BODY_TOOL: dict[str, Any] = {
 }
 
 
+BODY_SECTION_TOOL: dict[str, Any] = {
+    "name": "record_body_section",
+    "description": "SEO 원고 본문 한 섹션을 기록한다.",
+    "input_schema": {
+        "type": "object",
+        "required": ["index", "subtitle", "content_md"],
+        "properties": {
+            "index": {"type": "integer", "minimum": 1},
+            "subtitle": {"type": "string"},
+            "content_md": {"type": "string"},
+        },
+    },
+}
+
+
 # ── 프롬프트 빌드 함수 ──
 
 
@@ -179,10 +194,9 @@ def build_body_prompt(
     pattern_card: PatternCard,
     compliance_rules: str | None = None,
 ) -> tuple[list[dict[str, str]], dict[str, Any]]:
-    """[7] 본문 프롬프트 빌드. M2: intro 원문 미포함.
+    """[7] 본문 전체 프롬프트 빌드 (레거시 all-in-one).
 
-    Returns:
-        (messages, tool_schema) 튜플.
+    신규 병렬 호출은 `build_body_section_prompt` 사용.
     """
     system = _build_body_system(
         outline_without_intro, intro_tone_hint, pattern_card, compliance_rules
@@ -192,6 +206,61 @@ def build_body_prompt(
         {"role": "user", "content": f"[시스템 지시]\n{system}\n\n{user}"},
     ]
     return messages, BODY_TOOL
+
+
+def build_body_section_prompt(
+    section: OutlineSection,
+    outline_without_intro: Outline,
+    intro_tone_hint: str,
+    pattern_card: PatternCard,
+    compliance_rules: str | None = None,
+) -> tuple[str, list[dict[str, Any]], dict[str, Any]]:
+    """[7] 본문 섹션별 프롬프트 빌드. M2: intro 원문 미포함.
+
+    공용 규칙(shared_system) 을 별도로 분리해 Anthropic Prompt Caching 활성.
+    body_writer 가 `system=[{text, cache_control: ephemeral}]` 로 전달하면
+    섹션별 호출 중 하나만 write, 나머지는 cache hit.
+
+    Returns:
+        (shared_system, messages, tool_schema) 3-tuple.
+    """
+    shared_system = _build_body_shared_system(
+        outline_without_intro, intro_tone_hint, pattern_card, compliance_rules
+    )
+    section_instruction = _build_section_instruction(section, outline_without_intro)
+    user_content = (
+        f"{section_instruction}\n\n"
+        "record_body_section 도구로 이 섹션의 index/subtitle/content_md 를 기록하라."
+    )
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": user_content},
+    ]
+    return shared_system, messages, BODY_SECTION_TOOL
+
+
+def _build_section_instruction(section: OutlineSection, outline: Outline) -> str:
+    """섹션별 작성 지시. 전체 outline 맥락 + 현재 섹션 상세."""
+    other_subtitles = [
+        f"{s.index}. {s.subtitle}" for s in outline.sections if s.index != section.index
+    ]
+    other_list = "\n".join(f"  - {line}" for line in other_subtitles) or "  (없음)"
+    dia = ", ".join(section.dia_markers) if section.dia_markers else "없음"
+    target = section.target_chars or 450
+    return (
+        f"[전체 원고 제목]\n{outline.title}\n\n"
+        f"[현재 작성 섹션]\n"
+        f"- index: {section.index}\n"
+        f"- subtitle: {section.subtitle}\n"
+        f"- 역할: {section.role}\n"
+        f"- 목표 글자수: {target}자 (±15%)\n"
+        f"- DIA+ 요소: {dia}\n"
+        f"- 섹션 요약(참고): {section.summary or '(없음)'}\n\n"
+        f"[다른 섹션 목록 — 이들 주제는 간략히만 언급, 중복·침범 금지]\n{other_list}\n\n"
+        f"[섹션 작성 규칙]\n"
+        f"- 반드시 `## {section.subtitle}` 헤딩으로 시작\n"
+        f"- 위 목표 글자수를 맞추고 다른 섹션 내용은 최소 언급\n"
+        f"- 톤과 문체는 아래 공용 지시를 그대로 따름"
+    )
 
 
 # ── 내부 헬퍼 ──
@@ -285,13 +354,52 @@ def _build_outline_system(
     )
 
 
+def _build_body_shared_system(
+    outline: Outline,
+    intro_tone_hint: str,
+    pc: PatternCard,
+    compliance_rules: str | None,
+) -> str:
+    """[7] 섹션 병렬 호출용 공용 시스템 프롬프트. 섹션별 지시는 user 메시지에 둔다.
+
+    섹션 간 동일한 내용만 여기 둬서 Prompt Caching 최대 적중. M2: intro 원문 미포함.
+    """
+    stats = pc.stats
+    compliance_block = _format_compliance(compliance_rules)
+    return (
+        "너는 네이버 블로그 SEO 전문 작가다. 아래 아웃라인의 한 섹션을 작성한다.\n"
+        "도입부(1번째 섹션)는 이미 확정된 톤 락이 적용되어 있으므로 다시 작성하지 않는다.\n"
+        "지정된 섹션만 생성한다. 다른 섹션 주제는 간략히 언급할 수 있으나 상세 서술 금지.\n\n"
+        "[톤앤매너]\n"
+        "- 친근한 전문가가 독자에게 설명해주는 톤 (친구에게 알려주듯)\n"
+        "- '~입니다' 일변도 금지. '~예요/~이에요', '~거든요', '~인데요' 등 섞어라\n"
+        "- 🔴 1인칭 금지: '저는', '제가', '저도' 등 화자 본인 체험기 형식 금지.\n"
+        "  3인칭 또는 일반 주어 사용 (예: '많은 분들이', '흔히', '보통')\n\n"
+        f"[톤 힌트]\n{intro_tone_hint}\n이어지는 본문은 동일한 톤을 유지.\n\n"
+        f"[키워드 배치 규칙]\n"
+        f'주 키워드 "{pc.keyword}":\n'
+        f"  - 소제목 {outline.keyword_plan.subtitle_inclusion_target * 100:.0f}% 이상 포함\n"
+        f"  - 전체 밀도 {stats.keyword_density.avg:.3f}\n"
+        f"연관 키워드: {pc.related_keywords} - 자연스럽게 분산\n"
+        '일반화 부사("일반적으로", "보통", "대부분") 단락당 1회 이내\n\n'
+        f"{_format_keyword_placement(pc)}\n\n"
+        f"[문단 규칙]\n문단당 {stats.paragraph_avg_chars:.0f}자 내외\n\n"
+        "[금지 사항]\n"
+        "- 업체명/브랜드명 언급 금지\n"
+        '- "저희", "우리 병원" 등 1인칭 금지\n'
+        "- CTA (예약, 전화, 상담) 표현 금지\n"
+        "- 리스트를 중첩하지 말 것. 하위 분류는 별도 섹션·소제목으로 분리\n"
+        f"{compliance_block}"
+    )
+
+
 def _build_body_system(
     outline: Outline,
     intro_tone_hint: str,
     pc: PatternCard,
     compliance_rules: str | None,
 ) -> str:
-    """[7] 시스템 프롬프트 조립. M2: intro 원문 미포함."""
+    """[7] 레거시 전체 본문 시스템 프롬프트 (단일 호출). M2: intro 원문 미포함."""
     stats = pc.stats
     sections_text = _format_body_sections(outline.sections)
     dia_markers = _collect_dia_markers(outline.sections)

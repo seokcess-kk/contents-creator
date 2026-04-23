@@ -28,18 +28,9 @@ def _make_tool_response(data: dict[str, Any]) -> SimpleNamespace:
 
 
 _VALID_BODY_DATA: dict[str, Any] = {
-    "body_sections": [
-        {
-            "index": 2,
-            "subtitle": "한의원 다이어트가 주목받는 이유",
-            "content_md": "한의학적 접근은 체질을 기반으로 합니다.",
-        },
-        {
-            "index": 3,
-            "subtitle": "체질별 관리 방법",
-            "content_md": "체질에 따라 관리 방법이 다릅니다.",
-        },
-    ],
+    "index": 2,
+    "subtitle": "한의원 다이어트가 주목받는 이유",
+    "content_md": "한의학적 접근은 체질을 기반으로 합니다.",
 }
 
 
@@ -94,8 +85,10 @@ class TestGenerateBody:
         )
 
         assert isinstance(result, BodyResult)
-        assert len(result.body_sections) == 2
-        assert result.body_sections[0].index == 2
+        # 3개 섹션(index 2,3,4) 병렬 호출 → 3개 결과
+        assert len(result.body_sections) == len(outline_without_intro.sections)
+        indices = [s.index for s in result.body_sections]
+        assert indices == sorted(indices)
 
     @patch("domain.common.anthropic_client.anthropic")
     @patch("domain.common.anthropic_client.require")
@@ -135,7 +128,8 @@ class TestGenerateBody:
         call_kwargs = mock_client.messages.create.call_args
         tools = call_kwargs.kwargs.get("tools", [])
         assert len(tools) == 1
-        assert tools[0]["name"] == "record_body"
+        # 섹션별 병렬 호출 — 섹션 단위 tool 이름
+        assert tools[0]["name"] == "record_body_section"
 
     @patch("domain.common.anthropic_client.anthropic")
     @patch("domain.common.anthropic_client.require")
