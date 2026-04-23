@@ -68,6 +68,9 @@ class Settings(BaseSettings):
     )
     job_timeout_seconds: int = 3600  # 단일 파이프라인 실행 상한
 
+    # Supabase Storage (결과물 영속화 — Render 컨테이너 파일시스템 휘발 대응)
+    storage_bucket: str = "results"
+
     # API 비용 (USD per 1M tokens, 2026-04 기준)
     cost_anthropic_opus_input: float = 15.0
     cost_anthropic_opus_output: float = 75.0

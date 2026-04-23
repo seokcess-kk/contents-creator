@@ -29,10 +29,33 @@ from domain.crawler.page_scraper import scrape_pages
 from domain.crawler.serp_collector import collect_serp
 from domain.generation.model import BodyResult, Outline
 from domain.image_generation.model import ImageGenerationResult, ImagePrompt
+from domain.storage import upload_bytes
 
 logger = logging.getLogger(__name__)
 
 MAX_COMPLIANCE_ITERATIONS = 2
+
+
+def _storage_prefix(output_dir: Path) -> str:
+    """output/{slug}/{ts}/ 경로에서 Storage key prefix(`{slug}/{ts}`) 추출."""
+    return f"{output_dir.parent.name}/{output_dir.name}"
+
+
+def _upload_images_to_storage(result: ImageGenerationResult, output_dir: Path) -> None:
+    """생성된 이미지를 Supabase Storage 에 업로드. 실패해도 파이프라인 중단 안 함."""
+    if not result.generated:
+        return
+    prefix = _storage_prefix(output_dir)
+    for img in result.generated:
+        local_path = output_dir / img.path
+        if not local_path.exists():
+            logger.warning("storage.upload skip (local missing) path=%s", local_path)
+            continue
+        key = f"{prefix}/{img.path}"
+        content_type = (
+            "image/jpeg" if local_path.suffix.lower() in {".jpg", ".jpeg"} else "image/png"
+        )
+        upload_bytes(key, local_path.read_bytes(), content_type)
 
 
 # ── 공통 헬퍼 ──
@@ -672,6 +695,8 @@ def run_stage_image_generation(
         jpeg_quality=settings.image_jpeg_quality,
     )
 
+    _upload_images_to_storage(result, output_dir)
+
     reporter.stage_end(
         "image_generation",
         {
@@ -754,6 +779,7 @@ def run_stage_compose(
 
     _save_generated_to_supabase(
         keyword=outline.title,
+        slug=output_dir.parent.name,
         outline_md=outline_md.content,
         content_md=content_md,
         content_html=html_doc.html,
@@ -789,6 +815,7 @@ def run_stage_compose(
 
 def _save_generated_to_supabase(
     keyword: str,
+    slug: str,
     outline_md: str,
     content_md: str,
     content_html: str,
@@ -796,7 +823,10 @@ def _save_generated_to_supabase(
     compliance_iterations: int,
     output_path: str,
 ) -> None:
-    """Supabase generated_contents 테이블에 저장. 실패해도 파이프라인 중단 안 함."""
+    """Supabase generated_contents 테이블에 저장. 실패해도 파이프라인 중단 안 함.
+
+    slug 는 웹 라우터 (web/api/routers/results.py) 에서 최신 본문 조회에 쓰인다.
+    """
     try:
         from config.supabase import get_client
 
@@ -814,6 +844,7 @@ def _save_generated_to_supabase(
         client.table("generated_contents").insert(
             {
                 "pattern_card_id": pc_id,
+                "slug": slug,
                 "outline_md": outline_md,
                 "content_md": content_md,
                 "content_html": content_html,
@@ -822,6 +853,6 @@ def _save_generated_to_supabase(
                 "output_path": output_path,
             }
         ).execute()
-        logger.info("generated_content.supabase_saved")
+        logger.info("generated_content.supabase_saved slug=%s", slug)
     except Exception:
         logger.warning("generated_content.supabase_save_failed", exc_info=True)
