@@ -100,11 +100,13 @@ def check_image_prompts(
 ) -> list[Violation]:
     """image_prompts 배열의 compliance 위반을 반환한다.
 
-    두 축에서 검증:
-    1. 이미지 전용 규칙 (prompt_validator): no text, Korean, 환자·시술·전후·효과 보장
-    2. rules.py 일반 금지 표현 (한국어 소스 텍스트에도 적용되는 규칙을 alt_text 에 재확인)
-
-    위반 1건당 Violation 1개. section_index 필드에 sequence 를 기록해 fixer 가 대상 식별.
+    검증 범위:
+    - `prompt` (영어): `validate_prompt` (image-specific) + rules.py 한국어 금지어
+      (일반적으로 영어 prompt 에는 한국어 금지어가 없지만 LLM 이 섞어 쓸 가능성 방어)
+    - `alt_text` (한국어): `validate_prompt` 의 검증 대상 아님. rules.py 패턴을 적용하면
+      alt_text 의 일상적 한국어 표현(예: "저희 병원 모습") 에 오탐이 발생해 정상
+      이미지가 drop 되므로 **미적용**. 대신 본문·outline 단계에서 동일 규칙이 이미
+      적용됨.
 
     Args:
         prompts: `ImagePromptItem` 또는 호환 dict 리스트.
@@ -115,7 +117,6 @@ def check_image_prompts(
     for p in prompts:
         seq = _get_attr(p, "sequence", 0)
         prompt_text = _get_attr(p, "prompt", "")
-        alt_text = _get_attr(p, "alt_text", "")
 
         try:
             validate_prompt(prompt_text)
@@ -130,18 +131,17 @@ def check_image_prompts(
                 ),
             )
 
-        combined = f"{prompt_text}\n{alt_text}"
         for category, pattern in compiled_patterns:
-            match = pattern.search(combined)
+            match = pattern.search(prompt_text)
             if match is None:
                 continue
             violations.append(
                 Violation(
                     category=category.value,
-                    text_snippet=combined[: match.end() + 30],
+                    text_snippet=prompt_text[: match.end() + 30],
                     section_index=seq,
                     severity="high",
-                    reason=f"이미지 prompt/alt_text 에 금지 표현 감지: '{match.group()}'",
+                    reason=f"이미지 prompt 에 금지 표현 감지: '{match.group()}'",
                 ),
             )
     return violations

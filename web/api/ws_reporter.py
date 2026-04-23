@@ -43,6 +43,7 @@ class WebSocketProgressReporter:
         self._bus.emit(self._job_id, event)
 
     def stage_progress(self, current: int, detail: str = "") -> None:
+        self._check_cancel()
         event: dict[str, Any] = {
             "type": "stage_progress",
             "current": current,

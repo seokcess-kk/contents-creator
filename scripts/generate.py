@@ -19,9 +19,17 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="생성 파이프라인만 실행: [6] 아웃라인 → [9] HTML (SPEC-SEO-TEXT.md §3)",
     )
+
+    def _non_empty(value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise argparse.ArgumentTypeError("keyword must be non-empty")
+        return stripped
+
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
         "--keyword",
+        type=_non_empty,
         help="키워드 (DB 에서 최신 패턴 카드 자동 조회)",
     )
     group.add_argument(

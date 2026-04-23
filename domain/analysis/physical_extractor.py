@@ -223,6 +223,11 @@ def _extract_main_container(soup: BeautifulSoup) -> Tag:
     셋 다 없으면 빈 Tag 를 반환해 extractor 가 빈 분석 결과로 전개되도록 한다.
     `<script>`, `<style>`, `<noscript>`, `<template>` 은 본문 파싱 전 제거하여
     JS 변수·CSS 토큰이 `get_text()` 결과에 섞이지 않도록 한다.
+
+    ⚠️ Side effect: `soup` 은 in-place 로 수정된다. 같은 soup 을 다른 함수가
+    이어서 사용하는 경우(`_extract_title` 등) 이미 노이즈 태그가 제거된 상태다.
+    이는 의도된 설계(본문·메타 모두 깨끗한 soup 을 공유). 추출 파이프라인
+    바깥에서 원본 HTML 이 필요하면 `BeautifulSoup(html, ...)` 로 재파싱할 것.
     """
     for tag_name in ("script", "style", "noscript", "template"):
         for t in soup.find_all(tag_name):

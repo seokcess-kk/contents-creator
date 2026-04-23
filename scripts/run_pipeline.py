@@ -16,11 +16,24 @@ from application.orchestrator import run_pipeline
 from application.progress import LoggingProgressReporter
 
 
+def _non_empty_keyword(value: str) -> str:
+    """공백만 있거나 빈 문자열을 거부하는 argparse type validator."""
+    stripped = value.strip()
+    if not stripped:
+        raise argparse.ArgumentTypeError("keyword must be non-empty")
+    return stripped
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="전체 SEO 원고 생성 파이프라인 실행 (SPEC-SEO-TEXT.md §3 [1]~[9])",
     )
-    parser.add_argument("--keyword", required=True, help="타겟 네이버 검색 키워드")
+    parser.add_argument(
+        "--keyword",
+        required=True,
+        type=_non_empty_keyword,
+        help="타겟 네이버 검색 키워드",
+    )
     parser.add_argument(
         "--pattern-card",
         type=Path,

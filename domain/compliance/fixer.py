@@ -418,11 +418,17 @@ def _regenerate_image_prompt(
                 )
             )
         except Exception:
-            logger.exception("image prompt 재생성 LLM 호출 실패 (attempt %d)", attempt + 1)
+            # Anthropic 호출 자체가 실패한 경우 response 객체가 없어 token usage 를
+            # 알 수 없다. 과금 여부도 불확실하므로 record_usage 를 호출하지 않는다.
+            # 실패 시도 빈도 파악용으로 error 로깅 (기존 warning → error 승격).
+            logger.error(
+                "image prompt 재생성 LLM 호출 실패 (attempt %d)", attempt + 1, exc_info=True
+            )
             continue
 
         new_prompt, new_alt = _parse_image_fix_response(response)
         if new_prompt is None:
+            logger.warning("image prompt 재생성 응답 파싱 실패 (attempt %d)", attempt + 1)
             continue
 
         try:
@@ -432,6 +438,10 @@ def _regenerate_image_prompt(
             continue
         return new_prompt, new_alt
 
+    logger.error(
+        "image prompt 재생성 최종 실패 attempts=%d — 해당 슬롯 drop 대상",
+        MAX_IMAGE_PROMPT_FIX_ATTEMPTS,
+    )
     return None, None
 
 

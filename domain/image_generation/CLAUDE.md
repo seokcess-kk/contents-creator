@@ -29,7 +29,7 @@ from google.genai import types
 client = genai.Client(api_key=settings.gemini_api_key)
 
 response = client.models.generate_content(
-    model=settings.image_model,  # "gemini-3.1-flash-image-preview"
+    model=settings.image_model,  # config/settings.py 기본값. 실제 .env 로 override 가능
     contents=[image_prompt.prompt],
     config=types.GenerateContentConfig(
         response_modalities=["IMAGE"],

@@ -188,14 +188,25 @@ def insert_images_into_text(
     text: str,
     image_prompts: list[ImagePromptItem],
     image_result: ImageGenerationResult,
+    section_count: int | None = None,
 ) -> str:
     """compliance 수정 완료된 텍스트에 이미지를 삽입한다.
 
     assemble_content 를 재호출하면 compliance 수정이 소실되므로,
     이미 완성된 마크다운 텍스트에 이미지만 삽입한다.
     이미지 위치는 코드로 균등 배치한다 (LLM position 무시).
+
+    Args:
+        text: compliance 수정본 마크다운.
+        image_prompts: outline 의 image_prompts (compliance 가 drop 한 이후).
+        image_result: 이미지 생성 결과.
+        section_count: 기대 섹션 수. None 이면 text 의 `## ` 개수로 폴백.
+            compliance 가 섹션을 합치거나 삭제한 경우 text 개수가 원본과 달라져
+            image 배분이 어긋날 수 있으므로 호출자가 outline.sections 기반 값을
+            전달하는 것을 권장한다.
     """
-    section_count = sum(1 for line in text.split("\n") if line.startswith("## "))
+    if section_count is None:
+        section_count = sum(1 for line in text.split("\n") if line.startswith("## "))
     image_map = _build_even_image_map(image_prompts, image_result, section_count)
     if not image_map:
         return text

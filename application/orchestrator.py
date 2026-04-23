@@ -29,6 +29,7 @@ from application.models import (
 )
 from application.progress import JobCancelled, LoggingProgressReporter, ProgressReporter
 from application.usage_tracker import save_usage_to_supabase, summarize_usages
+from config.settings import settings
 from domain.common.usage import collect_usage, record_usage, reset_usage, run_in_isolated_usage_ctx
 
 logger = logging.getLogger(__name__)
@@ -40,12 +41,21 @@ _job_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 
 
 def _harvest_usage(stage: str, keyword: str) -> dict[str, object]:
-    """단계 종료 후 usage 수확 + Supabase 저장. summary dict 반환."""
+    """단계 종료 후 usage 수확 + Supabase 저장. summary dict 반환.
+
+    Supabase 저장 실패 시 summary['supabase_saved']=False 로 기록해 운영자가
+    stage_end 이벤트로 인지할 수 있게 한다.
+    """
     usages = collect_usage()
     if not usages:
         return {}
-    save_usage_to_supabase(usages, job_id=_job_id_var.get(None), keyword=keyword, stage=stage)
-    return {"usage": summarize_usages(usages)}
+    saved = save_usage_to_supabase(
+        usages, job_id=_job_id_var.get(None), keyword=keyword, stage=stage
+    )
+    summary: dict[str, object] = {"usage": summarize_usages(usages)}
+    if not saved:
+        summary["supabase_saved"] = False
+    return summary
 
 
 # ── slug / 디렉토리 유틸 ──
@@ -64,8 +74,11 @@ def _slugify(keyword: str) -> str:
 
 
 def _create_output_dir(slug: str) -> Path:
-    """output/{slug}/{YYYYMMDD-HHmm}/ 디렉토리 생성."""
-    ts = datetime.now(tz=UTC).strftime("%Y%m%d-%H%M")
+    """output/{slug}/{YYYYMMDD-HHmmss}/ 디렉토리 생성.
+
+    초 단위 timestamp — 같은 분 내 동시 제출 시 디렉터리 공유로 race 발생 방지.
+    """
+    ts = datetime.now(tz=UTC).strftime("%Y%m%d-%H%M%S")
     output_dir = _OUTPUT_ROOT / slug / ts
     output_dir.mkdir(parents=True, exist_ok=True)
     return output_dir
@@ -236,8 +249,14 @@ def _run_analysis_stages(
             error=f"의미/소구 추출 실패: {exc}",
         ), None
 
-    # 유효 샘플 검증
-    valid_count = min(len(physicals), len(semantics), len(appeals))
+    # 유효 샘플 검증 — URL intersection 기준.
+    # [3]/[4a]/[4b] 가 개별 페이지 실패 시 스킵하므로 단순 min(len) 은 실제 공통
+    # 성공 집합을 과대평가할 수 있다. 세 추출 모두 성공한 페이지만 교차 분석 입력으로.
+    phys_urls = {str(p.url) for p in physicals}
+    sem_urls = {str(s.url) for s in semantics}
+    appeal_urls = {str(a.url) for a in appeals}
+    common_urls = phys_urls & sem_urls & appeal_urls
+    valid_count = len(common_urls)
     if valid_count < MIN_COLLECTED_PAGES:
         return AnalyzeResult(
             status=StageStatus.FAILED,
@@ -454,18 +473,40 @@ def _resolve_pattern_card(
     pattern_card_path: Path | None,
     force_analyze: bool,
 ) -> PatternCard | None:
-    """패턴 카드를 획득한다: 명시 경로 > 캐시 > 신규 분석."""
-    if pattern_card_path is not None:
-        from domain.analysis.pattern_card import load_pattern_card
+    """패턴 카드를 획득한다: 명시 경로 > 캐시 > 신규 분석.
 
-        return load_pattern_card(pattern_card_path)
+    캐시/외부 경로 히트 시 로드된 pattern-card.json 을 현재 output_dir 에도
+    복사해 각 실행 디렉터리가 자체 완결된 analysis/pattern-card.json 을
+    보유하도록 한다 (latest junction 이 갱신되면 과거 분석 결과와 새 콘텐츠가
+    같은 디렉터리에서 일관되게 공존).
+    """
+    from domain.analysis.pattern_card import load_pattern_card
+
+    if pattern_card_path is not None:
+        card = load_pattern_card(pattern_card_path)
+        _persist_loaded_pattern_card(card, output_dir)
+        return card
 
     if not force_analyze:
         cached = _find_cached_pattern_card(keyword, slug)
         if cached is not None:
+            _persist_loaded_pattern_card(cached, output_dir)
             return cached
 
     return _run_analysis_or_fail(keyword, slug, output_dir, reporter, all_stages)
+
+
+def _persist_loaded_pattern_card(card: PatternCard, output_dir: Path) -> None:
+    """로드된 pattern_card 를 현재 output_dir/analysis/ 에 복사.
+
+    분석([1]~[5])을 실행하지 않고 캐시를 쓰는 경로에서만 호출. 신규 분석 경로는
+    save_pattern_card 가 이미 파일을 쓰므로 중복 호출 불필요.
+    """
+    analysis_dir = output_dir / "analysis"
+    analysis_dir.mkdir(parents=True, exist_ok=True)
+    dest = analysis_dir / "pattern-card.json"
+    dest.write_text(card.model_dump_json(indent=2), encoding="utf-8")
+    logger.info("pattern_card.persisted_from_cache path=%s", dest)
 
 
 def _run_analysis_or_fail(
@@ -485,6 +526,31 @@ def _run_analysis_or_fail(
         all_stages.append(StageResult(name="analysis", status=StageStatus.FAILED, error=error_msg))
         return None
     return maybe_card
+
+
+def _preflight_required_keys(*, need_bright_data: bool, need_gemini: bool) -> str | None:
+    """파이프라인 시작 전 필수 API 키 검증. 부족 시 에러 메시지 반환.
+
+    Anthropic 은 생성/분석/검증 단계 모두 사용하므로 항상 필수. Bright Data 는
+    신규 분석([1][2]) 에만 필요, Gemini 는 이미지 생성([9]) 에만 필요.
+    """
+    missing: list[str] = []
+    if not settings.anthropic_api_key:
+        missing.append("ANTHROPIC_API_KEY")
+    if need_bright_data:
+        if not settings.bright_data_api_key:
+            missing.append("BRIGHT_DATA_API_KEY")
+        if not settings.bright_data_web_unlocker_zone:
+            missing.append("BRIGHT_DATA_WEB_UNLOCKER_ZONE")
+    if need_gemini and not settings.gemini_api_key:
+        missing.append("GEMINI_API_KEY")
+    if not missing:
+        return None
+    return (
+        "필수 API 키가 config/.env 에 설정되지 않았습니다: "
+        + ", ".join(missing)
+        + ". config/.env.example 참조."
+    )
 
 
 def _find_cached_pattern_card(keyword: str, slug: str) -> PatternCard | None:
@@ -515,6 +581,20 @@ def run_pipeline(
     """전체 [1]~[10] 파이프라인 실행."""
     _reporter = reporter or LoggingProgressReporter()
     slug = _slugify(keyword)
+
+    # 필수 API 키 프리플라이트 — 분석 수행 여부에 따라 bright_data 필요
+    need_analysis = pattern_card_path is None and (
+        force_analyze or _find_cached_pattern_card(keyword, slug) is None
+    )
+    err = _preflight_required_keys(need_bright_data=need_analysis, need_gemini=generate_images)
+    if err is not None:
+        return PipelineResult(
+            status=StageStatus.FAILED,
+            keyword=keyword,
+            slug=slug,
+            error=err,
+        )
+
     output_dir = _create_output_dir(slug)
     all_stages: list[StageResult] = []
 

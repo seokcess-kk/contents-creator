@@ -149,7 +149,10 @@ class JobManager:
                 )
                 self.event_bus.emit(job.id, {"type": "job_status", "status": "timed_out"})
 
-        threading.Timer(timeout, _check).start()
+        # daemon=True — 서버 종료 시 timeout 대기 없이 즉시 정리.
+        timer = threading.Timer(timeout, _check)
+        timer.daemon = True
+        timer.start()
 
     def cancel_job(self, job_id: str) -> bool:
         """취소 요청. 대기 중이면 future.cancel() 로 즉시 종료.

@@ -9,10 +9,6 @@ const nextConfig: NextConfig = {
         source: "/api/:path*",
         destination: `${apiUrl}/api/:path*`,
       },
-      {
-        source: "/output/:path*",
-        destination: `${apiUrl}/output/:path*`,
-      },
     ];
   },
 };

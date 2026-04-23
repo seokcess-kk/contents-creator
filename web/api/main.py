@@ -12,7 +12,6 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 from config.settings import settings
 from web.api.job_manager import JobManager
@@ -56,8 +55,4 @@ app.include_router(results.router, prefix="/api")
 app.include_router(ws.router, prefix="/api")
 app.include_router(usage.router, prefix="/api")
 
-# output/ 정적 파일 (폴백 접근)
-try:
-    app.mount("/output", StaticFiles(directory="output"), name="output")
-except RuntimeError:
-    logger.warning("output/ directory not found, static mount skipped")
+# /output 정적 마운트는 인증 우회 통로가 되어 제거. 결과물은 인증된 /api/results/* 로만 접근.

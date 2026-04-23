@@ -14,11 +14,20 @@ from application.orchestrator import run_analyze_only
 from application.progress import LoggingProgressReporter
 
 
+def _non_empty_keyword(value: str) -> str:
+    stripped = value.strip()
+    if not stripped:
+        raise argparse.ArgumentTypeError("keyword must be non-empty")
+    return stripped
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="분석 파이프라인만 실행: [1] SERP → [5] 패턴 카드 (SPEC-SEO-TEXT.md §3)",
     )
-    parser.add_argument("--keyword", required=True, help="타겟 네이버 검색 키워드")
+    parser.add_argument(
+        "--keyword", required=True, type=_non_empty_keyword, help="타겟 네이버 검색 키워드"
+    )
     args = parser.parse_args()
 
     logging.basicConfig(

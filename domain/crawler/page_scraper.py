@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass
 from datetime import datetime
 
 from pydantic import HttpUrl
@@ -28,6 +29,15 @@ from domain.crawler.model import (
     ScrapeResult,
     SerpResults,
 )
+
+
+@dataclass(frozen=True)
+class _RetryItem:
+    """재시도 대상 최소 필드만 보유. _fetch_one 이 요구하는 rank/url 만 노출."""
+
+    rank: int
+    url: HttpUrl
+
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +132,7 @@ def scrape_pages(serp: SerpResults, client: BrightDataClient) -> ScrapeResult:
         for fail in retry_targets:
             page, new_fail = _fetch_one(
                 fail.idx,
-                _FakeItem(rank=fail.rank, url=fail.url),
+                _RetryItem(rank=fail.rank, url=fail.url),
                 client,
                 retry_count=1,
             )
@@ -139,13 +149,3 @@ def scrape_pages(serp: SerpResults, client: BrightDataClient) -> ScrapeResult:
         )
 
     return ScrapeResult(successful=successful, failed=failed)
-
-
-class _FakeItem:
-    """retry 시 SerpResult 대체. _fetch_one 이 요구하는 rank/url 속성만 노출."""
-
-    __slots__ = ("rank", "url")
-
-    def __init__(self, rank: int, url: HttpUrl) -> None:
-        self.rank = rank
-        self.url = url

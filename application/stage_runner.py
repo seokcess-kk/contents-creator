@@ -497,6 +497,7 @@ def run_stage_compliance_check(
     reporter.stage_start("compliance_check")
 
     _drop_violating_image_prompts(outline, reporter)
+    _persist_outline_after_compliance(outline, output_dir)
 
     assembled = assemble_content(outline, body)
     text = assembled.content_md
@@ -586,6 +587,23 @@ def _drop_violating_image_prompts(outline: Outline, reporter: ProgressReporter) 
     outline.image_prompts = fixed_prompts
 
 
+def _persist_outline_after_compliance(outline: Outline, output_dir: Path) -> None:
+    """compliance 가 image_prompts 를 수정한 경우 outline.json 파일도 갱신.
+
+    사용자가 run_generate_only(pattern_card_path=...) 로 [6]~[10] 재실행할 때
+    drop 된 sequence 가 원본 JSON 으로부터 복원되는 것을 막는다.
+    """
+    content_dir = output_dir / "content"
+    path = content_dir / "outline.json"
+    if not path.exists():
+        return
+    try:
+        path.write_text(outline.model_dump_json(indent=2), encoding="utf-8")
+        logger.info("outline.json.repersisted path=%s", path)
+    except OSError:
+        logger.warning("outline.json 재저장 실패 path=%s", path, exc_info=True)
+
+
 # ── [9] 이미지 생성 ──
 
 
@@ -671,12 +689,16 @@ def run_stage_compose(
     if compliance_report.passed and compliance_report.final_text:
         content_md = compliance_report.final_text
         title = outline.title
-        # compliance 수정본에 이미지만 삽입 (재조립하지 않아 수정 보존)
+        # compliance 수정본에 이미지만 삽입 (재조립하지 않아 수정 보존).
+        # section_count 는 원본 outline.sections 기준으로 고정해 compliance 가
+        # 섹션을 합치더라도 이미지 배분이 어긋나지 않도록 한다.
         if image_result and image_result.generated:
+            body_section_count = sum(1 for s in outline.sections if not s.is_intro)
             content_md = insert_images_into_text(
                 content_md,
                 outline.image_prompts,
                 image_result,
+                section_count=body_section_count,
             )
     else:
         assembled = assemble_content(outline, body, image_result=image_result)

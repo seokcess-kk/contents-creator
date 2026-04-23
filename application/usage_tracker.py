@@ -53,14 +53,19 @@ def save_usage_to_supabase(
     job_id: str | None = None,
     keyword: str | None = None,
     stage: str | None = None,
-) -> None:
-    """사용량 레코드들을 Supabase api_usage 테이블에 저장."""
+) -> bool:
+    """사용량 레코드들을 Supabase api_usage 테이블에 저장.
+
+    Returns:
+        True — 저장 성공 또는 Supabase 미설정(정상 스킵).
+        False — 저장 시도했으나 예외 발생. 호출자가 summary 에 보고해 운영자가 인지.
+    """
     if not usages:
-        return
+        return True
 
     if not settings.supabase_url or not settings.supabase_key:
         logger.debug("Supabase 미설정, usage 저장 스킵")
-        return
+        return True
 
     try:
         from config.supabase import get_client
@@ -83,8 +88,15 @@ def save_usage_to_supabase(
                 }
             )
         client.table("api_usage").insert(rows).execute()
+        return True
     except Exception:
-        logger.warning("api_usage 저장 실패 (파이프라인은 계속)", exc_info=True)
+        logger.error(
+            "api_usage 저장 실패 job=%s stage=%s (파이프라인은 계속)",
+            job_id,
+            stage,
+            exc_info=True,
+        )
+        return False
 
 
 def summarize_usages(usages: list[ApiUsage]) -> dict[str, Any]:
