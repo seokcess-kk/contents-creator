@@ -88,12 +88,18 @@ def _invoke(
     messages: list[dict[str, Any]],
     thinking_budget: int,
 ) -> Any:
-    """Anthropic 호출 + usage 기록. thinking_budget 에 따라 tool_choice 결정."""
+    """Anthropic 호출 + usage 기록. thinking_budget 에 따라 tool_choice 결정.
+
+    최신 Anthropic API (4.7+) 는 thinking.type.enabled + budget_tokens 대신
+    thinking.type.adaptive + output_config.effort 조합을 쓴다. thinking_budget 는
+    on/off 플래그로만 남기고, 실제 사고 깊이는 effort 로 고정한다 (SEO 품질 우선).
+    """
     client = build_client()
     extra_kwargs: dict[str, Any] = {}
     if thinking_budget > 0:
-        extra_kwargs["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
-        max_tokens = thinking_budget + 4000
+        extra_kwargs["thinking"] = {"type": "adaptive"}
+        extra_kwargs["output_config"] = {"effort": "high"}
+        max_tokens = 8192
         tool_choice: dict[str, Any] = {"type": "auto"}
     else:
         max_tokens = 4096
