@@ -18,24 +18,31 @@ export default function JobDetailPage({
   const [error, setError] = useState<string | null>(null);
   const { events } = useJobProgress(id);
 
-  // 작업 정보 폴링
+  // 작업 정보 폴링 — 종료 상태가 되면 자동 중단
   useEffect(() => {
     let active = true;
+    let interval: ReturnType<typeof setInterval> | undefined;
+    const TERMINAL = new Set(["succeeded", "failed", "cancelled", "timed_out"]);
 
     async function poll() {
       try {
         const data = await getJob(id);
-        if (active) setJob(data);
+        if (!active) return;
+        setJob(data);
+        if (TERMINAL.has(data.status) && interval !== undefined) {
+          clearInterval(interval);
+          interval = undefined;
+        }
       } catch (err) {
         if (active) setError(err instanceof Error ? err.message : "불러오기 실패");
       }
     }
 
     poll();
-    const interval = setInterval(poll, 3000);
+    interval = setInterval(poll, 3000);
     return () => {
       active = false;
-      clearInterval(interval);
+      if (interval !== undefined) clearInterval(interval);
     };
   }, [id]);
 
