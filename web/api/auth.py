@@ -32,10 +32,14 @@ def _equal(a: str, b: str) -> bool:
 
 
 def require_api_key(request: Request) -> None:
-    """HTTP 엔드포인트 Depends. X-API-Key 헤더 검증."""
+    """HTTP 엔드포인트 Depends. X-API-Key 헤더 또는 ?token= 쿼리 검증.
+
+    iframe/img src 는 커스텀 헤더를 붙일 수 없으므로 WebSocket 과 동일하게
+    query param `token` 도 허용한다. 내부 1~3명 사용 전제.
+    """
     if not _auth_enabled():
         return
-    provided = request.headers.get("x-api-key", "")
+    provided = request.headers.get("x-api-key") or request.query_params.get("token") or ""
     expected = settings.admin_api_key or ""
     if not provided or not _equal(provided, expected):
         raise HTTPException(

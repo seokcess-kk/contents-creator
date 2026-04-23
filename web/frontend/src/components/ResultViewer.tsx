@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { getApiKey } from "@/lib/api";
 import HtmlPreview from "./HtmlPreview";
 
 type Tab = "html" | "markdown" | "outline" | "images";
@@ -61,7 +62,10 @@ function MarkdownView({ slug, type = "markdown" }: { slug: string; type?: string
     setLoading(true);
     try {
       const endpoint = type === "outline" ? "outline" : "markdown";
-      const res = await fetch(`/api/results/${slug}/latest/${endpoint}`);
+      const apiKey = getApiKey();
+      const headers: Record<string, string> = {};
+      if (apiKey) headers["X-API-Key"] = apiKey;
+      const res = await fetch(`/api/results/${slug}/latest/${endpoint}`, { headers });
       if (!res.ok) throw new Error(`${res.status}`);
       setContent(await res.text());
     } catch {
@@ -91,12 +95,15 @@ function MarkdownView({ slug, type = "markdown" }: { slug: string; type?: string
 }
 
 function ImagesGrid({ slug, count }: { slug: string; count: number }) {
+  // img.src 는 X-API-Key 헤더 미지원 → query token 으로 전달.
+  const apiKey = getApiKey();
+  const qs = apiKey ? `?token=${encodeURIComponent(apiKey)}` : "";
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
       {Array.from({ length: count }, (_, i) => (
         <div key={i} className="border border-gray-200 rounded-lg overflow-hidden">
           <img
-            src={`/api/results/${slug}/latest/images/image_${i + 1}.png`}
+            src={`/api/results/${slug}/latest/images/image_${i + 1}.png${qs}`}
             alt={`생성 이미지 ${i + 1}`}
             className="w-full h-auto"
             loading="lazy"
