@@ -37,9 +37,7 @@ def assemble_content(
     - ``suggested_tags`` 는 포함하지 않음 (outline_md 에만)
     """
     section_count = len(body.body_sections)
-    image_map = _build_position_aware_map(
-        outline.image_prompts, image_result, section_count
-    )
+    image_map = _build_position_aware_map(outline.image_prompts, image_result, section_count)
 
     parts: list[str] = []
     parts.append(f"# {outline.title}")
