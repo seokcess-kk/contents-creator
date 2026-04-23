@@ -1,17 +1,39 @@
 import type { Job, JobSubmitResponse } from "@/types";
 
 const API_BASE = "/api";
+// 백엔드 ADMIN_API_KEY 가 설정된 경우 이 값이 서버의 값과 일치해야 한다.
+// NEXT_PUBLIC_ 은 번들에 포함되어 브라우저에 노출되므로 운영은 최소 1~3명 전제.
+// 본격 공개 시 Next.js Route Handler 로 서버사이드 프록시 전환 권장.
+const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? "";
+
+function buildHeaders(extra?: HeadersInit): HeadersInit {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (API_KEY) {
+    headers["X-API-Key"] = API_KEY;
+  }
+  if (extra) {
+    const merged = new Headers(extra);
+    merged.forEach((value, key) => {
+      headers[key] = value;
+    });
+  }
+  return headers;
+}
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${url}`, {
-    headers: { "Content-Type": "application/json" },
     ...init,
+    headers: buildHeaders(init?.headers),
   });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`API ${res.status}: ${text}`);
   }
   return res.json() as Promise<T>;
+}
+
+export function getApiKey(): string {
+  return API_KEY;
 }
 
 // 작업 목록
@@ -57,4 +79,16 @@ export function submitGenerate(params: {
     method: "POST",
     body: JSON.stringify(params),
   });
+}
+
+// 작업 취소
+export async function cancelJob(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/jobs/${id}`, {
+    method: "DELETE",
+    headers: buildHeaders(),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`API ${res.status}: ${text}`);
+  }
 }
