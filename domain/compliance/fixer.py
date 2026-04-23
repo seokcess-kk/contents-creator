@@ -200,24 +200,30 @@ def _try_paragraph_regeneration(
     api_key = require("anthropic_api_key")
     client = anthropic.Anthropic(api_key=api_key)
 
-    keyword_context = ""
+    # 정적 system (policy 에만 의존) — 캐시 대상.
+    # 위반별 동적 정보(카테고리·사유·대체표현·keyword)는 user 메시지로 이동.
+    static_system = (
+        "너는 한국 의료 콘텐츠 전문 편집자다.\n"
+        "아래 문단에 의료광고법 위반 표현이 있다.\n"
+        "동일한 의미를 전달하되 위반을 제거한 문단을 작성하라.\n"
+        "톤과 문체를 유지하고, 문단 길이를 비슷하게 맞춰라.\n\n"
+        f"[금지 표현 목록]\n{prohibited}"
+    )
+
+    keyword_hint = ""
     if keyword is not None:
-        keyword_context = (
+        keyword_hint = (
             f"\n[SEO 키워드 컨텍스트]\n"
             f'타겟 SEO 키워드: "{keyword}"\n'
             f"키워드는 자연스럽게 유지하되 1인칭과 결합하지 마라.\n"
         )
 
-    system_prompt = (
-        "너는 한국 의료 콘텐츠 전문 편집자다.\n"
-        "아래 문단에 의료광고법 위반 표현이 있다.\n"
-        "동일한 의미를 전달하되 위반을 제거한 문단을 작성하라.\n"
-        "톤과 문체를 유지하고, 문단 길이를 비슷하게 맞춰라.\n\n"
+    user_content = (
         f"[위반 카테고리] {violation.category}\n"
         f"[위반 사유] {violation.reason}\n"
         f"[안전 대체 표현] {alt_text}\n"
-        f"\n[금지 표현 목록]\n{prohibited}\n"
-        f"{keyword_context}"
+        f"{keyword_hint}\n"
+        f"[수정 대상 문단]\n{paragraph}"
     )
 
     # 문단 재생성은 톤·문체 보존이 핵심 — 에디터 모델(Opus 4.7) 사용.
@@ -226,13 +232,14 @@ def _try_paragraph_regeneration(
         max_tokens=2048,
         tools=[_FIX_TOOL],
         tool_choice={"type": "tool", "name": "propose_fix"},
-        messages=[
+        messages=[{"role": "user", "content": user_content}],
+        system=[
             {
-                "role": "user",
-                "content": f"[수정 대상 문단]\n{paragraph}",
-            },
+                "type": "text",
+                "text": static_system,
+                "cache_control": {"type": "ephemeral"},
+            }
         ],
-        system=system_prompt,
     )
 
     record_usage(

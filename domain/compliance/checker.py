@@ -197,44 +197,52 @@ def _check_llm(
     policy: CompliancePolicy,
     keyword: str | None = None,
 ) -> list[Violation]:
-    """Sonnet 4.6 으로 암시적 위반을 감지한다."""
+    """Sonnet 4.6 으로 암시적 위반을 감지한다.
+
+    System prompt 에 정책별 규칙 설명을 두고 cache_control 로 캐시.
+    compliance iteration (최대 3회) 반복 호출 시 1회 write + 2회 read.
+    """
     api_key = require("anthropic_api_key")
     client = anthropic.Anthropic(api_key=api_key)
 
     rules_desc = _build_rules_description(policy)
-
-    keyword_context = ""
-    if keyword is not None:
-        keyword_context = (
-            f"\n\n[SEO 키워드 컨텍스트]\n"
-            f'이 콘텐츠의 타겟 SEO 키워드는 "{keyword}"이다.\n'
-            f"키워드가 본문에 자연스럽게 사용되는 것은 위반이 아니다.\n"
-            f"키워드 자체가 특정 업체를 지칭하는 것처럼 보여도, "
-            f"SEO 목적의 정보성 콘텐츠에서 키워드를 사용하는 것은 "
-            f"first_person_promotion에 해당하지 않는다.\n"
-            f'단, "저희 {keyword}", "우리 {keyword}" 등 '
-            f"1인칭과 결합한 경우는 여전히 위반이다."
-        )
-
-    system_prompt = (
+    # 규칙 설명은 policy 에만 의존 — 캐시 대상. keyword 는 user 메시지로 분리.
+    system_text = (
         "너는 한국 의료광고법 검증 전문가다.\n"
         "아래 텍스트에서 의료광고법 위반 표현을 찾아 보고한다.\n"
         "regex 로 잡기 어려운 암시적 표현, 문맥 의존적 위반, "
         "교묘한 보장 뉘앙스에 집중한다.\n\n"
         "위반이 없으면 빈 리스트를 보고한다.\n\n"
         f"[검증 카테고리]\n{rules_desc}"
-        f"{keyword_context}"
     )
+
+    user_content = f"[검증 대상 텍스트]\n{text}"
+    if keyword is not None:
+        user_content = (
+            f"[SEO 키워드 컨텍스트]\n"
+            f'이 콘텐츠의 타겟 SEO 키워드는 "{keyword}"이다.\n'
+            f"키워드가 본문에 자연스럽게 사용되는 것은 위반이 아니다.\n"
+            f"키워드 자체가 특정 업체를 지칭하는 것처럼 보여도, "
+            f"SEO 목적의 정보성 콘텐츠에서 키워드를 사용하는 것은 "
+            f"first_person_promotion에 해당하지 않는다.\n"
+            f'단, "저희 {keyword}", "우리 {keyword}" 등 '
+            f"1인칭과 결합한 경우는 여전히 위반이다.\n\n"
+            f"{user_content}"
+        )
 
     response = client.messages.create(  # type: ignore[call-overload]
         model=settings.model_sonnet,
         max_tokens=4096,
         tools=[_VIOLATION_TOOL],
         tool_choice={"type": "tool", "name": "report_violations"},
-        messages=[
-            {"role": "user", "content": f"[검증 대상 텍스트]\n{text}"},
+        messages=[{"role": "user", "content": user_content}],
+        system=[
+            {
+                "type": "text",
+                "text": system_text,
+                "cache_control": {"type": "ephemeral"},
+            }
         ],
-        system=system_prompt,
     )
 
     record_usage(
