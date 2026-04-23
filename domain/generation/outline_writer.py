@@ -62,11 +62,13 @@ def generate_outline(
     else:
         max_tokens = 4096
 
+    # Anthropic 규칙: Extended Thinking 과 tool 이름 강제(`{type: tool, name: X}`)는
+    # 동시 사용 불가. tool 이 단 1개 전달되므로 `any` 로 두어도 실질 효과는 동일하다.
     response = client.messages.create(  # type: ignore[call-overload]
         model=settings.model_opus,
         max_tokens=max_tokens,
         tools=[tool_schema],
-        tool_choice={"type": "tool", "name": tool_schema["name"]},
+        tool_choice={"type": "any"},
         messages=messages,
         **extra_kwargs,
     )
