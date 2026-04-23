@@ -42,10 +42,18 @@ class Settings(BaseSettings):
     supabase_key: str | None = Field(default=None, description="Supabase service role key")
 
     # LLM 모델 식별자 (SPEC-SEO-TEXT.md §5 — 역할별 매핑)
-    model_opus: str = "claude-opus-4-6"
+    # 창작 ([6] 아웃라인·도입부·image_prompts, [7] 본문) — SEO 성과 최대 지렛대
+    model_opus: str = "claude-opus-4-7"
+    # 에디터 ([7-후] 약한 섹션 보강, [8] 문단 재생성) — 품질 하한선 상승
+    model_editor: str = "claude-opus-4-7"
+    # 분류·검증 ([4a][4b] 추출, [8] LLM 검증, [8] 이미지 prompt 재생성)
     model_sonnet: str = "claude-sonnet-4-6"
     image_model: str = "gemini-2.5-flash-image"
     image_size: str = "1024x1024"
+
+    # Extended Thinking — [6] 아웃라인 사고 예산. 0 이면 비활성.
+    # 복잡한 제약 동시 충족(SEO+의료법+톤+DIA+키워드) 에 유효.
+    outline_thinking_budget: int = 2000
 
     # 파이프라인 동작 상수
     min_analyzed_samples: int = 7
@@ -63,6 +71,10 @@ class Settings(BaseSettings):
     # API 비용 (USD per 1M tokens, 2026-04 기준)
     cost_anthropic_opus_input: float = 15.0
     cost_anthropic_opus_output: float = 75.0
+    # 에디터는 기본적으로 model_opus 와 동일 모델 (Opus 4.7) 가정. 다른 모델로
+    # 분기할 경우 단가도 따로 설정.
+    cost_anthropic_editor_input: float = 15.0
+    cost_anthropic_editor_output: float = 75.0
     cost_anthropic_sonnet_input: float = 3.0
     cost_anthropic_sonnet_output: float = 15.0
     cost_gemini_image_per_request: float = 0.04

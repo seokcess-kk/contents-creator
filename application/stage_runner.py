@@ -456,18 +456,35 @@ def _fix_weak_sections(
 
 
 def _call_section_fix(fix_prompt: str) -> str | None:
-    """Sonnet 으로 섹션 보강. 실패 시 None (원본 유지)."""
+    """에디터 모델로 약한 섹션 보강. 실패 시 None (원본 유지).
+
+    Layer 2 품질 검증이 실패한 섹션을 재작성하는 에디팅 작업이므로
+    창작 품질이 중요. model_editor(Opus 4.7) 사용.
+    """
     try:
         import anthropic
 
         client = anthropic.Anthropic(api_key=require("anthropic_api_key"))
         response = client.messages.create(
-            model=settings.model_sonnet,
+            model=settings.model_editor,
             max_tokens=2048,
             messages=[{"role": "user", "content": fix_prompt}],
         )
-        text = response.content[0].text  # type: ignore[union-attr]
+        # thinking 블록이 있을 수 있으므로 text 타입 블록만 추출
+        text_parts = [b.text for b in response.content if getattr(b, "type", None) == "text"]
+        text = text_parts[0] if text_parts else ""
         if text and len(text) > 50:
+            # usage 기록 (Layer 2 보강도 과금 대상)
+            from domain.common.usage import ApiUsage, record_usage
+
+            record_usage(
+                ApiUsage(
+                    provider="anthropic",
+                    model=settings.model_editor,
+                    input_tokens=response.usage.input_tokens,
+                    output_tokens=response.usage.output_tokens,
+                )
+            )
             return text
     except Exception:
         logger.warning("section_fix.failed", exc_info=True)

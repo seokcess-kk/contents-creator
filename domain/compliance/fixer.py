@@ -220,8 +220,9 @@ def _try_paragraph_regeneration(
         f"{keyword_context}"
     )
 
+    # 문단 재생성은 톤·문체 보존이 핵심 — 에디터 모델(Opus 4.7) 사용.
     response = client.messages.create(  # type: ignore[call-overload]
-        model=settings.model_sonnet,
+        model=settings.model_editor,
         max_tokens=2048,
         tools=[_FIX_TOOL],
         tool_choice={"type": "tool", "name": "propose_fix"},
@@ -237,7 +238,7 @@ def _try_paragraph_regeneration(
     record_usage(
         ApiUsage(
             provider="anthropic",
-            model=settings.model_sonnet,
+            model=settings.model_editor,
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
         )

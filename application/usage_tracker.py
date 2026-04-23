@@ -19,12 +19,20 @@ _COST_MAP: dict[str, tuple[float, float]] = {}
 
 
 def _get_cost_per_token(model: str | None) -> tuple[float, float]:
-    """(input_cost_per_token, output_cost_per_token) 반환."""
+    """(input_cost_per_token, output_cost_per_token) 반환.
+
+    Note: Extended Thinking 토큰은 Anthropic 응답에서 output_tokens 에 포함되어
+    반환되므로 별도 처리 불필요 (동일 단가로 과금).
+    """
     if not _COST_MAP:
         # lazy init
         _COST_MAP[settings.model_opus] = (
             settings.cost_anthropic_opus_input / 1_000_000,
             settings.cost_anthropic_opus_output / 1_000_000,
+        )
+        _COST_MAP[settings.model_editor] = (
+            settings.cost_anthropic_editor_input / 1_000_000,
+            settings.cost_anthropic_editor_output / 1_000_000,
         )
         _COST_MAP[settings.model_sonnet] = (
             settings.cost_anthropic_sonnet_input / 1_000_000,
