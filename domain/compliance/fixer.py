@@ -14,9 +14,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import anthropic
-
-from config.settings import require, settings
+from config.settings import settings
+from domain.common.anthropic_client import build_client, messages_create_with_retry
 from domain.common.image_prompt_validator import (
     InvalidImagePromptError,
     validate_prompt,
@@ -197,8 +196,7 @@ def _try_paragraph_regeneration(
     alt_text = ", ".join(alternatives) if alternatives else "안전한 표현"
     prohibited = _build_prohibited_list(policy)
 
-    api_key = require("anthropic_api_key")
-    client = anthropic.Anthropic(api_key=api_key)
+    client = build_client()
 
     # 정적 system (policy 에만 의존) — 캐시 대상.
     # 위반별 동적 정보(카테고리·사유·대체표현·keyword)는 user 메시지로 이동.
@@ -226,8 +224,9 @@ def _try_paragraph_regeneration(
         f"[수정 대상 문단]\n{paragraph}"
     )
 
-    # 문단 재생성은 톤·문체 보존이 핵심 — 에디터 모델(Opus 4.7) 사용.
-    response = client.messages.create(  # type: ignore[call-overload]
+    # 문단 재생성은 톤·문체 보존 + 위반 제거 — 에디터 모델(Sonnet 4.6) 사용.
+    response = messages_create_with_retry(
+        client,
         model=settings.model_editor,
         max_tokens=2048,
         tools=[_FIX_TOOL],
@@ -380,8 +379,7 @@ def _regenerate_image_prompt(
     violations: list[Violation],
 ) -> tuple[str | None, str | None]:
     """단일 위반 prompt 를 LLM 으로 대체. validate_prompt 재통과할 때까지 최대 2회."""
-    api_key = require("anthropic_api_key")
-    client = anthropic.Anthropic(api_key=api_key)
+    client = build_client()
 
     reasons = "; ".join(v.reason for v in violations[:3]) or "compliance 위반"
     system_prompt = (
@@ -400,7 +398,8 @@ def _regenerate_image_prompt(
 
     for attempt in range(MAX_IMAGE_PROMPT_FIX_ATTEMPTS):
         try:
-            response = client.messages.create(  # type: ignore[call-overload]
+            response = messages_create_with_retry(
+                client,
                 model=settings.model_sonnet,
                 max_tokens=512,
                 tools=[_IMAGE_FIX_TOOL],

@@ -11,9 +11,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import anthropic
-
-from config.settings import require, settings
+from config.settings import settings
 from domain.analysis.model import (
     SECTION_ROLES,
     SectionSemantic,
@@ -21,6 +19,7 @@ from domain.analysis.model import (
     TargetReader,
 )
 from domain.analysis.physical_extractor import extract_body_text
+from domain.common.anthropic_client import build_client, messages_create_with_retry
 from domain.common.usage import ApiUsage, record_usage
 from domain.crawler.model import BlogPage
 
@@ -139,8 +138,9 @@ def extract_semantic(
 
     user_content = _build_user_content(title, body_text, subtitle_count, main_keyword)
 
-    client = anthropic.Anthropic(api_key=require("anthropic_api_key"))
-    response = client.messages.create(  # type: ignore[call-overload]
+    client = build_client()
+    response = messages_create_with_retry(
+        client,
         model=settings.model_sonnet,
         max_tokens=2048,
         system=[

@@ -16,10 +16,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import anthropic
-
-from config.settings import require, settings
+from config.settings import settings
 from domain.analysis.pattern_card import PatternCard
+from domain.common.anthropic_client import build_client, messages_create_with_retry
 from domain.common.usage import ApiUsage, record_usage
 from domain.generation.model import (
     ImagePromptItem,
@@ -47,7 +46,7 @@ def generate_outline(
     if feedback:
         messages[0]["content"] += f"\n\n[이전 생성 결과 피드백]\n{feedback}"
 
-    client = anthropic.Anthropic(api_key=require("anthropic_api_key"))
+    client = build_client()
 
     # thinking 활성 시: max_tokens 는 thinking 예산 + 실제 응답 합계 이상이어야 한다.
     # tool_use 응답은 통상 ~1500 tokens, 여유 포함해 thinking + 4000 으로 설정.
@@ -67,7 +66,8 @@ def generate_outline(
     # 안정적인 tool_use 응답을 위해 tool 이름을 강제하고, thinking 은 예산 0 기본값으로.
     # thinking 이 필요하면 settings.outline_thinking_budget>0 + tool_choice=auto 조합으로
     # 프롬프트에서 tool 사용을 강제하는 방향이 맞다(향후 개선).
-    response = client.messages.create(  # type: ignore[call-overload]
+    response = messages_create_with_retry(
+        client,
         model=settings.model_opus,
         max_tokens=max_tokens,
         tools=[tool_schema],

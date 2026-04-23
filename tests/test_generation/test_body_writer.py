@@ -73,8 +73,8 @@ class TestM2Invariant:
 
 
 class TestGenerateBody:
-    @patch("domain.generation.body_writer.anthropic")
-    @patch("domain.generation.body_writer.require")
+    @patch("domain.common.anthropic_client.anthropic")
+    @patch("domain.common.anthropic_client.require")
     def test_returns_body_result(
         self,
         mock_require: MagicMock,
@@ -97,8 +97,8 @@ class TestGenerateBody:
         assert len(result.body_sections) == 2
         assert result.body_sections[0].index == 2
 
-    @patch("domain.generation.body_writer.anthropic")
-    @patch("domain.generation.body_writer.require")
+    @patch("domain.common.anthropic_client.anthropic")
+    @patch("domain.common.anthropic_client.require")
     def test_uses_opus_model(
         self,
         mock_require: MagicMock,
@@ -116,8 +116,8 @@ class TestGenerateBody:
         call_kwargs = mock_client.messages.create.call_args
         assert "opus" in call_kwargs.kwargs.get("model", "")
 
-    @patch("domain.generation.body_writer.anthropic")
-    @patch("domain.generation.body_writer.require")
+    @patch("domain.common.anthropic_client.anthropic")
+    @patch("domain.common.anthropic_client.require")
     def test_uses_tool_use(
         self,
         mock_require: MagicMock,
@@ -137,8 +137,8 @@ class TestGenerateBody:
         assert len(tools) == 1
         assert tools[0]["name"] == "record_body"
 
-    @patch("domain.generation.body_writer.anthropic")
-    @patch("domain.generation.body_writer.require")
+    @patch("domain.common.anthropic_client.anthropic")
+    @patch("domain.common.anthropic_client.require")
     def test_raises_on_no_tool_use(
         self,
         mock_require: MagicMock,

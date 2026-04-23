@@ -9,9 +9,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import anthropic
-
-from config.settings import require, settings
+from config.settings import settings
+from domain.common.anthropic_client import build_client, messages_create_with_retry
 from domain.common.image_prompt_validator import (
     InvalidImagePromptError,
     validate_prompt,
@@ -202,8 +201,7 @@ def _check_llm(
     System prompt 에 정책별 규칙 설명을 두고 cache_control 로 캐시.
     compliance iteration (최대 3회) 반복 호출 시 1회 write + 2회 read.
     """
-    api_key = require("anthropic_api_key")
-    client = anthropic.Anthropic(api_key=api_key)
+    client = build_client()
 
     rules_desc = _build_rules_description(policy)
     # 규칙 설명은 policy 에만 의존 — 캐시 대상. keyword 는 user 메시지로 분리.
@@ -230,7 +228,8 @@ def _check_llm(
             f"{user_content}"
         )
 
-    response = client.messages.create(  # type: ignore[call-overload]
+    response = messages_create_with_retry(
+        client,
         model=settings.model_sonnet,
         max_tokens=4096,
         tools=[_VIOLATION_TOOL],

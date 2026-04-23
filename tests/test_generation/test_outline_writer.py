@@ -63,8 +63,8 @@ _VALID_OUTLINE_DATA: dict[str, Any] = {
 
 
 class TestGenerateOutline:
-    @patch("domain.generation.outline_writer.anthropic")
-    @patch("domain.generation.outline_writer.require")
+    @patch("domain.common.anthropic_client.anthropic")
+    @patch("domain.common.anthropic_client.require")
     def test_returns_outline(
         self,
         mock_require: MagicMock,
@@ -84,8 +84,8 @@ class TestGenerateOutline:
         assert len(result.image_prompts) == 1
         assert len(result.suggested_tags) == 3
 
-    @patch("domain.generation.outline_writer.anthropic")
-    @patch("domain.generation.outline_writer.require")
+    @patch("domain.common.anthropic_client.anthropic")
+    @patch("domain.common.anthropic_client.require")
     def test_uses_opus_model(
         self,
         mock_require: MagicMock,
@@ -102,8 +102,8 @@ class TestGenerateOutline:
         call_kwargs = mock_client.messages.create.call_args
         assert "opus" in call_kwargs.kwargs.get("model", "")
 
-    @patch("domain.generation.outline_writer.anthropic")
-    @patch("domain.generation.outline_writer.require")
+    @patch("domain.common.anthropic_client.anthropic")
+    @patch("domain.common.anthropic_client.require")
     def test_uses_tool_use(
         self,
         mock_require: MagicMock,
@@ -125,8 +125,8 @@ class TestGenerateOutline:
         # thinking 비활성 기본값과 호환. tool 이름 강제로 안정적 tool_use 응답.
         assert tool_choice.get("type") == "tool"
 
-    @patch("domain.generation.outline_writer.anthropic")
-    @patch("domain.generation.outline_writer.require")
+    @patch("domain.common.anthropic_client.anthropic")
+    @patch("domain.common.anthropic_client.require")
     def test_raises_on_no_tool_use(
         self,
         mock_require: MagicMock,

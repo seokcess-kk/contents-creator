@@ -17,10 +17,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import anthropic
-
-from config.settings import require, settings
+from config.settings import settings
 from domain.analysis.pattern_card import PatternCard
+from domain.common.anthropic_client import build_client, messages_create_with_retry
 from domain.common.usage import ApiUsage, record_usage
 from domain.generation.model import BodyResult, BodySection, Outline
 from domain.generation.prompt_builder import build_body_prompt
@@ -49,8 +48,9 @@ def generate_body(
         outline_without_intro, intro_tone_hint, pattern_card, compliance_rules
     )
 
-    client = anthropic.Anthropic(api_key=require("anthropic_api_key"))
-    response = client.messages.create(  # type: ignore[call-overload]
+    client = build_client()
+    response = messages_create_with_retry(
+        client,
         model=settings.model_opus,
         max_tokens=8192,
         tools=[tool_schema],
