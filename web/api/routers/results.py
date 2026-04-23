@@ -140,6 +140,31 @@ def get_image(slug: str, filename: str) -> FileResponse | RedirectResponse:
     return RedirectResponse(url=url, status_code=307)
 
 
+@router.get("/recent")
+def list_recent(limit: int = 50) -> list[dict]:
+    """완료된 원고 목록(최신순). generated_contents 테이블 기반 — 영구 저장.
+
+    - limit: 최대 1~200 (기본 50)
+    - slug 가 NULL 인 레거시 행은 제외
+    """
+    limit = max(1, min(limit, 200))
+    try:
+        client = get_client()
+        resp = (
+            client.table("generated_contents")
+            .select("slug, created_at, compliance_passed, compliance_iterations, output_path")
+            .not_.is_("slug", "null")
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        rows = resp.data or []
+        return rows  # type: ignore[no-any-return]
+    except Exception:
+        logger.warning("recent results fetch failed", exc_info=True)
+        raise HTTPException(status_code=500, detail="failed to fetch recent results") from None
+
+
 @router.get("/{slug}/runs")
 def list_runs(slug: str) -> list[dict[str, str]]:
     slug_dir = OUTPUT_ROOT / slug

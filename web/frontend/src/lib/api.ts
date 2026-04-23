@@ -1,4 +1,4 @@
-import type { Job, JobSubmitResponse } from "@/types";
+import type { Job, JobSubmitResponse, RecentResult } from "@/types";
 
 // 프론트가 Cloudflare Tunnel(sarubia.glitzy.kr)로 직접 호출.
 // Vercel rewrites 를 경유할 때 edge 일관성 문제로 간헐 502 가 발생해 우회.
@@ -86,6 +86,11 @@ export function submitGenerate(params: {
     method: "POST",
     body: JSON.stringify(params),
   });
+}
+
+// 완료된 원고 이력 (generated_contents 영구 저장)
+export function listRecentResults(limit = 50): Promise<RecentResult[]> {
+  return fetchJson(`/results/recent?limit=${limit}`);
 }
 
 // 작업 취소

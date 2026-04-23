@@ -36,6 +36,14 @@ export interface JobSubmitResponse {
   status: string;
 }
 
+export interface RecentResult {
+  slug: string;
+  created_at: string;
+  compliance_passed: boolean;
+  compliance_iterations: number;
+  output_path: string | null;
+}
+
 // WebSocket 메시지
 export type WsMessage =
   | { type: "stage_start"; stage: string; total: number | null; timestamp: string }

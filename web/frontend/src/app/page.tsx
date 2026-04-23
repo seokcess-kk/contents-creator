@@ -6,6 +6,7 @@ import { listJobs } from "@/lib/api";
 import type { Job } from "@/types";
 import NewJobForm from "@/components/NewJobForm";
 import JobList from "@/components/JobList";
+import ResultsArchive from "@/components/ResultsArchive";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -34,6 +35,7 @@ export default function DashboardPage() {
     <>
       <NewJobForm onSubmit={handleSubmit} />
       <JobList jobs={jobs} />
+      <ResultsArchive />
     </>
   );
 }
