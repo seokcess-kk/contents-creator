@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { listJobs } from "@/lib/api";
 import type { Job } from "@/types";
@@ -20,12 +20,18 @@ export default function DashboardPage() {
     }
   }, []);
 
+  // 진행 중(pending/running) 작업이 있을 때만 폴링. 전부 종료됐으면 중단.
+  const hasActive = useMemo(
+    () => jobs.some((j) => j.status === "pending" || j.status === "running"),
+    [jobs],
+  );
+
   useEffect(() => {
     refresh();
-    // 5초마다 자동 새로고침
+    if (!hasActive) return;
     const id = setInterval(refresh, 5000);
     return () => clearInterval(id);
-  }, [refresh]);
+  }, [refresh, hasActive]);
 
   function handleSubmit(jobId: string) {
     router.push(`/jobs/${jobId}`);
