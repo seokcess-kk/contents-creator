@@ -31,12 +31,15 @@ def assemble_content(
 
     - 제목: ``# {title}``
     - 도입부: ``outline.intro`` (200~300자 확정본)
-    - 이미지: 코드로 균등 배치 (LLM position 무시)
+    - 이미지: LLM 이 analysis 기반으로 제안한 position 존중. 매핑 실패·범위 초과 시
+      `_build_even_image_map` 으로 안전 폴백.
     - 본문: ``body.body_sections`` 각각 ``## {subtitle}\\n\\n{content_md}``
     - ``suggested_tags`` 는 포함하지 않음 (outline_md 에만)
     """
     section_count = len(body.body_sections)
-    image_map = _build_even_image_map(outline.image_prompts, image_result, section_count)
+    image_map = _build_position_aware_map(
+        outline.image_prompts, image_result, section_count
+    )
 
     parts: list[str] = []
     parts.append(f"# {outline.title}")
@@ -93,6 +96,42 @@ def _build_image_map(
             mapping.setdefault(key, []).append(gen)
 
     return mapping
+
+
+def _build_position_aware_map(
+    prompts: list[ImagePromptItem],
+    result: ImageGenerationResult | None,
+    section_count: int,
+) -> dict[str, list[GeneratedImage]]:
+    """LLM 제안 position 을 우선하고, 범위 초과·편중 시 안전 폴백.
+
+    SEO 맥락: 분석 결과를 반영한 LLM position(예: 'section_3_end')이 유효한 범위
+    안이면 그대로 사용. 그렇지 않거나 한 섹션에 편중되면 균등 배치로 재배분.
+    """
+    primary = _build_image_map(prompts, result)
+    if not primary:
+        return primary
+
+    # 유효 범위: after_intro / before_conclusion / section_1_end ~ section_{N}_end
+    def _is_valid_key(key: str) -> bool:
+        if key in ("after_intro", "before_conclusion"):
+            return True
+        if key.startswith("section_") and key.endswith("_end"):
+            idx_str = key.replace("section_", "").replace("_end", "")
+            return idx_str.isdigit() and 1 <= int(idx_str) <= section_count
+        return False
+
+    invalid = [k for k in primary if not _is_valid_key(k)]
+    if invalid:
+        logger.warning("invalid image positions, falling back to even map: %s", invalid)
+        return _build_even_image_map(prompts, result, section_count)
+
+    # 한 위치에 3장 이상 몰리면 균등 배치 폴백 (가독성)
+    if any(len(v) >= 3 for v in primary.values()):
+        logger.warning("image position clustering detected, falling back to even map")
+        return _build_even_image_map(prompts, result, section_count)
+
+    return primary
 
 
 def _build_even_image_map(
@@ -207,7 +246,7 @@ def insert_images_into_text(
     """
     if section_count is None:
         section_count = sum(1 for line in text.split("\n") if line.startswith("## "))
-    image_map = _build_even_image_map(image_prompts, image_result, section_count)
+    image_map = _build_position_aware_map(image_prompts, image_result, section_count)
     if not image_map:
         return text
 
@@ -285,10 +324,18 @@ def _insert_at_section_ends(
 
 
 def _image_lines(images: list[GeneratedImage]) -> list[str]:
-    """이미지 위치 마커 라인을 생성한다."""
+    """이미지 마크다운 라인 생성.
+
+    `![alt](../images/image_N.jpg)` 문법 — markdown 변환 시 `<img>` 태그로 렌더.
+    파일 기준 상대 경로(`../images/`). 브라우저 미리보기에서는 results 라우터가
+    절대 URL 로 재작성한다.
+    alt 는 markdown 링크 구문에 영향을 주는 `]` 를 escape.
+    """
     result: list[str] = []
     for img in images:
-        result.extend(["", f"[이미지 {img.sequence}: {img.alt_text}]", ""])
+        alt = (img.alt_text or "").replace("]", r"\]").replace("[", r"\[")
+        src = f"{_HTML_IMAGE_REL_PREFIX}/image_{img.sequence}.jpg"
+        result.extend(["", f"![{alt}]({src})", ""])
     return result
 
 
@@ -297,13 +344,7 @@ def _append_images(
     image_map: dict[str, list[GeneratedImage]],
     position: str,
 ) -> None:
-    """해당 position 의 이미지 위치 마커를 추가한다.
-
-    실제 이미지는 삽입하지 않고 위치만 명시.
-    사용자가 네이버 에디터에서 images/ 폴더의 파일을 수동 삽입.
-    """
+    """해당 position 의 이미지를 마크다운 문법으로 추가한다."""
     images = image_map.get(position, [])
     for img in images:
-        parts.append("")
-        parts.append(f"[이미지 {img.sequence}: {img.alt_text}]")
-        parts.append("")
+        parts.extend(_image_lines([img]))

@@ -10,9 +10,11 @@ Render 컨테이너는 재배포/슬립 시 파일이 휘발되므로 없으면 
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse
 
 from config.supabase import get_client
@@ -30,6 +32,22 @@ def _local_latest(slug: str) -> Path | None:
     """output/{slug}/latest/ 가 존재하면 반환, 아니면 None."""
     latest = OUTPUT_ROOT / slug / "latest"
     return latest if latest.exists() else None
+
+
+_IMG_SRC_RE = re.compile(r'(<img\b[^>]*\bsrc=")(?:\.\./)?images/([^"?#]+)(")', re.IGNORECASE)
+
+
+def _rewrite_image_src(html: str, slug: str, request: Request) -> str:
+    """브라우저 미리보기용 img src 재작성.
+
+    저장 HTML 의 상대 경로 `(../)?images/xxx` 를 인증된 라우터 절대 경로
+    `/api/results/{slug}/latest/images/xxx?token=...` 로 바꾼다.
+    네이버 복붙 시에는 클라이언트가 다시 저장본을 받을 것이므로 저장 파일은 변경하지 않는다.
+    """
+    token = request.query_params.get("token") or request.headers.get("x-api-key") or ""
+    qs = f"?token={quote(token)}" if token else ""
+    base = f"/api/results/{quote(slug, safe='')}/latest/images"
+    return _IMG_SRC_RE.sub(lambda m: f"{m.group(1)}{base}/{m.group(2)}{qs}{m.group(3)}", html)
 
 
 def _fetch_latest_row(slug: str, columns: str) -> dict | None:
@@ -52,16 +70,17 @@ def _fetch_latest_row(slug: str, columns: str) -> dict | None:
 
 
 @router.get("/{slug}/latest/html", response_model=None)
-def get_html(slug: str) -> HTMLResponse:
+def get_html(slug: str, request: Request) -> HTMLResponse:
     latest = _local_latest(slug)
     if latest is not None:
         path = latest / "content" / "seo-content.html"
         if path.exists():
-            return HTMLResponse(content=path.read_text(encoding="utf-8"))
+            html = path.read_text(encoding="utf-8")
+            return HTMLResponse(content=_rewrite_image_src(html, slug, request))
 
     row = _fetch_latest_row(slug, "content_html")
     if row and row.get("content_html"):
-        return HTMLResponse(content=row["content_html"])
+        return HTMLResponse(content=_rewrite_image_src(row["content_html"], slug, request))
     raise HTTPException(status_code=404, detail="HTML not found")
 
 
