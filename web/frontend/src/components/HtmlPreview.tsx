@@ -1,6 +1,6 @@
 "use client";
 
-import { getApiKey } from "@/lib/api";
+import { getApiKey, getApiOrigin } from "@/lib/api";
 
 interface Props {
   slug: string;
@@ -11,7 +11,7 @@ export default function HtmlPreview({ slug }: Props) {
   // iframe.src 는 X-API-Key 헤더를 못 붙이므로 query token 으로 전달 (WebSocket 과 동일 패턴).
   const apiKey = getApiKey();
   const qs = apiKey ? `?token=${encodeURIComponent(apiKey)}` : "";
-  const src = `/api/results/${slug}/latest/html${qs}`;
+  const src = `${getApiOrigin()}/api/results/${slug}/latest/html${qs}`;
 
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">

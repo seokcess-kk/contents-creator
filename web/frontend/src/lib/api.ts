@@ -1,6 +1,9 @@
 import type { Job, JobSubmitResponse } from "@/types";
 
-const API_BASE = "/api";
+// 프론트가 Cloudflare Tunnel(sarubia.glitzy.kr)로 직접 호출.
+// Vercel rewrites 를 경유할 때 edge 일관성 문제로 간헐 502 가 발생해 우회.
+const API_ORIGIN = process.env.NEXT_PUBLIC_API_URL?.trim() || "https://sarubia.glitzy.kr";
+const API_BASE = `${API_ORIGIN}/api`;
 // 백엔드 ADMIN_API_KEY 가 설정된 경우 이 값이 서버의 값과 일치해야 한다.
 // NEXT_PUBLIC_ 은 번들에 포함되어 브라우저에 노출되므로 운영은 최소 1~3명 전제.
 // 본격 공개 시 Next.js Route Handler 로 서버사이드 프록시 전환 권장.
@@ -34,6 +37,10 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 
 export function getApiKey(): string {
   return API_KEY;
+}
+
+export function getApiOrigin(): string {
+  return API_ORIGIN;
 }
 
 // 작업 목록

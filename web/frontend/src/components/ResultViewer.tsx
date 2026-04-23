@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { getApiKey } from "@/lib/api";
+import { getApiKey, getApiOrigin } from "@/lib/api";
 import HtmlPreview from "./HtmlPreview";
 
 type Tab = "html" | "markdown" | "outline" | "images";
@@ -65,7 +65,7 @@ function MarkdownView({ slug, type = "markdown" }: { slug: string; type?: string
       const apiKey = getApiKey();
       const headers: Record<string, string> = {};
       if (apiKey) headers["X-API-Key"] = apiKey;
-      const res = await fetch(`/api/results/${slug}/latest/${endpoint}`, { headers });
+      const res = await fetch(`${getApiOrigin()}/api/results/${slug}/latest/${endpoint}`, { headers });
       if (!res.ok) throw new Error(`${res.status}`);
       setContent(await res.text());
     } catch {
@@ -103,7 +103,7 @@ function ImagesGrid({ slug, count }: { slug: string; count: number }) {
       {Array.from({ length: count }, (_, i) => (
         <div key={i} className="border border-gray-200 rounded-lg overflow-hidden">
           <img
-            src={`/api/results/${slug}/latest/images/image_${i + 1}.png${qs}`}
+            src={`${getApiOrigin()}/api/results/${slug}/latest/images/image_${i + 1}.png${qs}`}
             alt={`생성 이미지 ${i + 1}`}
             className="w-full h-auto"
             loading="lazy"

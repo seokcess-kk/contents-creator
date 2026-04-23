@@ -19,7 +19,7 @@ export function useJobProgress(jobId: string | null): UseJobProgressReturn {
 
     // WebSocket URL: Next.js rewrites는 WS 미지원이므로 직접 연결.
     // 브라우저는 WS 핸드셰이크에 커스텀 헤더를 붙일 수 없어 query param 으로 키 전달.
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL?.trim() || "https://sarubia.glitzy.kr";
     const wsUrl = apiUrl.replace(/^http/, "ws");
     const apiKey = getApiKey();
     const query = apiKey ? `?token=${encodeURIComponent(apiKey)}` : "";
