@@ -81,7 +81,8 @@ class Settings(BaseSettings):
     cost_brightdata_per_request: float = 0.01
 
     # 이미지 생성 안전장치
-    image_generation_budget_per_run: int = 30  # 분석 결과 그대로 반영, 실사용 상한 안전망
+    image_generation_budget_per_run: int = 15  # 실사용 상한 안전망 (평균 8~10장 사용)
+    image_parallel_workers: int = 5  # Gemini 병렬 워커 수 (레이트리밋 고려 5~8)
     image_cache_dir: str = "output/_image_cache"
     image_max_width: int = 720  # 네이버 블로그 본문 폭 기준 리사이즈
     image_jpeg_quality: int = 85  # JPEG 변환 품질 (1~100)

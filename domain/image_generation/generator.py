@@ -14,6 +14,7 @@ from pathlib import Path
 
 from PIL import Image
 
+from config.settings import settings
 from domain.common.image_prompt_validator import (
     InvalidImagePromptError,
     validate_prompt,
@@ -34,7 +35,6 @@ from domain.image_generation.provider import ImageGenerationError, ImageProvider
 logger = logging.getLogger(__name__)
 
 _RETRY_DELAY_SECONDS = 1.0
-_MAX_WORKERS = 5
 
 
 def generate_images(
@@ -112,7 +112,7 @@ def _process_prompts_parallel(
     generated: list[GeneratedImage] = []
     skipped: list[SkippedImage] = []
 
-    with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as executor:
+    with ThreadPoolExecutor(max_workers=settings.image_parallel_workers) as executor:
         futures = {
             executor.submit(
                 _process_single_prompt,
