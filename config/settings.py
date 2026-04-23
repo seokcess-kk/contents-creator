@@ -52,8 +52,10 @@ class Settings(BaseSettings):
     image_size: str = "1024x1024"
 
     # Extended Thinking — [6] 아웃라인 사고 예산. 0 이면 비활성.
-    # 복잡한 제약 동시 충족(SEO+의료법+톤+DIA+키워드) 에 유효.
-    outline_thinking_budget: int = 2000
+    # Anthropic 제약: thinking 은 tool_choice.type=="auto" 에서만 허용.
+    # 현재 outline_writer 는 tool 이름을 강제하므로 thinking 비활성이 기본.
+    # tool_choice=auto + 프롬프트 강제 방식으로 리팩토링 후 활성 재고.
+    outline_thinking_budget: int = 0
 
     # 파이프라인 동작 상수
     min_analyzed_samples: int = 7

@@ -62,13 +62,16 @@ def generate_outline(
     else:
         max_tokens = 4096
 
-    # Anthropic 규칙: Extended Thinking 과 tool 이름 강제(`{type: tool, name: X}`)는
-    # 동시 사용 불가. tool 이 단 1개 전달되므로 `any` 로 두어도 실질 효과는 동일하다.
+    # Anthropic 규칙: Extended Thinking 은 `tool_choice.type == "auto"` 만 호환.
+    # `tool`/`any` 는 모두 "forces tool use" 로 분류되어 thinking 과 비호환.
+    # 안정적인 tool_use 응답을 위해 tool 이름을 강제하고, thinking 은 예산 0 기본값으로.
+    # thinking 이 필요하면 settings.outline_thinking_budget>0 + tool_choice=auto 조합으로
+    # 프롬프트에서 tool 사용을 강제하는 방향이 맞다(향후 개선).
     response = client.messages.create(  # type: ignore[call-overload]
         model=settings.model_opus,
         max_tokens=max_tokens,
         tools=[tool_schema],
-        tool_choice={"type": "any"},
+        tool_choice={"type": "tool", "name": tool_schema["name"]},
         messages=messages,
         **extra_kwargs,
     )

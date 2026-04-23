@@ -122,8 +122,8 @@ class TestGenerateOutline:
         assert len(tools) == 1
         assert tools[0]["name"] == "record_outline"
         tool_choice = call_kwargs.kwargs.get("tool_choice", {})
-        # Extended Thinking 호환을 위해 `any`. tool 1개라 효과 동일.
-        assert tool_choice.get("type") == "any"
+        # thinking 비활성 기본값과 호환. tool 이름 강제로 안정적 tool_use 응답.
+        assert tool_choice.get("type") == "tool"
 
     @patch("domain.generation.outline_writer.anthropic")
     @patch("domain.generation.outline_writer.require")
