@@ -6,11 +6,12 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from config.settings import settings
+from web.api.auth import require_api_key
 
-router = APIRouter(prefix="/usage", tags=["usage"])
+router = APIRouter(prefix="/usage", tags=["usage"], dependencies=[Depends(require_api_key)])
 logger = logging.getLogger(__name__)
 
 
@@ -68,11 +69,7 @@ def get_job_usage(job_id: str) -> dict[str, Any]:
     try:
         client = _get_supabase()
         result = (
-            client.table("api_usage")
-            .select("*")
-            .eq("job_id", job_id)
-            .order("created_at")
-            .execute()
+            client.table("api_usage").select("*").eq("job_id", job_id).order("created_at").execute()
         )
         rows = result.data or []
         return {"job_id": job_id, "items": rows, "totals": _aggregate(rows)}
@@ -100,7 +97,13 @@ def _aggregate_by_provider(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for r in rows:
         p = r.get("provider", "unknown")
         if p not in by:
-            by[p] = {"provider": p, "input_tokens": 0, "output_tokens": 0, "requests": 0, "cost": 0.0}
+            by[p] = {
+                "provider": p,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "requests": 0,
+                "cost": 0.0,
+            }
         by[p]["input_tokens"] += r.get("input_tokens", 0) or 0
         by[p]["output_tokens"] += r.get("output_tokens", 0) or 0
         by[p]["requests"] += r.get("requests", 0) or 0

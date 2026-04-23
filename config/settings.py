@@ -54,6 +54,11 @@ class Settings(BaseSettings):
 
     # 웹 UI
     cors_origins: str = "http://localhost:3000"  # 쉼표 구분 복수 origin
+    admin_api_key: str | None = Field(
+        default=None,
+        description="웹 API 보호용. None이면 인증 비활성(개발 모드), 설정 시 X-API-Key 헤더 필수",
+    )
+    job_timeout_seconds: int = 3600  # 단일 파이프라인 실행 상한
 
     # API 비용 (USD per 1M tokens, 2026-04 기준)
     cost_anthropic_opus_input: float = 15.0

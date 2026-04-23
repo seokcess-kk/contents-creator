@@ -39,6 +39,9 @@ web/frontend/out/
 
 # Project
 output/
+_workspace/
+.claude/settings.local.json
+*.local.json
 dev/active/context.md
 dev/active/hook-debug.log
 # Phase 0.6 실측 산출물 — 스크립트·HTML만 커밋, 생성된 PNG 는 재현 가능

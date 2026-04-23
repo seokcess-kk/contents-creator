@@ -51,10 +51,14 @@ def generate_outline(
         messages=messages,
     )
 
-    record_usage(ApiUsage(
-        provider="anthropic", model=settings.model_opus,
-        input_tokens=response.usage.input_tokens, output_tokens=response.usage.output_tokens,
-    ))
+    record_usage(
+        ApiUsage(
+            provider="anthropic",
+            model=settings.model_opus,
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+        )
+    )
     tool_input = _extract_tool_input(response)
     return _parse_outline(tool_input)
 

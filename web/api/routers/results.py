@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 
-router = APIRouter(prefix="/results", tags=["results"])
+from web.api.auth import require_api_key
+
+router = APIRouter(prefix="/results", tags=["results"], dependencies=[Depends(require_api_key)])
 
 OUTPUT_ROOT = Path("output")
 

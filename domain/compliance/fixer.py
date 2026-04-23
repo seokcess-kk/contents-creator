@@ -215,10 +215,14 @@ def _try_paragraph_regeneration(
         system=system_prompt,
     )
 
-    record_usage(ApiUsage(
-        provider="anthropic", model=settings.model_sonnet,
-        input_tokens=response.usage.input_tokens, output_tokens=response.usage.output_tokens,
-    ))
+    record_usage(
+        ApiUsage(
+            provider="anthropic",
+            model=settings.model_sonnet,
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+        )
+    )
     fixed_paragraph = _parse_fix_response(response)
     if fixed_paragraph is None:
         return text, None

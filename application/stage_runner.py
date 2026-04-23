@@ -15,9 +15,7 @@ if TYPE_CHECKING:
     from domain.generation.body_quality_enforcer import SectionIssue
 
 from application.progress import ProgressReporter
-from application.usage_tracker import save_usage_to_supabase, summarize_usages
 from config.settings import require, settings
-from domain.common.usage import collect_usage, reset_usage
 from domain.analysis.model import (
     AppealAnalysis,
     PhysicalAnalysis,
@@ -486,13 +484,19 @@ def run_stage_compliance_check(
     reporter: ProgressReporter,
     keyword: str | None = None,
 ) -> ComplianceReport:
-    """[8] 의료법 3중 방어: 검증 → 수정 → 재검증 (최대 2회)."""
+    """[8] 의료법 3중 방어: 검증 → 수정 → 재검증 (최대 2회).
+
+    image_prompts 는 텍스트와 동일 시점에 검증하고, 위반 슬롯은 outline.image_prompts
+    에서 제거하여 [9] 단계에서 자연스럽게 skip 된다.
+    """
     from domain.compliance.checker import check_compliance
     from domain.compliance.fixer import fix_violations
     from domain.compliance.model import ChangelogEntry
     from domain.composer.assembler import assemble_content
 
     reporter.stage_start("compliance_check")
+
+    _drop_violating_image_prompts(outline, reporter)
 
     assembled = assemble_content(outline, body)
     text = assembled.content_md
@@ -545,6 +549,28 @@ def _save_compliance_report(report: ComplianceReport, output_dir: Path) -> None:
     path = content_dir / "compliance-report.json"
     path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
     logger.info("compliance_report.saved path=%s passed=%s", path, report.passed)
+
+
+def _drop_violating_image_prompts(outline: Outline, reporter: ProgressReporter) -> None:
+    """image_prompts compliance 검증. 위반 슬롯은 목록에서 제거한다.
+
+    fixer LLM 재생성 루프는 범위 밖이므로, 현 시점에선 "위반 = skip". [9] 단계가
+    자연스럽게 fewer 이미지로 진행하며, 최종 이미지 무결성 검증은 composer 단계에서.
+    """
+    from domain.compliance.checker import check_image_prompts
+
+    if not outline.image_prompts:
+        return
+    violations = check_image_prompts(list(outline.image_prompts))
+    if not violations:
+        return
+    bad_sequences = {v.section_index for v in violations if v.section_index is not None}
+    kept = [p for p in outline.image_prompts if p.sequence not in bad_sequences]
+    dropped = len(outline.image_prompts) - len(kept)
+    if dropped:
+        logger.warning("compliance.image_prompts.dropped sequences=%s", sorted(bad_sequences))
+        reporter.stage_progress(0, f"image_prompts 위반 {dropped}개 제거")
+        outline.image_prompts = kept
 
 
 # ── [9] 이미지 생성 ──
@@ -624,7 +650,7 @@ def run_stage_compose(
     from domain.composer.assembler import assemble_content, insert_images_into_text
     from domain.composer.naver_html import convert_to_naver_html
     from domain.composer.outline_md import convert_outline_to_md
-    from domain.composer.quality_check import check_quality
+    from domain.composer.quality_check import check_image_integrity, check_quality
 
     reporter.stage_start("compose")
 
@@ -686,11 +712,21 @@ def run_stage_compose(
 
     # 품질 검증 (best-effort, 파이프라인 중단 안 함)
     quality_summary: dict[str, str] = {}
+    image_issues = check_image_integrity(outline, image_result, content_md, html_doc.html)
     if pattern_card is not None:
         qr = check_quality(content_md, pattern_card)
+        qr.issues.extend(image_issues)
+        qr.passed = qr.passed and not any(i.severity == "warning" for i in image_issues)
         quality_summary = {"quality_passed": str(qr.passed), "issues": str(len(qr.issues))}
         qr_path = content_dir / "quality-report.json"
         qr_path.write_text(qr.model_dump_json(indent=2), encoding="utf-8")
+    elif image_issues:
+        qr_path = content_dir / "quality-report.json"
+        from domain.composer.quality_check import QualityReport
+
+        qr = QualityReport(issues=image_issues, passed=False)
+        qr_path.write_text(qr.model_dump_json(indent=2), encoding="utf-8")
+        quality_summary = {"quality_passed": "False", "issues": str(len(image_issues))}
 
     reporter.stage_end(
         "compose",

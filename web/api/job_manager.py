@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import uuid
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -28,7 +29,7 @@ from application.orchestrator import (
     run_pipeline,
     run_validate_only,
 )
-
+from config.settings import settings
 from web.api.ws_reporter import WebSocketProgressReporter
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,7 @@ class Job:
     id: str
     type: str
     keyword: str
-    status: str = "pending"
+    status: str = "pending"  # pending|running|succeeded|failed|cancelled|timed_out
     created_at: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
     started_at: datetime | None = None
     finished_at: datetime | None = None
@@ -49,6 +50,8 @@ class Job:
     result: dict[str, Any] | None = None
     error: str | None = None
     progress: list[dict[str, Any]] = field(default_factory=list)
+    future: Future[Any] | None = field(default=None, repr=False)
+    cancel_requested: bool = False
 
 
 class JobEventBus:
@@ -122,10 +125,62 @@ class JobManager:
             params=params,
         )
         self._jobs[job_id] = job
-        self._executor.submit(self._run_job, job)
+        job.future = self._executor.submit(self._run_job, job)
+        self._arm_timeout(job)
         return job
 
+    def _arm_timeout(self, job: Job) -> None:
+        """job_timeout_seconds 초 후 여전히 running 이면 timed_out 표시.
+
+        Python 스레드는 강제 종료할 수 없으므로 상태만 전환하고 이벤트를 발행한다.
+        워커 스레드는 백그라운드에서 계속 실행될 수 있다(soft timeout).
+        """
+        timeout = max(60, int(settings.job_timeout_seconds))
+
+        def _check() -> None:
+            if job.status == "running":
+                job.status = "timed_out"
+                job.error = f"job timed out after {timeout}s"
+                job.finished_at = datetime.now(tz=UTC)
+                logger.warning("Job %s timed out after %ds", job.id, timeout)
+                self.event_bus.emit(
+                    job.id,
+                    {"type": "pipeline_error", "stage": "timeout", "error": job.error},
+                )
+                self.event_bus.emit(job.id, {"type": "job_status", "status": "timed_out"})
+
+        threading.Timer(timeout, _check).start()
+
+    def cancel_job(self, job_id: str) -> bool:
+        """취소 요청. 대기 중이면 future.cancel() 로 즉시 종료.
+
+        이미 실행 중이면 cancel_requested 플래그만 세우고 상태를 cancelled 로 표시.
+        실제 워커 스레드는 강제 종료 불가하나, reporter 호출 시점에
+        파이프라인 측에서 플래그를 검사해 중단할 수 있다.
+        """
+        job = self._jobs.get(job_id)
+        if job is None:
+            return False
+        if job.status in ("succeeded", "failed", "cancelled", "timed_out"):
+            return False
+        job.cancel_requested = True
+        if job.future is not None and job.future.cancel():
+            job.status = "cancelled"
+            job.finished_at = datetime.now(tz=UTC)
+            self.event_bus.emit(job.id, {"type": "job_status", "status": "cancelled"})
+            return True
+        # 이미 실행 중 — soft cancel
+        job.status = "cancelled"
+        job.finished_at = datetime.now(tz=UTC)
+        self.event_bus.emit(job.id, {"type": "job_status", "status": "cancelled"})
+        return True
+
     def _run_job(self, job: Job) -> None:
+        if job.cancel_requested:
+            job.status = "cancelled"
+            job.finished_at = datetime.now(tz=UTC)
+            self.event_bus.emit(job.id, {"type": "job_status", "status": "cancelled"})
+            return
         job.status = "running"
         job.started_at = datetime.now(tz=UTC)
         self.event_bus.emit(job.id, {"type": "job_status", "status": "running"})
@@ -134,15 +189,19 @@ class JobManager:
 
         try:
             result = self._dispatch(job, reporter)
+            # timeout/cancel 이 먼저 터졌으면 그 상태를 유지
+            if job.status in ("timed_out", "cancelled"):
+                return
             job.status = "succeeded"
             job.result = result.model_dump(mode="json")
         except Exception as exc:
             logger.exception("Job %s failed", job.id)
-            job.status = "failed"
-            job.error = str(exc)
-            self.event_bus.emit(
-                job.id, {"type": "pipeline_error", "stage": "unknown", "error": str(exc)}
-            )
+            if job.status not in ("timed_out", "cancelled"):
+                job.status = "failed"
+                job.error = str(exc)
+                self.event_bus.emit(
+                    job.id, {"type": "pipeline_error", "stage": "unknown", "error": str(exc)}
+                )
         finally:
             job.finished_at = datetime.now(tz=UTC)
             self.event_bus.emit(job.id, {"type": "job_status", "status": job.status})

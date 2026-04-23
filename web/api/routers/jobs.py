@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from web.api.auth import require_api_key
 from web.api.schemas import (
     AnalyzeRequest,
     GenerateRequest,
@@ -18,7 +19,7 @@ from web.api.schemas import (
 if TYPE_CHECKING:
     from web.api.job_manager import Job
 
-router = APIRouter(prefix="/jobs", tags=["jobs"])
+router = APIRouter(prefix="/jobs", tags=["jobs"], dependencies=[Depends(require_api_key)])
 
 
 def _get_manager():  # type: ignore[no-untyped-def]
@@ -78,3 +79,14 @@ def get_job(job_id: str) -> JobResponse:
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     return _job_to_response(job)
+
+
+@router.delete("/{job_id}", status_code=202)
+def cancel_job(job_id: str) -> dict[str, str]:
+    mgr = _get_manager()
+    if mgr.get_job(job_id) is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    ok = mgr.cancel_job(job_id)
+    if not ok:
+        raise HTTPException(status_code=409, detail="Job already finished")
+    return {"status": "cancelled"}

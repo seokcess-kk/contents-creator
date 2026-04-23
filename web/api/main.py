@@ -7,15 +7,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from web.api.job_manager import JobManager
 from config.settings import settings
+from web.api.job_manager import JobManager
 from web.api.routers import jobs, results, usage, ws
 
 logger = logging.getLogger(__name__)

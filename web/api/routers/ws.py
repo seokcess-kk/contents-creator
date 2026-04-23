@@ -8,6 +8,8 @@ import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from web.api.auth import require_api_key_ws
+
 router = APIRouter(prefix="/ws", tags=["websocket"])
 logger = logging.getLogger(__name__)
 
@@ -20,6 +22,8 @@ def _get_manager():  # type: ignore[no-untyped-def]
 
 @router.websocket("/jobs/{job_id}")
 async def job_progress_ws(websocket: WebSocket, job_id: str) -> None:
+    if not await require_api_key_ws(websocket):
+        return
     mgr = _get_manager()
     job = mgr.get_job(job_id)
     if job is None:

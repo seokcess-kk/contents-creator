@@ -38,6 +38,7 @@ step() {
 
 step "ruff check" ruff check .
 step "ruff format --check" ruff format --check .
+step "architecture-check" "$SCRIPT_DIR/architecture-check.sh"
 
 # mypy 대상: domain/ + application/ (둘 다 존재 시)
 mypy_targets=()

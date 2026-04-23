@@ -13,8 +13,6 @@ from __future__ import annotations
 import logging
 
 import requests
-
-from domain.common.usage import ApiUsage, record_usage
 from tenacity import (
     RetryError,
     retry,
@@ -22,6 +20,8 @@ from tenacity import (
     stop_after_attempt,
     wait_exponential,
 )
+
+from domain.common.usage import ApiUsage, record_usage
 
 logger = logging.getLogger(__name__)
 

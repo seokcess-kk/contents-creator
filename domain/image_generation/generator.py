@@ -14,6 +14,10 @@ from pathlib import Path
 
 from PIL import Image
 
+from domain.common.image_prompt_validator import (
+    InvalidImagePromptError,
+    validate_prompt,
+)
 from domain.image_generation.cache import (
     compute_cache_key,
     get_cached,
@@ -24,10 +28,6 @@ from domain.image_generation.model import (
     ImageGenerationResult,
     ImagePrompt,
     SkippedImage,
-)
-from domain.image_generation.prompt_validator import (
-    InvalidImagePromptError,
-    validate_prompt,
 )
 from domain.image_generation.provider import ImageGenerationError, ImageProvider
 

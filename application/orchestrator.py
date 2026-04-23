@@ -28,7 +28,7 @@ from application.models import (
 )
 from application.progress import LoggingProgressReporter, ProgressReporter
 from application.usage_tracker import save_usage_to_supabase, summarize_usages
-from domain.common.usage import collect_usage, reset_usage
+from domain.common.usage import collect_usage, record_usage, reset_usage, run_in_isolated_usage_ctx
 
 logger = logging.getLogger(__name__)
 
@@ -45,10 +45,9 @@ def _harvest_usage(stage: str, keyword: str) -> dict[str, object]:
     usages = collect_usage()
     if not usages:
         return {}
-    save_usage_to_supabase(
-        usages, job_id=_job_id_var.get(None), keyword=keyword, stage=stage
-    )
+    save_usage_to_supabase(usages, job_id=_job_id_var.get(None), keyword=keyword, stage=stage)
     return {"usage": summarize_usages(usages)}
+
 
 # ── slug / 디렉토리 유틸 ──
 
@@ -127,7 +126,9 @@ def _run_analysis_stages(
         reset_usage()
         serp = run_stage_serp_collection(keyword, output_dir, reporter)
         usage_summary = _harvest_usage("serp_collection", keyword)
-        stages.append(StageResult(name="serp_collection", status=StageStatus.SUCCEEDED, summary=usage_summary))
+        stages.append(
+            StageResult(name="serp_collection", status=StageStatus.SUCCEEDED, summary=usage_summary)
+        )
     except Exception as exc:
         stages.append(
             StageResult(name="serp_collection", status=StageStatus.FAILED, error=str(exc))
@@ -146,7 +147,9 @@ def _run_analysis_stages(
         scrape_result = run_stage_page_scraping(serp, output_dir, reporter)
         pages = scrape_result.successful
         usage_summary = _harvest_usage("page_scraping", keyword)
-        stages.append(StageResult(name="page_scraping", status=StageStatus.SUCCEEDED, summary=usage_summary))
+        stages.append(
+            StageResult(name="page_scraping", status=StageStatus.SUCCEEDED, summary=usage_summary)
+        )
     except Exception as exc:
         stages.append(StageResult(name="page_scraping", status=StageStatus.FAILED, error=str(exc)))
         return AnalyzeResult(
@@ -167,27 +170,72 @@ def _run_analysis_stages(
         ), None
 
     # [3] 물리 추출
-    reset_usage()
-    physicals = run_stage_physical_extraction(pages, keyword, output_dir, reporter)
-    stages.append(StageResult(name="physical_extraction", status=StageStatus.SUCCEEDED))
+    try:
+        reset_usage()
+        physicals = run_stage_physical_extraction(pages, keyword, output_dir, reporter)
+        stages.append(StageResult(name="physical_extraction", status=StageStatus.SUCCEEDED))
+    except Exception as exc:
+        stages.append(
+            StageResult(name="physical_extraction", status=StageStatus.FAILED, error=str(exc))
+        )
+        return AnalyzeResult(
+            status=StageStatus.FAILED,
+            keyword=keyword,
+            slug=slug,
+            stages=stages,
+            error=f"물리 추출 실패: {exc}",
+        ), None
 
-    # [4a] + [4b] 병렬 실행 (독립적인 LLM 호출)
+    # [4a] + [4b] 병렬 실행 (독립적인 LLM 호출).
+    # 각 워커는 격리된 contextvars 복사본에서 실행하고 자체 usage 리스트를 반환한다.
+    # ThreadPoolExecutor 기본 동작은 부모 ContextVar 를 공유하지 않아, 이렇게 하지 않으면
+    # [4a]/[4b] 의 토큰 기록이 유실된다.
     from concurrent.futures import ThreadPoolExecutor
 
-    reset_usage()
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        sem_future = executor.submit(
-            run_stage_semantic_extraction, pages, physicals, keyword, output_dir, reporter
-        )
-        appeal_future = executor.submit(
-            run_stage_appeal_extraction, pages, physicals, keyword, output_dir, reporter
-        )
-        semantics = sem_future.result()
-        appeals = appeal_future.result()
+    try:
+        reset_usage()
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            sem_future = executor.submit(
+                run_in_isolated_usage_ctx,
+                run_stage_semantic_extraction,
+                pages,
+                physicals,
+                keyword,
+                output_dir,
+                reporter,
+            )
+            appeal_future = executor.submit(
+                run_in_isolated_usage_ctx,
+                run_stage_appeal_extraction,
+                pages,
+                physicals,
+                keyword,
+                output_dir,
+                reporter,
+            )
+            semantics, sem_usage = sem_future.result()
+            appeals, appeal_usage = appeal_future.result()
 
-    usage_summary = _harvest_usage("semantic_appeal", keyword)
-    stages.append(StageResult(name="semantic_extraction", status=StageStatus.SUCCEEDED, summary=usage_summary))
-    stages.append(StageResult(name="appeal_extraction", status=StageStatus.SUCCEEDED))
+        for u in sem_usage + appeal_usage:
+            record_usage(u)
+        usage_summary = _harvest_usage("semantic_appeal", keyword)
+        stages.append(
+            StageResult(
+                name="semantic_extraction", status=StageStatus.SUCCEEDED, summary=usage_summary
+            )
+        )
+        stages.append(StageResult(name="appeal_extraction", status=StageStatus.SUCCEEDED))
+    except Exception as exc:
+        stages.append(
+            StageResult(name="semantic_appeal", status=StageStatus.FAILED, error=str(exc))
+        )
+        return AnalyzeResult(
+            status=StageStatus.FAILED,
+            keyword=keyword,
+            slug=slug,
+            stages=stages,
+            error=f"의미/소구 추출 실패: {exc}",
+        ), None
 
     # 유효 샘플 검증
     valid_count = min(len(physicals), len(semantics), len(appeals))
@@ -202,10 +250,21 @@ def _run_analysis_stages(
         ), None
 
     # [5] 교차 분석
-    card = run_stage_cross_analysis(
-        keyword, slug, physicals, semantics, appeals, output_dir, reporter
-    )
-    stages.append(StageResult(name="cross_analysis", status=StageStatus.SUCCEEDED))
+    try:
+        card = run_stage_cross_analysis(
+            keyword, slug, physicals, semantics, appeals, output_dir, reporter
+        )
+        stages.append(StageResult(name="cross_analysis", status=StageStatus.SUCCEEDED))
+    except Exception as exc:
+        stages.append(StageResult(name="cross_analysis", status=StageStatus.FAILED, error=str(exc)))
+        return AnalyzeResult(
+            status=StageStatus.FAILED,
+            keyword=keyword,
+            slug=slug,
+            analyzed_count=valid_count,
+            stages=stages,
+            error=f"교차 분석 실패: {exc}",
+        ), None
 
     pc_path = output_dir / "analysis" / "pattern-card.json"
     result = AnalyzeResult(
@@ -248,7 +307,11 @@ def _run_generation_stages(
         reset_usage()
         outline = run_stage_outline_generation(card, output_dir, reporter)
         usage_summary = _harvest_usage("outline_generation", keyword)
-        stages.append(StageResult(name="outline_generation", status=StageStatus.SUCCEEDED, summary=usage_summary))
+        stages.append(
+            StageResult(
+                name="outline_generation", status=StageStatus.SUCCEEDED, summary=usage_summary
+            )
+        )
     except Exception as exc:
         stages.append(
             StageResult(name="outline_generation", status=StageStatus.FAILED, error=str(exc))
@@ -266,7 +329,9 @@ def _run_generation_stages(
         reset_usage()
         body = run_stage_body_generation(outline, card, output_dir, reporter)
         usage_summary = _harvest_usage("body_generation", keyword)
-        stages.append(StageResult(name="body_generation", status=StageStatus.SUCCEEDED, summary=usage_summary))
+        stages.append(
+            StageResult(name="body_generation", status=StageStatus.SUCCEEDED, summary=usage_summary)
+        )
     except Exception as exc:
         stages.append(
             StageResult(name="body_generation", status=StageStatus.FAILED, error=str(exc))
@@ -290,7 +355,11 @@ def _run_generation_stages(
             keyword=keyword,
         )
         usage_summary = _harvest_usage("compliance_check", keyword)
-        stages.append(StageResult(name="compliance_check", status=StageStatus.SUCCEEDED, summary=usage_summary))
+        stages.append(
+            StageResult(
+                name="compliance_check", status=StageStatus.SUCCEEDED, summary=usage_summary
+            )
+        )
     except Exception as exc:
         stages.append(
             StageResult(name="compliance_check", status=StageStatus.FAILED, error=str(exc))
@@ -314,7 +383,8 @@ def _run_generation_stages(
             error="의료법 검증 최대 재시도 후에도 위반 잔존",
         )
 
-    # [9] 이미지 생성
+    # [9] 이미지 생성 — 옵션 단계: 실패/스킵해도 파이프라인 계속.
+    # 의미론: FAILED (필수 단계 실패) 와 구분하기 위해 SKIPPED 로 표시한다.
     try:
         reset_usage()
         image_result = run_stage_image_generation(
@@ -325,12 +395,16 @@ def _run_generation_stages(
             regenerate=regenerate_images,
         )
         usage_summary = _harvest_usage("image_generation", keyword)
-        stages.append(StageResult(name="image_generation", status=StageStatus.SUCCEEDED, summary=usage_summary))
+        stages.append(
+            StageResult(
+                name="image_generation", status=StageStatus.SUCCEEDED, summary=usage_summary
+            )
+        )
     except Exception as exc:
-        logger.exception("이미지 생성 중 예외 (파이프라인 계속)")
+        logger.exception("이미지 생성 중 예외 — 옵션 단계이므로 SKIPPED 로 기록하고 계속")
         image_result = None
         stages.append(
-            StageResult(name="image_generation", status=StageStatus.FAILED, error=str(exc))
+            StageResult(name="image_generation", status=StageStatus.SKIPPED, error=str(exc))
         )
 
     # [10] 조립

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from domain.image_generation.prompt_validator import (
+from domain.common.image_prompt_validator import (
     InvalidImagePromptError,
     validate_prompt,
 )

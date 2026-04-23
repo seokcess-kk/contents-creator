@@ -12,6 +12,10 @@ from typing import Any
 import anthropic
 
 from config.settings import require, settings
+from domain.common.image_prompt_validator import (
+    InvalidImagePromptError,
+    validate_prompt,
+)
 from domain.common.usage import ApiUsage, record_usage
 from domain.compliance.model import Violation
 from domain.compliance.rules import (
@@ -88,6 +92,68 @@ def check_compliance(
     regex_violations = _check_regex(text, policy)
     llm_violations = _check_llm(text, policy, keyword=keyword)
     return _merge_violations(regex_violations, llm_violations)
+
+
+def check_image_prompts(
+    prompts: list[Any],
+    policy: CompliancePolicy = CompliancePolicy.SEO_STRICT,
+) -> list[Violation]:
+    """image_prompts 배열의 compliance 위반을 반환한다.
+
+    두 축에서 검증:
+    1. 이미지 전용 규칙 (prompt_validator): no text, Korean, 환자·시술·전후·효과 보장
+    2. rules.py 일반 금지 표현 (한국어 소스 텍스트에도 적용되는 규칙을 alt_text 에 재확인)
+
+    위반 1건당 Violation 1개. section_index 필드에 sequence 를 기록해 fixer 가 대상 식별.
+
+    Args:
+        prompts: `ImagePromptItem` 또는 호환 dict 리스트.
+        policy: compliance 정책.
+    """
+    violations: list[Violation] = []
+    compiled_patterns = get_all_patterns(policy)
+    for p in prompts:
+        seq = _get_attr(p, "sequence", 0)
+        prompt_text = _get_attr(p, "prompt", "")
+        alt_text = _get_attr(p, "alt_text", "")
+
+        try:
+            validate_prompt(prompt_text)
+        except InvalidImagePromptError as exc:
+            violations.append(
+                Violation(
+                    category=ViolationCategory.BEFORE_AFTER.value,
+                    text_snippet=prompt_text,
+                    section_index=seq,
+                    severity="high",
+                    reason=f"이미지 prompt 위반: {exc}",
+                ),
+            )
+
+        combined = f"{prompt_text}\n{alt_text}"
+        for category, pattern in compiled_patterns:
+            match = pattern.search(combined)
+            if match is None:
+                continue
+            violations.append(
+                Violation(
+                    category=category.value,
+                    text_snippet=combined[: match.end() + 30],
+                    section_index=seq,
+                    severity="high",
+                    reason=f"이미지 prompt/alt_text 에 금지 표현 감지: '{match.group()}'",
+                ),
+            )
+    return violations
+
+
+def _get_attr(obj: Any, name: str, default: Any) -> Any:
+    """Pydantic 모델 / dict 공용 접근."""
+    if hasattr(obj, name):
+        return getattr(obj, name)
+    if isinstance(obj, dict):
+        return obj.get(name, default)
+    return default
 
 
 # ── 규칙 기반 1차 ──
@@ -171,10 +237,14 @@ def _check_llm(
         system=system_prompt,
     )
 
-    record_usage(ApiUsage(
-        provider="anthropic", model=settings.model_sonnet,
-        input_tokens=response.usage.input_tokens, output_tokens=response.usage.output_tokens,
-    ))
+    record_usage(
+        ApiUsage(
+            provider="anthropic",
+            model=settings.model_sonnet,
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+        )
+    )
     return _parse_llm_violations(response)
 
 

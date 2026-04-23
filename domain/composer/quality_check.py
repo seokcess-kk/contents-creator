@@ -12,8 +12,13 @@ import re
 from pydantic import BaseModel, Field
 
 from domain.analysis.pattern_card import PatternCard
+from domain.generation.model import Outline
+from domain.image_generation.model import ImageGenerationResult
 
 logger = logging.getLogger(__name__)
+
+_IMG_MARKER_RE = re.compile(r"\[이미지\s*\d+\s*:", re.IGNORECASE)
+_HTML_IMG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
 
 
 class QualityIssue(BaseModel):
@@ -122,3 +127,74 @@ def _check_subtitle_count(
                 severity="info",
             )
         )
+
+
+def check_image_integrity(
+    outline: Outline,
+    image_result: ImageGenerationResult | None,
+    content_md: str,
+    content_html: str | None = None,
+) -> list[QualityIssue]:
+    """이미지 무결성 3자 비교: outline 선언 vs 생성 vs 렌더링.
+
+    compliance가 outline.image_prompts를 줄였을 수 있으므로 declared 는
+    post-compliance 시점 outline 기준.
+
+    - declared = outline.image_prompts 길이
+    - generated = image_result.generated 길이 (실제 파일 있음)
+    - skipped = image_result.skipped 길이 (budget/api_error/compliance)
+    - md_markers = content_md의 `[이미지 N: ...]` 마커 수
+    - html_imgs = content_html의 `<img>` 태그 수 (제공 시)
+
+    정상 조건:
+        declared = generated + skipped
+        md_markers = generated
+        html_imgs = generated  (html 제공 시)
+    """
+    issues: list[QualityIssue] = []
+
+    declared = len(outline.image_prompts)
+    generated = len(image_result.generated) if image_result else 0
+    skipped = len(image_result.skipped) if image_result else 0
+    md_markers = len(_IMG_MARKER_RE.findall(content_md))
+
+    if image_result is not None and declared != generated + skipped:
+        issues.append(
+            QualityIssue(
+                metric="image_accounting",
+                expected=f"declared={declared} = generated+skipped",
+                actual=f"generated={generated}, skipped={skipped}",
+                severity="warning",
+            )
+        )
+
+    if md_markers != generated:
+        issues.append(
+            QualityIssue(
+                metric="image_md_markers",
+                expected=str(generated),
+                actual=str(md_markers),
+                severity="warning",
+            )
+        )
+
+    if content_html is not None:
+        html_imgs = len(_HTML_IMG_RE.findall(content_html))
+        if html_imgs != generated:
+            issues.append(
+                QualityIssue(
+                    metric="image_html_tags",
+                    expected=str(generated),
+                    actual=str(html_imgs),
+                    severity="warning",
+                )
+            )
+
+    for issue in issues:
+        logger.warning(
+            "quality.%s expected=%s actual=%s",
+            issue.metric,
+            issue.expected,
+            issue.actual,
+        )
+    return issues

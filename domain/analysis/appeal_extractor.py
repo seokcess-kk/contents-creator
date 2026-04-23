@@ -15,9 +15,9 @@ from typing import Any
 import anthropic
 
 from config.settings import require, settings
-from domain.common.usage import ApiUsage, record_usage
 from domain.analysis.model import AppealAnalysis, AppealPoint
 from domain.analysis.physical_extractor import extract_body_text
+from domain.common.usage import ApiUsage, record_usage
 from domain.crawler.model import BlogPage
 
 logger = logging.getLogger(__name__)
@@ -88,10 +88,14 @@ def extract_appeal(
         messages=messages,
     )
 
-    record_usage(ApiUsage(
-        provider="anthropic", model=settings.model_sonnet,
-        input_tokens=response.usage.input_tokens, output_tokens=response.usage.output_tokens,
-    ))
+    record_usage(
+        ApiUsage(
+            provider="anthropic",
+            model=settings.model_sonnet,
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+        )
+    )
     tool_input = _extract_tool_input(response)
     return _parse_response(tool_input, str(page.url))
 
