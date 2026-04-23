@@ -17,7 +17,6 @@ from domain.image_generation.model import ImageGenerationResult
 
 logger = logging.getLogger(__name__)
 
-_IMG_MARKER_RE = re.compile(r"\[이미지\s*\d+\s*:", re.IGNORECASE)
 _IMG_MD_RE = re.compile(r"!\[[^\]]*\]\([^)]*image_\d+[^)]*\)", re.IGNORECASE)
 _HTML_IMG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
 
@@ -157,8 +156,7 @@ def check_image_integrity(
     declared = len(outline.image_prompts)
     generated = len(image_result.generated) if image_result else 0
     skipped = len(image_result.skipped) if image_result else 0
-    # 마크다운 이미지 문법(새 포맷) 또는 레거시 `[이미지 N: ...]` 마커(구 포맷) 둘 다 카운트.
-    md_markers = len(_IMG_MD_RE.findall(content_md)) + len(_IMG_MARKER_RE.findall(content_md))
+    md_markers = len(_IMG_MD_RE.findall(content_md))
 
     if image_result is not None and declared != generated + skipped:
         issues.append(

@@ -44,23 +44,18 @@ class Settings(BaseSettings):
     # LLM 모델 식별자 (SPEC-SEO-TEXT.md §5 — 역할별 매핑)
     # 창작 ([6] 아웃라인·도입부·image_prompts, [7] 본문) — SEO 성과 최대 지렛대
     model_opus: str = "claude-opus-4-7"
-    # 에디터 ([7-후] 약한 섹션 보강, [8] 문단 재생성) — 품질 하한선 상승
-    model_editor: str = "claude-opus-4-7"
+    # 에디터 ([7-후] 약한 섹션 보강, [8] 문단 재생성) — 미세 보정 역할이라 Sonnet 으로 충분.
+    # 비용 최적화(Opus 대비 ~5배 저렴)와 적정 품질 균형.
+    model_editor: str = "claude-sonnet-4-6"
     # 분류·검증 ([4a][4b] 추출, [8] LLM 검증, [8] 이미지 prompt 재생성)
     model_sonnet: str = "claude-sonnet-4-6"
     image_model: str = "gemini-2.5-flash-image"
     image_size: str = "1024x1024"
 
     # Extended Thinking — [6] 아웃라인 사고 예산. 0 이면 비활성.
-    # Anthropic 제약: thinking 은 tool_choice.type=="auto" 에서만 허용.
-    # 현재 outline_writer 는 tool 이름을 강제하므로 thinking 비활성이 기본.
-    # tool_choice=auto + 프롬프트 강제 방식으로 리팩토링 후 활성 재고.
+    # Anthropic 제약: thinking 은 tool_choice.type=="auto" 조합에서만 허용.
+    # outline_writer 가 auto + 프롬프트 강제 패턴으로 정비된 뒤 2000 으로 승격.
     outline_thinking_budget: int = 0
-
-    # 파이프라인 동작 상수
-    min_analyzed_samples: int = 7
-    retry_max_attempts: int = 2
-    llm_tool_use_timeout_seconds: int = 60
 
     # 웹 UI
     cors_origins: str = "http://localhost:3000"  # 쉼표 구분 복수 origin
@@ -76,10 +71,9 @@ class Settings(BaseSettings):
     # API 비용 (USD per 1M tokens, 2026-04 기준)
     cost_anthropic_opus_input: float = 15.0
     cost_anthropic_opus_output: float = 75.0
-    # 에디터는 기본적으로 model_opus 와 동일 모델 (Opus 4.7) 가정. 다른 모델로
-    # 분기할 경우 단가도 따로 설정.
-    cost_anthropic_editor_input: float = 15.0
-    cost_anthropic_editor_output: float = 75.0
+    # 에디터는 Sonnet 4.6 기준. model_editor 를 다른 모델로 바꾸면 이 단가도 동기화.
+    cost_anthropic_editor_input: float = 3.0
+    cost_anthropic_editor_output: float = 15.0
     cost_anthropic_sonnet_input: float = 3.0
     cost_anthropic_sonnet_output: float = 15.0
     cost_gemini_image_per_request: float = 0.04

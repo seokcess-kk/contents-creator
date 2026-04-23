@@ -139,7 +139,10 @@ def _build_even_image_map(
     result: ImageGenerationResult | None,
     section_count: int,
 ) -> dict[str, list[GeneratedImage]]:
-    """이미지를 코드로 균등 배치. LLM position 무시.
+    """이미지를 코드로 균등 배치 (안전 폴백 전용).
+
+    `_build_position_aware_map` 가 LLM 제안 position 을 검증하다 실패하거나
+    한 곳에 편중된 경우에만 호출된다. 직접 진입점으로 쓰지 말 것.
 
     배치 규칙:
     - 첫 번째 이미지: after_intro

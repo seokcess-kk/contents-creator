@@ -158,8 +158,7 @@ def list_recent(limit: int = 50) -> list[dict]:
             .limit(limit)
             .execute()
         )
-        rows = resp.data or []
-        return rows  # type: ignore[no-any-return]
+        return resp.data or []  # type: ignore[no-any-return]
     except Exception:
         logger.warning("recent results fetch failed", exc_info=True)
         raise HTTPException(status_code=500, detail="failed to fetch recent results") from None
