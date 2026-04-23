@@ -51,7 +51,7 @@ def _fetch_latest_row(slug: str, columns: str) -> dict | None:
         return None
 
 
-@router.get("/{slug}/latest/html")
+@router.get("/{slug}/latest/html", response_model=None)
 def get_html(slug: str) -> HTMLResponse:
     latest = _local_latest(slug)
     if latest is not None:
@@ -65,7 +65,7 @@ def get_html(slug: str) -> HTMLResponse:
     raise HTTPException(status_code=404, detail="HTML not found")
 
 
-@router.get("/{slug}/latest/markdown")
+@router.get("/{slug}/latest/markdown", response_model=None)
 def get_markdown(slug: str) -> FileResponse | PlainTextResponse:
     latest = _local_latest(slug)
     if latest is not None:
@@ -79,7 +79,7 @@ def get_markdown(slug: str) -> FileResponse | PlainTextResponse:
     raise HTTPException(status_code=404, detail="Markdown not found")
 
 
-@router.get("/{slug}/latest/outline")
+@router.get("/{slug}/latest/outline", response_model=None)
 def get_outline(slug: str) -> FileResponse | PlainTextResponse:
     latest = _local_latest(slug)
     if latest is not None:
@@ -93,7 +93,7 @@ def get_outline(slug: str) -> FileResponse | PlainTextResponse:
     raise HTTPException(status_code=404, detail="Outline not found")
 
 
-@router.get("/{slug}/latest/images/{filename}")
+@router.get("/{slug}/latest/images/{filename}", response_model=None)
 def get_image(slug: str, filename: str) -> FileResponse | RedirectResponse:
     # 경로 순회 공격 방지
     if ".." in filename or "/" in filename or "\\" in filename:
