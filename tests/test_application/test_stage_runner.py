@@ -281,6 +281,7 @@ class TestImageGeneration:
 
 
 class TestCompose:
+    @patch("application.stage_runner._save_generated_to_supabase")
     @patch("domain.composer.outline_md.convert_outline_to_md")
     @patch("domain.composer.naver_html.convert_to_naver_html")
     @patch("domain.composer.assembler.assemble_content")
@@ -289,6 +290,7 @@ class TestCompose:
         mock_assemble: MagicMock,
         mock_html: MagicMock,
         mock_outline_md: MagicMock,
+        mock_save_supabase: MagicMock,
         tmp_path: Path,
     ) -> None:
         from domain.compliance.model import ComplianceReport
@@ -321,3 +323,4 @@ class TestCompose:
         assert (tmp_path / "content" / "seo-content.md").exists()
         assert (tmp_path / "content" / "seo-content.html").exists()
         assert (tmp_path / "content" / "outline.md").exists()
+        mock_save_supabase.assert_called_once()
