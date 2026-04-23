@@ -221,7 +221,13 @@ def _extract_main_container(soup: BeautifulSoup) -> Tag:
     """`div.se-main-container` 우선. 없으면 `div.post_ct`, 없으면 `body`.
 
     셋 다 없으면 빈 Tag 를 반환해 extractor 가 빈 분석 결과로 전개되도록 한다.
+    `<script>`, `<style>`, `<noscript>`, `<template>` 은 본문 파싱 전 제거하여
+    JS 변수·CSS 토큰이 `get_text()` 결과에 섞이지 않도록 한다.
     """
+    for tag_name in ("script", "style", "noscript", "template"):
+        for t in soup.find_all(tag_name):
+            t.decompose()
+
     for selector in ("div.se-main-container", "div.post_ct", "body"):
         found = soup.select_one(selector)
         if isinstance(found, Tag):

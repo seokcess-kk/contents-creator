@@ -23,7 +23,8 @@ from domain.generation.model import BodyResult, Outline
 
 def _make_tool_response(data: dict[str, Any]) -> SimpleNamespace:
     block = SimpleNamespace(type="tool_use", input=data)
-    return SimpleNamespace(content=[block])
+    usage = SimpleNamespace(input_tokens=100, output_tokens=50)
+    return SimpleNamespace(content=[block], usage=usage)
 
 
 _VALID_BODY_DATA: dict[str, Any] = {
@@ -149,7 +150,10 @@ class TestGenerateBody:
         mock_client = MagicMock()
         mock_anthropic.Anthropic.return_value = mock_client
         text_block = SimpleNamespace(type="text", text="no tool")
-        mock_client.messages.create.return_value = SimpleNamespace(content=[text_block])
+        mock_client.messages.create.return_value = SimpleNamespace(
+            content=[text_block],
+            usage=SimpleNamespace(input_tokens=100, output_tokens=50),
+        )
 
         with pytest.raises(ValueError, match="tool_use"):
             generate_body(outline_without_intro, "톤", sample_pattern_card)

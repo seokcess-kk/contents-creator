@@ -86,3 +86,26 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+addopts = [
+    "--cov=domain",
+    "--cov=application",
+    "--cov-report=term-missing:skip-covered",
+    "--cov-fail-under=60",
+]
+
+[tool.coverage.run]
+branch = true
+omit = [
+    "tests/*",
+    "dev/*",
+    "scripts/*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "\\.\\.\\.",
+    "pragma: no cover",
+]

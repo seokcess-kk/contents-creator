@@ -552,25 +552,38 @@ def _save_compliance_report(report: ComplianceReport, output_dir: Path) -> None:
 
 
 def _drop_violating_image_prompts(outline: Outline, reporter: ProgressReporter) -> None:
-    """image_prompts compliance 검증. 위반 슬롯은 목록에서 제거한다.
+    """image_prompts compliance 검증 → 재생성 → 실패 슬롯만 제거.
 
-    fixer LLM 재생성 루프는 범위 밖이므로, 현 시점에선 "위반 = skip". [9] 단계가
-    자연스럽게 fewer 이미지로 진행하며, 최종 이미지 무결성 검증은 composer 단계에서.
+    1차: check_image_prompts 로 위반 감지
+    2차: fix_image_prompts 가 위반 슬롯을 LLM 으로 재생성 (최대 2회, validate_prompt 재통과)
+    3차: 재생성도 실패한 sequence 만 outline 에서 drop (→ [9] 에서 자연 skip)
     """
     from domain.compliance.checker import check_image_prompts
+    from domain.compliance.fixer import fix_image_prompts
 
     if not outline.image_prompts:
         return
     violations = check_image_prompts(list(outline.image_prompts))
     if not violations:
         return
-    bad_sequences = {v.section_index for v in violations if v.section_index is not None}
-    kept = [p for p in outline.image_prompts if p.sequence not in bad_sequences]
-    dropped = len(outline.image_prompts) - len(kept)
-    if dropped:
-        logger.warning("compliance.image_prompts.dropped sequences=%s", sorted(bad_sequences))
-        reporter.stage_progress(0, f"image_prompts 위반 {dropped}개 제거")
-        outline.image_prompts = kept
+
+    fixed_prompts, skipped_seqs, changelog = fix_image_prompts(
+        list(outline.image_prompts), violations
+    )
+    if changelog:
+        logger.info(
+            "compliance.image_prompts.regenerated count=%d sequences=%s",
+            len(changelog),
+            [c.section for c in changelog],
+        )
+        reporter.stage_progress(0, f"image_prompts 재생성 {len(changelog)}개")
+
+    if skipped_seqs:
+        logger.warning("compliance.image_prompts.dropped sequences=%s", sorted(skipped_seqs))
+        reporter.stage_progress(0, f"image_prompts 재생성 실패 {len(skipped_seqs)}개 제거")
+        fixed_prompts = [p for p in fixed_prompts if p.sequence not in set(skipped_seqs)]
+
+    outline.image_prompts = fixed_prompts
 
 
 # ── [9] 이미지 생성 ──

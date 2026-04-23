@@ -16,7 +16,8 @@ from domain.generation.outline_writer import generate_outline
 def _make_tool_response(data: dict[str, Any]) -> SimpleNamespace:
     """tool_use 블록을 가진 mock 응답 생성."""
     block = SimpleNamespace(type="tool_use", input=data)
-    return SimpleNamespace(content=[block])
+    usage = SimpleNamespace(input_tokens=100, output_tokens=50)
+    return SimpleNamespace(content=[block], usage=usage)
 
 
 _VALID_OUTLINE_DATA: dict[str, Any] = {
@@ -136,7 +137,10 @@ class TestGenerateOutline:
         mock_anthropic.Anthropic.return_value = mock_client
         # 텍스트 블록만 반환 (tool_use 없음)
         text_block = SimpleNamespace(type="text", text="no tool")
-        mock_client.messages.create.return_value = SimpleNamespace(content=[text_block])
+        mock_client.messages.create.return_value = SimpleNamespace(
+            content=[text_block],
+            usage=SimpleNamespace(input_tokens=100, output_tokens=50),
+        )
 
         with pytest.raises(ValueError, match="tool_use"):
             generate_outline(sample_pattern_card)

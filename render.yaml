@@ -4,6 +4,8 @@ services:
     runtime: docker
     plan: free
     dockerfilePath: ./Dockerfile
+    # 환경변수는 전부 런타임 주입 (sync: false → Render 대시보드에서 수동 입력).
+    # Dockerfile 에는 .env 를 COPY 하지 않으며 .dockerignore 가 추가로 차단한다.
     envVars:
       - key: ANTHROPIC_API_KEY
         sync: false
@@ -19,3 +21,10 @@ services:
         sync: false
       - key: CORS_ORIGINS
         sync: false
+      # 웹 API 인증용. 미설정 시 백엔드가 dev 모드(인증 비활성) 로 동작한다.
+      # 프론트엔드 NEXT_PUBLIC_API_KEY 와 동일 값 주입 필요.
+      - key: ADMIN_API_KEY
+        sync: false
+      # 단일 job 최대 실행 시간(초). 초과 시 soft timeout (상태만 timed_out 으로 전환).
+      - key: JOB_TIMEOUT_SECONDS
+        value: "3600"

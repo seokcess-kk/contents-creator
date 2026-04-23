@@ -17,6 +17,10 @@ from typing import Any
 import anthropic
 
 from config.settings import require, settings
+from domain.common.image_prompt_validator import (
+    InvalidImagePromptError,
+    validate_prompt,
+)
 from domain.common.usage import ApiUsage, record_usage
 from domain.compliance.model import ChangelogEntry, Violation
 from domain.compliance.rules import (
@@ -25,6 +29,8 @@ from domain.compliance.rules import (
     get_all_patterns,
     get_safe_alternatives,
 )
+
+MAX_IMAGE_PROMPT_FIX_ATTEMPTS = 2
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +45,19 @@ _FIX_TOOL: dict[str, Any] = {
         "properties": {
             "fixed_text": {"type": "string"},
             "change_summary": {"type": "string"},
+        },
+    },
+}
+
+_IMAGE_FIX_TOOL: dict[str, Any] = {
+    "name": "propose_image_prompt",
+    "description": "compliance 위반 없는 안전한 이미지 prompt 를 영어로 제안한다.",
+    "input_schema": {
+        "type": "object",
+        "required": ["prompt", "alt_text"],
+        "properties": {
+            "prompt": {"type": "string", "description": "영어 Gemini prompt, no text 필수"},
+            "alt_text": {"type": "string", "description": "한국어 alt"},
         },
     },
 }
@@ -286,3 +305,153 @@ def _parse_fix_response(
             result: str | None = block.input.get("fixed_text")
             return result
     return None
+
+
+# ── 이미지 prompt 재생성 ──
+
+
+def fix_image_prompts(
+    prompts: list[Any],
+    violations: list[Violation],
+) -> tuple[list[Any], list[int], list[ChangelogEntry]]:
+    """위반 이미지 prompt 를 LLM 재요청으로 안전 대체한다.
+
+    각 위반 sequence 에 대해 최대 MAX_IMAGE_PROMPT_FIX_ATTEMPTS(2) 회 시도.
+    생성된 대체안은 `validate_prompt` 로 다시 검증해 통과한 것만 반영.
+    2회 모두 실패하면 해당 sequence 를 skipped 리스트에 넣어 반환.
+
+    Args:
+        prompts: 원본 image_prompts 리스트 (Pydantic 모델 또는 dict).
+        violations: `check_image_prompts` 결과.
+
+    Returns:
+        (수정된 prompts, skipped sequence 리스트, changelog) 튜플.
+        수정된 prompts 는 입력과 같은 순서, 일부 요소만 prompt/alt_text 가 교체됨.
+        skipped sequence 는 2회 재시도 후에도 실패한 것들.
+    """
+    bad_sequences = {v.section_index for v in violations if v.section_index is not None}
+    if not bad_sequences:
+        return prompts, [], []
+
+    changelog: list[ChangelogEntry] = []
+    skipped: list[int] = []
+    result = list(prompts)
+
+    for i, p in enumerate(result):
+        seq = _get_attr(p, "sequence", None)
+        if seq is None or seq not in bad_sequences:
+            continue
+        original_prompt = _get_attr(p, "prompt", "")
+        original_alt = _get_attr(p, "alt_text", "")
+        related = [v for v in violations if v.section_index == seq]
+
+        new_prompt, new_alt = _regenerate_image_prompt(original_prompt, original_alt, related)
+        if new_prompt is None:
+            skipped.append(seq)
+            continue
+
+        _set_attr(p, "prompt", new_prompt)
+        _set_attr(p, "alt_text", new_alt or original_alt)
+        result[i] = p
+        changelog.append(
+            ChangelogEntry(
+                section=seq,
+                before=original_prompt,
+                after=new_prompt,
+                rule="image_prompt",
+                reason=f"compliance 위반 재생성 ({len(related)}건)",
+            )
+        )
+
+    return result, skipped, changelog
+
+
+def _regenerate_image_prompt(
+    original_prompt: str,
+    original_alt: str,
+    violations: list[Violation],
+) -> tuple[str | None, str | None]:
+    """단일 위반 prompt 를 LLM 으로 대체. validate_prompt 재통과할 때까지 최대 2회."""
+    api_key = require("anthropic_api_key")
+    client = anthropic.Anthropic(api_key=api_key)
+
+    reasons = "; ".join(v.reason for v in violations[:3]) or "compliance 위반"
+    system_prompt = (
+        "너는 한국어 의료 블로그용 Gemini 이미지 prompt 편집 전문가다.\n"
+        "주어진 prompt 에 compliance 위반이 있다. 같은 의미와 분위기를 유지하되 "
+        "위반을 제거한 안전한 영어 prompt 를 만들어라.\n\n"
+        "[필수 규칙]\n"
+        "- prompt 는 반드시 영어 (한국어 금지)\n"
+        "- 반드시 'no text' 또는 'no letters' 포함\n"
+        "- 인물 등장 시 반드시 'Korean' 명시 (예: Korean woman)\n"
+        "- 금지어 영구 배제: patient, before/after, surgery, injection, "
+        "medical procedure, naked, body comparison, 100%, guarantee\n"
+        "- 의료 맥락(환자/시술/전후 비교/신체 비교/효과 보장) 전면 금지\n"
+        "- 권장: realistic photography, natural lighting, lifestyle, food, landscape\n"
+    )
+
+    for attempt in range(MAX_IMAGE_PROMPT_FIX_ATTEMPTS):
+        try:
+            response = client.messages.create(  # type: ignore[call-overload]
+                model=settings.model_sonnet,
+                max_tokens=512,
+                tools=[_IMAGE_FIX_TOOL],
+                tool_choice={"type": "tool", "name": "propose_image_prompt"},
+                messages=[
+                    {
+                        "role": "user",
+                        "content": (
+                            f"[원본 prompt]\n{original_prompt}\n\n"
+                            f"[위반 사유]\n{reasons}\n\n"
+                            f"[원본 alt_text]\n{original_alt}\n"
+                        ),
+                    },
+                ],
+                system=system_prompt,
+            )
+            record_usage(
+                ApiUsage(
+                    provider="anthropic",
+                    model=settings.model_sonnet,
+                    input_tokens=response.usage.input_tokens,
+                    output_tokens=response.usage.output_tokens,
+                )
+            )
+        except Exception:
+            logger.exception("image prompt 재생성 LLM 호출 실패 (attempt %d)", attempt + 1)
+            continue
+
+        new_prompt, new_alt = _parse_image_fix_response(response)
+        if new_prompt is None:
+            continue
+
+        try:
+            validate_prompt(new_prompt)
+        except InvalidImagePromptError as exc:
+            logger.warning("image prompt 재생성 검증 실패 (attempt %d): %s", attempt + 1, exc)
+            continue
+        return new_prompt, new_alt
+
+    return None, None
+
+
+def _parse_image_fix_response(response: Any) -> tuple[str | None, str | None]:
+    for block in response.content:
+        if block.type == "tool_use" and block.name == "propose_image_prompt":
+            return block.input.get("prompt"), block.input.get("alt_text")
+    return None, None
+
+
+def _get_attr(obj: Any, name: str, default: Any) -> Any:
+    if hasattr(obj, name):
+        return getattr(obj, name)
+    if isinstance(obj, dict):
+        return obj.get(name, default)
+    return default
+
+
+def _set_attr(obj: Any, name: str, value: Any) -> None:
+    if isinstance(obj, dict):
+        obj[name] = value
+    else:
+        setattr(obj, name, value)

@@ -46,50 +46,90 @@ def normalize_to_mobile(url: str) -> str:
     return url
 
 
+def _fetch_one(
+    idx: int,
+    item: object,
+    client: BrightDataClient,
+    retry_count: int,
+) -> tuple[BlogPage | None, ScrapeFailure | None]:
+    """단일 URL fetch. 성공/실패 중 하나만 반환한다."""
+    original_url = str(item.url)  # type: ignore[attr-defined]
+    mobile_url = normalize_to_mobile(original_url)
+    logger.info(
+        "scrape.fetch idx=%s rank=%s url=%s retry=%s",
+        idx,
+        item.rank,  # type: ignore[attr-defined]
+        mobile_url,
+        retry_count,
+    )
+    try:
+        html = client.fetch(mobile_url)
+    except BrightDataError as exc:
+        logger.warning(
+            "scrape.failed idx=%s rank=%s url=%s retry=%s reason=%s",
+            idx,
+            item.rank,  # type: ignore[attr-defined]
+            mobile_url,
+            retry_count,
+            exc,
+        )
+        return None, ScrapeFailure(
+            idx=idx,
+            rank=item.rank,  # type: ignore[attr-defined]
+            url=item.url,  # type: ignore[attr-defined]
+            reason=str(exc),
+        )
+    return (
+        BlogPage(
+            idx=idx,
+            rank=item.rank,  # type: ignore[attr-defined]
+            url=item.url,  # type: ignore[attr-defined]
+            mobile_url=HttpUrl(mobile_url),
+            html=html,
+            fetched_at=datetime.now().astimezone(),
+            retries=retry_count,
+        ),
+        None,
+    )
+
+
 def scrape_pages(serp: SerpResults, client: BrightDataClient) -> ScrapeResult:
     """SERP 결과의 각 URL 을 순차 fetch 해 ScrapeResult 로 반환.
 
-    성공 수 < MIN_COLLECTED_PAGES 면 InsufficientCollectionError 발생.
+    1차 수집 후 성공 수 < MIN_COLLECTED_PAGES 이면 실패 URL 만 1회 batch 재시도.
+    BrightDataClient 자체도 tenacity 로 3회 시도하므로, 이 재시도는 "새 세션"을
+    주는 의미. 재시도 후에도 미달이면 InsufficientCollectionError.
     """
     successful: list[BlogPage] = []
     failed: list[ScrapeFailure] = []
 
     for idx, item in enumerate(serp.results):
-        original_url = str(item.url)
-        mobile_url = normalize_to_mobile(original_url)
-        logger.info("scrape.fetch idx=%s rank=%s url=%s", idx, item.rank, mobile_url)
+        page, fail = _fetch_one(idx, item, client, retry_count=0)
+        if page is not None:
+            successful.append(page)
+        elif fail is not None:
+            failed.append(fail)
 
-        try:
-            html = client.fetch(mobile_url)
-        except BrightDataError as exc:
-            logger.warning(
-                "scrape.failed idx=%s rank=%s url=%s reason=%s",
-                idx,
-                item.rank,
-                mobile_url,
-                exc,
-            )
-            failed.append(
-                ScrapeFailure(
-                    idx=idx,
-                    rank=item.rank,
-                    url=item.url,
-                    reason=str(exc),
-                )
-            )
-            continue
-
-        successful.append(
-            BlogPage(
-                idx=idx,
-                rank=item.rank,
-                url=item.url,
-                mobile_url=HttpUrl(mobile_url),
-                html=html,
-                fetched_at=datetime.now().astimezone(),
-                retries=0,
-            )
+    if len(successful) < MIN_COLLECTED_PAGES and failed:
+        logger.warning(
+            "scrape.shortage successful=%s failed=%s min=%s — 실패 URL batch 재시도",
+            len(successful),
+            len(failed),
+            MIN_COLLECTED_PAGES,
         )
+        retry_targets = list(failed)
+        failed = []
+        for fail in retry_targets:
+            page, new_fail = _fetch_one(
+                fail.idx,
+                _FakeItem(rank=fail.rank, url=fail.url),
+                client,
+                retry_count=1,
+            )
+            if page is not None:
+                successful.append(page)
+            elif new_fail is not None:
+                failed.append(new_fail)
 
     logger.info("scrape.done successful=%s failed=%s", len(successful), len(failed))
 
@@ -99,3 +139,13 @@ def scrape_pages(serp: SerpResults, client: BrightDataClient) -> ScrapeResult:
         )
 
     return ScrapeResult(successful=successful, failed=failed)
+
+
+class _FakeItem:
+    """retry 시 SerpResult 대체. _fetch_one 이 요구하는 rank/url 속성만 노출."""
+
+    __slots__ = ("rank", "url")
+
+    def __init__(self, rank: int, url: HttpUrl) -> None:
+        self.rank = rank
+        self.url = url

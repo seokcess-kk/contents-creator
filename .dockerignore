@@ -8,9 +8,13 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 output/
+_workspace/
 dev/
 tasks/
 tests/
 web/frontend/
 *.md
 !domain/**/*.md
+# 환경 파일은 런타임 Render 대시보드에서 주입, 이미지에 넣지 않는다
+config/.env
+*.local.json

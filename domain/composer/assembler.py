@@ -104,7 +104,9 @@ def _build_even_image_map(
 
     배치 규칙:
     - 첫 번째 이미지: after_intro
-    - 나머지: 섹션 사이에 균등 배분
+    - 나머지 N-1개: 섹션 1..section_count 에 균등 분배.
+      N-1 ≤ section_count 면 각 섹션에 최대 1개씩.
+      N-1 > section_count 면 초과분을 round-robin 으로 추가 배정.
     """
     if result is None:
         return {}
@@ -118,11 +120,21 @@ def _build_even_image_map(
     mapping["after_intro"] = [matched[0]]
 
     remaining = matched[1:]
-    if remaining and section_count > 0:
-        for i, img in enumerate(remaining):
-            sec_idx = min(i + 1, section_count)
-            key = f"section_{sec_idx}_end"
-            mapping.setdefault(key, []).append(img)
+    if not remaining or section_count <= 0:
+        return mapping
+
+    count = len(remaining)
+    slots = list(range(1, section_count + 1))
+    # 균등 분배: 섹션 수보다 이미지가 적으면 step 으로 건너뛰고, 많으면 round-robin.
+    if count <= section_count:
+        # 선형 간격으로 섹션 선택 → 앞·중간·뒤에 고르게
+        chosen = [slots[round(i * (section_count - 1) / max(count - 1, 1))] for i in range(count)]
+    else:
+        chosen = [slots[i % section_count] for i in range(count)]
+
+    for img, sec_idx in zip(remaining, chosen, strict=False):
+        key = f"section_{sec_idx}_end"
+        mapping.setdefault(key, []).append(img)
 
     return mapping
 

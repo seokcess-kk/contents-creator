@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import logging
 import re
 import subprocess
@@ -26,15 +27,13 @@ from application.models import (
     StageStatus,
     ValidateResult,
 )
-from application.progress import LoggingProgressReporter, ProgressReporter
+from application.progress import JobCancelled, LoggingProgressReporter, ProgressReporter
 from application.usage_tracker import save_usage_to_supabase, summarize_usages
 from domain.common.usage import collect_usage, record_usage, reset_usage, run_in_isolated_usage_ctx
 
 logger = logging.getLogger(__name__)
 
 # 웹 UI 에서 주입하는 job_id (contextvars 로 전달)
-import contextvars
-
 _job_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "pipeline_job_id", default=None
 )
@@ -555,6 +554,16 @@ def run_pipeline(
         status = gen_result.status
         error = gen_result.error
 
+    except JobCancelled as exc:
+        logger.info("run_pipeline cancelled: %s", exc)
+        return PipelineResult(
+            status=StageStatus.SKIPPED,
+            keyword=keyword,
+            slug=slug,
+            output_path=output_dir,
+            stages=all_stages,
+            error="cancelled by user",
+        )
     except Exception as exc:
         logger.exception("run_pipeline 예기치 않은 에러")
         _reporter.pipeline_error("pipeline", exc)
@@ -594,6 +603,13 @@ def run_analyze_only(
 
     try:
         result, _card = _run_analysis_stages(keyword, slug, output_dir, _reporter)
+    except JobCancelled:
+        return AnalyzeResult(
+            status=StageStatus.SKIPPED,
+            keyword=keyword,
+            slug=slug,
+            error="cancelled by user",
+        )
     except Exception as exc:
         logger.exception("run_analyze_only 예기치 않은 에러")
         _reporter.pipeline_error("analysis", exc)
@@ -658,6 +674,13 @@ def run_generate_only(
             _reporter,
             generate_images,
             regenerate_images,
+        )
+    except JobCancelled:
+        return GenerateResult(
+            status=StageStatus.SKIPPED,
+            keyword=kw,
+            slug=slug,
+            error="cancelled by user",
         )
     except Exception as exc:
         logger.exception("run_generate_only 예기치 않은 에러")

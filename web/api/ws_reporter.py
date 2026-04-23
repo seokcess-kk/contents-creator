@@ -9,19 +9,30 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from application.progress import JobCancelled
+
 if TYPE_CHECKING:
     from web.api.job_manager import Job, JobEventBus
 
 
 class WebSocketProgressReporter:
-    """application.progress.ProgressReporter 프로토콜 구현체."""
+    """application.progress.ProgressReporter 프로토콜 구현체.
+
+    stage_start 에서 job.cancel_requested 플래그를 검사해 JobCancelled 를 raise.
+    이 지점이 협력적 취소(cooperative cancellation)의 유일한 폴링 지점이다.
+    """
 
     def __init__(self, job_id: str, event_bus: JobEventBus, job: Job) -> None:
         self._job_id = job_id
         self._bus = event_bus
         self._job = job
 
+    def _check_cancel(self) -> None:
+        if self._job.cancel_requested:
+            raise JobCancelled(f"job {self._job_id} cancelled by user")
+
     def stage_start(self, stage: str, total: int | None = None) -> None:
+        self._check_cancel()
         event: dict[str, Any] = {
             "type": "stage_start",
             "stage": stage,

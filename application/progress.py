@@ -18,6 +18,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class JobCancelled(Exception):  # noqa: N818 — 제어 예외, Error 접미사 부적합
+    """사용자/시스템 요청으로 실행 중인 job 이 취소되었음을 알리는 제어 예외.
+
+    reporter 가 stage_start 호출 시 cancel_requested 플래그를 감지하면 raise.
+    orchestrator 의 try/except 가 이 예외를 별도 처리해 status=cancelled 로 반환한다.
+    """
+
+
 class ProgressReporter(Protocol):
     """파이프라인 진행 상황 콜백 프로토콜.
 

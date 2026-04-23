@@ -165,14 +165,40 @@ def _save_to_supabase(card: PatternCard, output_path: str) -> None:
 
 
 def load_pattern_card(path: Path) -> PatternCard:
-    """JSON → PatternCard. schema_version 불일치 시 경고 로그."""
+    """JSON → PatternCard. schema_version 불일치 시 migrate_pattern_card 시도."""
     raw: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
-    version = raw.get("schema_version", "unknown")
+    version = str(raw.get("schema_version", "unknown"))
     if version != PATTERN_CARD_SCHEMA_VERSION:
         logger.warning(
-            "pattern_card.version_mismatch expected=%s got=%s path=%s",
+            "pattern_card.version_mismatch expected=%s got=%s path=%s — migrating",
             PATTERN_CARD_SCHEMA_VERSION,
             version,
             path,
         )
+        raw = migrate_pattern_card(raw, version, PATTERN_CARD_SCHEMA_VERSION)
     return PatternCard.model_validate(raw)
+
+
+def migrate_pattern_card(raw: dict[str, Any], from_version: str, to_version: str) -> dict[str, Any]:
+    """PatternCard JSON 을 구 스키마에서 신 스키마로 변환한다.
+
+    현재 지원 버전은 2.0 단일이므로 규칙이 비어 있지만, 필드 추가·이름 변경 시
+    이 함수에 분기를 추가한다. 알려지지 않은 버전이면 그대로 반환(best-effort).
+    Pydantic model_validate 가 최종 필드 검증을 담당하므로 허용 가능한 수준까지만
+    변환하면 된다.
+
+    예시 (향후):
+        if from_version == "2.0" and to_version == "2.1":
+            raw.setdefault("new_field", [])
+    """
+    if from_version == to_version:
+        return raw
+    # 향후 마이그레이션 분기 추가 지점
+    logger.warning(
+        "pattern_card.migrate.unhandled from=%s to=%s — passthrough",
+        from_version,
+        to_version,
+    )
+    # 최소한 schema_version 만 신 버전으로 교체해 Pydantic 이 model_validate 하도록
+    raw["schema_version"] = to_version
+    return raw
