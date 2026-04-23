@@ -122,8 +122,9 @@ class TestGenerateOutline:
         assert len(tools) == 1
         assert tools[0]["name"] == "record_outline"
         tool_choice = call_kwargs.kwargs.get("tool_choice", {})
-        # thinking 비활성 기본값과 호환. tool 이름 강제로 안정적 tool_use 응답.
-        assert tool_choice.get("type") == "tool"
+        # outline_thinking_budget > 0 기본값 → tool_choice=auto (thinking 호환).
+        # 프롬프트 강제 + tool_use 누락 시 재시도로 구조화 응답 보장.
+        assert tool_choice.get("type") == "auto"
 
     @patch("domain.common.anthropic_client.anthropic")
     @patch("domain.common.anthropic_client.require")

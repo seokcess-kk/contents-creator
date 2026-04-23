@@ -53,9 +53,10 @@ class Settings(BaseSettings):
     image_size: str = "1024x1024"
 
     # Extended Thinking — [6] 아웃라인 사고 예산. 0 이면 비활성.
-    # Anthropic 제약: thinking 은 tool_choice.type=="auto" 조합에서만 허용.
-    # outline_writer 가 auto + 프롬프트 강제 패턴으로 정비된 뒤 2000 으로 승격.
-    outline_thinking_budget: int = 0
+    # outline_writer 는 thinking 활성 시 tool_choice=auto + 프롬프트 강제 + tool_use
+    # 누락 시 1회 재시도 패턴으로 Anthropic 제약을 우회한다.
+    # 복잡 제약 동시 충족(SEO·의료법·톤·DIA·키워드 밀도)에 효과적.
+    outline_thinking_budget: int = 2000
 
     # 웹 UI
     cors_origins: str = "http://localhost:3000"  # 쉼표 구분 복수 origin
