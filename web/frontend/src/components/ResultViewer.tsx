@@ -21,17 +21,17 @@ export default function ResultViewer({ slug, imagesGenerated }: Props) {
   ];
 
   return (
-    <div className="bg-white rounded-lg shadow overflow-hidden">
+    <div className="bg-white rounded-lg shadow-sm ring-1 ring-gray-200 overflow-hidden">
       {/* 탭 */}
       <div className="border-b border-gray-200 flex">
         {tabs.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+            className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
               tab === t.key
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-gray-500 hover:text-gray-700"
+                ? "border-blue-600 text-blue-700"
+                : "border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50"
             }`}
           >
             {t.label}
@@ -76,7 +76,7 @@ function MarkdownView({ slug, type = "markdown" }: { slug: string; type?: string
       <button
         onClick={load}
         disabled={loading}
-        className="text-blue-600 text-sm hover:underline"
+        className="text-blue-700 text-sm font-medium hover:underline"
       >
         {loading ? "로딩 중..." : "불러오기"}
       </button>
@@ -84,7 +84,7 @@ function MarkdownView({ slug, type = "markdown" }: { slug: string; type?: string
   }
 
   return (
-    <pre className="text-sm bg-gray-50 rounded p-4 overflow-auto max-h-[600px] whitespace-pre-wrap">
+    <pre className="text-sm text-gray-800 bg-gray-50 ring-1 ring-gray-200 rounded p-4 overflow-auto max-h-[600px] whitespace-pre-wrap">
       {content}
     </pre>
   );
@@ -94,14 +94,14 @@ function ImagesGrid({ slug, count }: { slug: string; count: number }) {
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
       {Array.from({ length: count }, (_, i) => (
-        <div key={i} className="border rounded-lg overflow-hidden">
+        <div key={i} className="border border-gray-200 rounded-lg overflow-hidden">
           <img
             src={`/api/results/${slug}/latest/images/image_${i + 1}.png`}
             alt={`생성 이미지 ${i + 1}`}
             className="w-full h-auto"
             loading="lazy"
           />
-          <p className="text-xs text-gray-500 text-center py-1">
+          <p className="text-xs text-gray-700 text-center py-1 bg-gray-50">
             image_{i + 1}.png
           </p>
         </div>

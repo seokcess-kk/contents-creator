@@ -4,10 +4,10 @@ import Link from "next/link";
 import type { Job } from "@/types";
 
 const STATUS_STYLES: Record<string, string> = {
-  pending: "bg-gray-100 text-gray-600",
-  running: "bg-blue-100 text-blue-700",
-  succeeded: "bg-green-100 text-green-700",
-  failed: "bg-red-100 text-red-700",
+  pending: "bg-gray-100 text-gray-700 ring-1 ring-inset ring-gray-200",
+  running: "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-200",
+  succeeded: "bg-green-50 text-green-700 ring-1 ring-inset ring-green-200",
+  failed: "bg-red-50 text-red-700 ring-1 ring-inset ring-red-200",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -52,22 +52,22 @@ interface Props {
 export default function JobList({ jobs }: Props) {
   if (jobs.length === 0) {
     return (
-      <div className="text-center text-gray-400 py-12">
+      <div className="text-center text-gray-500 py-12 bg-white rounded-lg ring-1 ring-gray-200">
         아직 작업이 없습니다. 위에서 키워드를 입력해 시작하세요.
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-lg shadow overflow-hidden">
+    <div className="bg-white rounded-lg shadow-sm ring-1 ring-gray-200 overflow-hidden">
       <table className="w-full text-sm">
-        <thead className="bg-gray-50 text-left text-gray-500">
+        <thead className="bg-gray-50 text-left text-gray-700">
           <tr>
-            <th className="px-4 py-3 font-medium">키워드</th>
-            <th className="px-4 py-3 font-medium">모드</th>
-            <th className="px-4 py-3 font-medium">상태</th>
-            <th className="px-4 py-3 font-medium">시작</th>
-            <th className="px-4 py-3 font-medium">소요시간</th>
+            <th className="px-4 py-3 font-semibold">키워드</th>
+            <th className="px-4 py-3 font-semibold">모드</th>
+            <th className="px-4 py-3 font-semibold">상태</th>
+            <th className="px-4 py-3 font-semibold">시작</th>
+            <th className="px-4 py-3 font-semibold">소요시간</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
@@ -76,27 +76,27 @@ export default function JobList({ jobs }: Props) {
               <td className="px-4 py-3">
                 <Link
                   href={`/jobs/${job.id}`}
-                  className="text-blue-600 hover:underline font-medium"
+                  className="text-blue-700 hover:text-blue-800 hover:underline font-semibold"
                 >
                   {job.keyword || "(없음)"}
                 </Link>
               </td>
-              <td className="px-4 py-3 text-gray-600">
+              <td className="px-4 py-3 text-gray-800">
                 {TYPE_LABELS[job.type] ?? job.type}
               </td>
               <td className="px-4 py-3">
                 <span
-                  className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[job.status] ?? ""}`}
+                  className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${STATUS_STYLES[job.status] ?? ""}`}
                 >
                   {STATUS_LABELS[job.status] ?? job.status}
                 </span>
               </td>
-              <td className="px-4 py-3 text-gray-500">
+              <td className="px-4 py-3 text-gray-700">
                 {formatTime(job.started_at)}
               </td>
-              <td className="px-4 py-3 text-gray-500">
+              <td className="px-4 py-3 text-gray-700">
                 {job.status === "running" ? (
-                  <span className="text-blue-600 animate-pulse">
+                  <span className="text-blue-700 font-medium animate-pulse">
                     {formatDuration(job.started_at, null)}
                   </span>
                 ) : (

@@ -56,8 +56,8 @@ export default function ProgressTracker({ events, jobType }: Props) {
   }, [events]);
 
   return (
-    <div className="bg-white rounded-lg shadow p-6 mb-6">
-      <h3 className="text-sm font-semibold text-gray-500 mb-4">파이프라인 진행</h3>
+    <div className="bg-white rounded-lg shadow-sm ring-1 ring-gray-200 p-6 mb-6">
+      <h3 className="text-sm font-semibold text-gray-700 mb-4">파이프라인 진행</h3>
 
       <div className="flex items-center gap-1">
         {stages.map((stage, i) => {
@@ -67,20 +67,20 @@ export default function ProgressTracker({ events, jobType }: Props) {
               {i > 0 && (
                 <div
                   className={`w-6 h-0.5 ${
-                    state !== "pending" ? "bg-blue-400" : "bg-gray-200"
+                    state !== "pending" ? "bg-blue-400" : "bg-gray-300"
                   }`}
                 />
               )}
               <div className="flex flex-col items-center" title={stage.label}>
                 <div
-                  className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium border-2 transition-colors ${
+                  className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold border-2 transition-colors ${
                     state === "done"
                       ? "bg-green-500 border-green-500 text-white"
                       : state === "running"
-                        ? "bg-blue-500 border-blue-500 text-white animate-pulse"
+                        ? "bg-blue-600 border-blue-600 text-white animate-pulse"
                         : state === "failed"
                           ? "bg-red-500 border-red-500 text-white"
-                          : "bg-white border-gray-300 text-gray-400"
+                          : "bg-white border-gray-300 text-gray-500"
                   }`}
                 >
                   {state === "done"
@@ -89,7 +89,7 @@ export default function ProgressTracker({ events, jobType }: Props) {
                       ? "✕"
                       : i + 1}
                 </div>
-                <span className="text-[10px] text-gray-500 mt-1 whitespace-nowrap">
+                <span className="text-[11px] font-medium text-gray-700 mt-1 whitespace-nowrap">
                   {stage.label}
                 </span>
               </div>
@@ -99,7 +99,7 @@ export default function ProgressTracker({ events, jobType }: Props) {
       </div>
 
       {currentDetail && (
-        <p className="text-xs text-gray-500 mt-3 ml-1">{currentDetail}</p>
+        <p className="text-xs text-gray-600 mt-3 ml-1">{currentDetail}</p>
       )}
     </div>
   );

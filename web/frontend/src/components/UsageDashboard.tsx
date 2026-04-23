@@ -37,8 +37,8 @@ export default function UsageDashboard() {
 
   useEffect(() => { load(); }, [load]);
 
-  if (loading && !data) return <div className="text-gray-400 py-8 text-center">로딩 중...</div>;
-  if (!data || data.error) return <div className="text-red-500 py-8 text-center">{data?.error ?? "데이터 없음"}</div>;
+  if (loading && !data) return <div className="text-gray-600 py-8 text-center">로딩 중...</div>;
+  if (!data || data.error) return <div className="text-red-600 py-8 text-center">{data?.error ?? "데이터 없음"}</div>;
 
   const t = data.totals;
   const maxCost = Math.max(...data.by_provider.map((p) => p.cost), 0.001);
@@ -51,8 +51,10 @@ export default function UsageDashboard() {
           <button
             key={d}
             onClick={() => setDays(d)}
-            className={`px-3 py-1.5 rounded text-sm ${
-              days === d ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            className={`px-3 py-1.5 rounded text-sm font-medium ${
+              days === d
+                ? "bg-blue-600 text-white"
+                : "bg-white text-gray-800 ring-1 ring-gray-300 hover:bg-gray-100"
             }`}
           >
             {d}일
@@ -68,20 +70,20 @@ export default function UsageDashboard() {
       </div>
 
       {/* 제공자별 바 차트 */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-sm font-semibold text-gray-500 mb-4">제공자별 비용</h3>
+      <div className="bg-white rounded-lg shadow-sm ring-1 ring-gray-200 p-6">
+        <h3 className="text-sm font-semibold text-gray-700 mb-4">제공자별 비용</h3>
         <div className="space-y-3">
           {data.by_provider.map((p) => (
             <div key={p.provider} className="flex items-center gap-3">
-              <span className="w-20 text-sm text-gray-600 capitalize">{p.provider}</span>
+              <span className="w-20 text-sm font-medium text-gray-800 capitalize">{p.provider}</span>
               <div className="flex-1 bg-gray-100 rounded-full h-6 overflow-hidden">
                 <div
                   className={`h-full rounded-full ${providerColor(p.provider)}`}
                   style={{ width: `${(p.cost / maxCost) * 100}%`, minWidth: p.cost > 0 ? "2rem" : "0" }}
                 />
               </div>
-              <span className="w-20 text-right text-sm font-medium">${p.cost.toFixed(3)}</span>
-              <span className="w-16 text-right text-xs text-gray-400">{p.requests}건</span>
+              <span className="w-20 text-right text-sm font-semibold text-gray-900">${p.cost.toFixed(3)}</span>
+              <span className="w-16 text-right text-xs text-gray-600">{p.requests}건</span>
             </div>
           ))}
         </div>
@@ -89,24 +91,24 @@ export default function UsageDashboard() {
 
       {/* 일별 추이 */}
       {data.by_day.length > 0 && (
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-sm font-semibold text-gray-500 mb-4">일별 추이</h3>
+        <div className="bg-white rounded-lg shadow-sm ring-1 ring-gray-200 p-6">
+          <h3 className="text-sm font-semibold text-gray-700 mb-4">일별 추이</h3>
           <table className="w-full text-sm">
-            <thead className="text-gray-400 text-left">
+            <thead className="text-gray-600 text-left border-b border-gray-200">
               <tr>
-                <th className="pb-2 font-medium">날짜</th>
-                <th className="pb-2 font-medium text-right">요청</th>
-                <th className="pb-2 font-medium text-right">토큰</th>
-                <th className="pb-2 font-medium text-right">비용</th>
+                <th className="pb-2 font-semibold">날짜</th>
+                <th className="pb-2 font-semibold text-right">요청</th>
+                <th className="pb-2 font-semibold text-right">토큰</th>
+                <th className="pb-2 font-semibold text-right">비용</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody className="divide-y divide-gray-100">
               {data.by_day.slice(0, 14).map((d) => (
                 <tr key={d.date}>
-                  <td className="py-1.5 text-gray-600">{d.date}</td>
-                  <td className="py-1.5 text-right">{d.requests}</td>
-                  <td className="py-1.5 text-right text-gray-500">{formatNumber(d.tokens)}</td>
-                  <td className="py-1.5 text-right font-medium">${d.cost.toFixed(3)}</td>
+                  <td className="py-1.5 text-gray-800">{d.date}</td>
+                  <td className="py-1.5 text-right text-gray-800">{d.requests}</td>
+                  <td className="py-1.5 text-right text-gray-700">{formatNumber(d.tokens)}</td>
+                  <td className="py-1.5 text-right font-semibold text-gray-900">${d.cost.toFixed(3)}</td>
                 </tr>
               ))}
             </tbody>
@@ -116,22 +118,22 @@ export default function UsageDashboard() {
 
       {/* 최근 작업 */}
       {data.recent_jobs.length > 0 && (
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-sm font-semibold text-gray-500 mb-4">최근 작업별 비용</h3>
+        <div className="bg-white rounded-lg shadow-sm ring-1 ring-gray-200 p-6">
+          <h3 className="text-sm font-semibold text-gray-700 mb-4">최근 작업별 비용</h3>
           <table className="w-full text-sm">
-            <thead className="text-gray-400 text-left">
+            <thead className="text-gray-600 text-left border-b border-gray-200">
               <tr>
-                <th className="pb-2 font-medium">키워드</th>
-                <th className="pb-2 font-medium text-right">요청</th>
-                <th className="pb-2 font-medium text-right">비용</th>
+                <th className="pb-2 font-semibold">키워드</th>
+                <th className="pb-2 font-semibold text-right">요청</th>
+                <th className="pb-2 font-semibold text-right">비용</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody className="divide-y divide-gray-100">
               {data.recent_jobs.map((j, i) => (
                 <tr key={i}>
-                  <td className="py-1.5 text-gray-600">{j.keyword || j.job_id || "CLI"}</td>
-                  <td className="py-1.5 text-right">{j.requests}</td>
-                  <td className="py-1.5 text-right font-medium">${j.cost.toFixed(3)}</td>
+                  <td className="py-1.5 text-gray-800">{j.keyword || j.job_id || "CLI"}</td>
+                  <td className="py-1.5 text-right text-gray-800">{j.requests}</td>
+                  <td className="py-1.5 text-right font-semibold text-gray-900">${j.cost.toFixed(3)}</td>
                 </tr>
               ))}
             </tbody>
@@ -144,10 +146,10 @@ export default function UsageDashboard() {
 
 function SummaryCard({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
-    <div className="bg-white rounded-lg shadow p-5">
-      <p className="text-xs text-gray-400 uppercase tracking-wide">{label}</p>
-      <p className="text-2xl font-bold mt-1">{value}</p>
-      <p className="text-xs text-gray-500 mt-1">{sub}</p>
+    <div className="bg-white rounded-lg shadow-sm ring-1 ring-gray-200 p-5">
+      <p className="text-xs text-gray-600 uppercase tracking-wide font-semibold">{label}</p>
+      <p className="text-2xl font-bold text-gray-900 mt-1">{value}</p>
+      <p className="text-xs text-gray-600 mt-1">{sub}</p>
     </div>
   );
 }

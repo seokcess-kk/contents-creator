@@ -9,7 +9,7 @@ export default function HtmlPreview({ slug }: Props) {
   const src = `/api/results/${slug}/latest/html`;
 
   return (
-    <div className="border rounded-lg overflow-hidden bg-white">
+    <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
       <iframe
         src={src}
         title="SEO 원고 미리보기"

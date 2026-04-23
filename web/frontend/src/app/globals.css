@@ -1,8 +1,9 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f9fafb;
+  --foreground: #111827;
+  color-scheme: light;
 }
 
 @theme inline {
@@ -12,15 +13,23 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+html,
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, "Apple SD Gothic Neo",
+    "Noto Sans KR", sans-serif;
+}
+
+/* 폼 요소의 가독성 — 일부 브라우저에서 기본 글자색이 연해지는 문제 방지 */
+input,
+textarea,
+select,
+button {
+  color: inherit;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #9ca3af;
 }

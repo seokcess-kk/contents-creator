@@ -42,8 +42,8 @@ export default function JobDetailPage({
   if (error) {
     return (
       <div className="text-center py-12">
-        <p className="text-red-500 mb-4">{error}</p>
-        <Link href="/" className="text-blue-600 hover:underline">
+        <p className="text-red-600 mb-4 font-medium">{error}</p>
+        <Link href="/" className="text-blue-700 hover:underline font-medium">
           대시보드로 돌아가기
         </Link>
       </div>
@@ -51,7 +51,7 @@ export default function JobDetailPage({
   }
 
   if (!job) {
-    return <div className="text-center py-12 text-gray-400">로딩 중...</div>;
+    return <div className="text-center py-12 text-gray-600">로딩 중...</div>;
   }
 
   const isFinished = job.status === "succeeded" || job.status === "failed";
@@ -63,16 +63,16 @@ export default function JobDetailPage({
       {/* 헤더 */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <Link href="/" className="text-sm text-gray-500 hover:underline">
+          <Link href="/" className="text-sm text-gray-600 hover:text-blue-700 hover:underline">
             &larr; 대시보드
           </Link>
-          <h1 className="text-xl font-bold mt-1">{job.keyword || "(키워드 없음)"}</h1>
-          <p className="text-sm text-gray-500">
+          <h1 className="text-xl font-bold text-gray-900 mt-1">{job.keyword || "(키워드 없음)"}</h1>
+          <p className="text-sm text-gray-700">
             {job.type === "pipeline" ? "전체 파이프라인" : job.type === "analyze" ? "분석" : "생성"}
             {" · "}
             <StatusBadge status={job.status} />
             {job.started_at && (
-              <span className="ml-2 text-gray-400">
+              <span className="ml-2 text-gray-600">
                 {formatDuration(job.started_at, job.status === "running" ? null : job.finished_at)}
               </span>
             )}
@@ -111,10 +111,10 @@ function formatDuration(start: string | null, end: string | null): string {
 
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
-    pending: "text-gray-500",
-    running: "text-blue-600",
-    succeeded: "text-green-600",
-    failed: "text-red-600",
+    pending: "text-gray-700",
+    running: "text-blue-700",
+    succeeded: "text-green-700",
+    failed: "text-red-700",
   };
   const labels: Record<string, string> = {
     pending: "대기 중",
@@ -123,7 +123,7 @@ function StatusBadge({ status }: { status: string }) {
     failed: "실패",
   };
   return (
-    <span className={`font-medium ${styles[status] ?? ""}`}>
+    <span className={`font-semibold ${styles[status] ?? ""}`}>
       {labels[status] ?? status}
     </span>
   );
