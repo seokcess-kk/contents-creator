@@ -391,14 +391,13 @@ def _run_generation_stages(
         )
 
     if not compliance.passed:
-        return GenerateResult(
-            status=StageStatus.FAILED,
-            keyword=keyword,
-            slug=slug,
-            compliance_passed=False,
-            compliance_iterations=compliance.iterations,
-            stages=stages,
-            error="의료법 검증 최대 재시도 후에도 위반 잔존",
+        # 강제 발행 모드: 3회 재시도 후에도 위반 잔존 시 [9][10] 을 계속 진행해
+        # 사용자가 UI 프리뷰에서 위반 지점을 확인하고 수동 수정할 수 있게 한다.
+        # 위반 마킹은 run_stage_compose 가 content_md 에 삽입한다.
+        logger.warning(
+            "compliance.forced_publish iterations=%d remaining_violations=%d",
+            compliance.iterations,
+            len(compliance.violations),
         )
 
     # [9] 이미지 생성 — 옵션 단계: 실패/스킵해도 파이프라인 계속.
@@ -454,7 +453,7 @@ def _run_generation_stages(
         images_dir=output_dir / "images" if img_gen > 0 else None,
         images_generated=img_gen,
         images_skipped=img_skip,
-        compliance_passed=True,
+        compliance_passed=compliance.passed,
         compliance_iterations=compliance.iterations,
         stages=stages,
     )

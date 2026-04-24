@@ -716,6 +716,57 @@ def run_stage_image_generation(
 # ── [10] 조립 ──
 
 
+def _mark_compliance_violations(content_md: str, report: ComplianceReport) -> str:
+    """강제 발행 모드: 잔존 위반 지점을 본문에 표시한다.
+
+    - 상단에 경고 배너 (blockquote) 를 삽입해 위반 전체 목록을 제공
+    - 각 위반의 text_snippet 을 본문에서 찾아 **⚠️ ... ⚠️** 로 래핑
+    - 화이트리스트 호환 (blockquote/strong/hr 만 사용)
+    - snippet 이 본문에 없으면 (fixer 가 이후 텍스트를 변형) 래핑 스킵, 배너만 유지
+    """
+    banner = _build_compliance_banner(report)
+    marked_body = _wrap_violation_snippets(content_md, report)
+    return banner + marked_body
+
+
+def _build_compliance_banner(report: ComplianceReport) -> str:
+    """상단 경고 배너 생성. blockquote + strong 으로 네이버 화이트리스트 호환."""
+    lines: list[str] = []
+    lines.append("> ⚠️ **의료법 검증 미통과 — 강제 발행**")
+    lines.append(
+        f"> {report.iterations}회 재시도 후에도 아래 위반이 해소되지 않았습니다. "
+        "네이버 업로드 전 **⚠️** 로 표시된 부분을 수동 확인·수정해 주세요."
+    )
+    lines.append(">")
+    for i, v in enumerate(report.violations, start=1):
+        loc = f"섹션 {v.section_index}" if v.section_index is not None else "위치 미상"
+        snippet_preview = v.text_snippet[:60].replace("\n", " ")
+        lines.append(
+            f"> {i}. **[{v.category}]** ({loc}, {v.severity}) "
+            f'— "{snippet_preview}{"…" if len(v.text_snippet) > 60 else ""}"'
+        )
+        lines.append(f">    사유: {v.reason}")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _wrap_violation_snippets(content_md: str, report: ComplianceReport) -> str:
+    """위반 snippet 을 **⚠️ ... ⚠️** 로 래핑. 매칭 실패 시 원본 유지."""
+    text = content_md
+    seen: set[str] = set()
+    for v in report.violations:
+        snippet = v.text_snippet.strip()
+        if not snippet or snippet in seen:
+            continue
+        seen.add(snippet)
+        if snippet in text:
+            # 첫 발견 위치만 래핑 (중복 표기 방지)
+            text = text.replace(snippet, f"**⚠️ {snippet} ⚠️**", 1)
+    return text
+
+
 def run_stage_compose(
     outline: Outline,
     body: BodyResult,
@@ -734,7 +785,8 @@ def run_stage_compose(
     reporter.stage_start("compose")
 
     # compliance_report.final_text 가 있으면 수정된 텍스트 사용
-    if compliance_report.passed and compliance_report.final_text:
+    # passed=False 여도 최종 수정본은 [9][10] 조립 입력으로 사용 (강제 발행 모드).
+    if compliance_report.final_text:
         content_md = compliance_report.final_text
         title = outline.title
         # compliance 수정본에 이미지만 삽입 (재조립하지 않아 수정 보존).
@@ -752,6 +804,10 @@ def run_stage_compose(
         assembled = assemble_content(outline, body, image_result=image_result)
         content_md = assembled.content_md
         title = assembled.title
+
+    # 강제 발행 모드: 위반 잔존 시 배너 + 인라인 마커 삽입.
+    if not compliance_report.passed and compliance_report.violations:
+        content_md = _mark_compliance_violations(content_md, compliance_report)
 
     content_dir = output_dir / "content"
     content_dir.mkdir(parents=True, exist_ok=True)

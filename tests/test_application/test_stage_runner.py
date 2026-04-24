@@ -324,3 +324,55 @@ class TestCompose:
         assert (tmp_path / "content" / "seo-content.html").exists()
         assert (tmp_path / "content" / "outline.md").exists()
         mock_save_supabase.assert_called_once()
+
+
+class TestMarkComplianceViolations:
+    def test_banner_and_inline_marker(self) -> None:
+        from application.stage_runner import _mark_compliance_violations
+        from domain.compliance.model import ComplianceReport, Violation
+
+        content_md = "# 제목\n\n본문 시작. 특정 위반 문구 여기있음. 뒷부분."
+        report = ComplianceReport(
+            passed=False,
+            iterations=3,
+            violations=[
+                Violation(
+                    category="first_person_promotion",
+                    text_snippet="특정 위반 문구 여기있음",
+                    section_index=2,
+                    severity="medium",
+                    reason="기관 홍보로 기능",
+                )
+            ],
+            final_text=content_md,
+        )
+
+        marked = _mark_compliance_violations(content_md, report)
+
+        assert marked.startswith("> ⚠️ **의료법 검증 미통과")
+        assert "[first_person_promotion]" in marked
+        assert "**⚠️ 특정 위반 문구 여기있음 ⚠️**" in marked
+
+    def test_missing_snippet_keeps_banner(self) -> None:
+        from application.stage_runner import _mark_compliance_violations
+        from domain.compliance.model import ComplianceReport, Violation
+
+        content_md = "# 제목\n\n본문."
+        report = ComplianceReport(
+            passed=False,
+            iterations=3,
+            violations=[
+                Violation(
+                    category="patient_testimonial",
+                    text_snippet="본문에 존재하지 않는 스니펫",
+                    severity="low",
+                    reason="사유",
+                )
+            ],
+            final_text=content_md,
+        )
+
+        marked = _mark_compliance_violations(content_md, report)
+
+        assert "[patient_testimonial]" in marked
+        assert "**⚠️" not in marked.split("---")[1]
