@@ -185,7 +185,14 @@ def build_outline_prompt(
     """
     pc = pattern_card
     shared_system = _build_outline_system(pc, compliance_rules)
-    user = "위 지시에 따라 record_outline 도구로 아웃라인을 기록하라."
+    # system 메시지의 모든 지시를 따른다는 점을 명시 + required 필드 누락 방지 강조.
+    # tool_use 부분 응답(target_chars 등 누락) 방지.
+    user = (
+        "system 메시지의 모든 지시를 따라 record_outline 도구로 아웃라인을 기록하라.\n"
+        "tool input 의 모든 required 필드를 빠짐없이 포함하라 — "
+        "title, title_pattern, target_chars, intro, sections, image_prompts, "
+        "suggested_tags, keyword_plan."
+    )
     messages: list[dict[str, str]] = [
         {"role": "user", "content": user},
     ]

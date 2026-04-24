@@ -37,6 +37,17 @@ _TOOL_ENFORCE_HINT = (
     "자유 텍스트·마크다운·설명 없이 tool_use 블록만 응답하라."
 )
 
+# tool_use 응답에 반드시 포함돼야 하는 최상위 필드. OUTLINE_TOOL.input_schema.required 와 동기화.
+_REQUIRED_OUTLINE_FIELDS = (
+    "title",
+    "title_pattern",
+    "target_chars",
+    "intro",
+    "sections",
+    "image_prompts",
+    "keyword_plan",
+)
+
 
 def generate_outline(
     pattern_card: PatternCard,
@@ -50,7 +61,8 @@ def generate_outline(
 
     outline_thinking_budget > 0 이면 Extended Thinking 활성 + tool_choice=auto.
     thinking 과 tool 이름 강제는 Anthropic 규약상 비호환이므로, auto 에서도
-    프롬프트로 tool 사용을 강제하고 tool_use 블록이 없으면 1회 재호출한다.
+    프롬프트로 tool 사용을 강제하고 tool_use 블록이 없거나 required 필드가
+    누락되면 thinking off 로 1회 재호출한다 (tool 이름 강제 + 강한 schema 준수).
     """
     shared_system, messages, tool_schema = build_outline_prompt(pattern_card, compliance_rules)
     if feedback:
@@ -58,7 +70,7 @@ def generate_outline(
 
     thinking_budget = settings.outline_thinking_budget
     if thinking_budget > 0:
-        # thinking 경로 — tool_choice=auto + 프롬프트 강제 + tool_use 누락 시 1회 재시도
+        # thinking 경로 — tool_choice=auto + 프롬프트 강제 + tool_use 누락/부분 응답 시 1회 재시도
         messages[-1]["content"] += _TOOL_ENFORCE_HINT.format(tool_name=tool_schema["name"])
         response = _invoke(
             shared_system=shared_system,
@@ -67,9 +79,15 @@ def generate_outline(
             thinking_budget=thinking_budget,
         )
         tool_input = _try_extract_tool_input(response)
-        if tool_input is None:
-            # thinking off + tool 이름 강제 폴백 (확정적 tool_use 응답)
-            logger.warning("outline tool_use missing under thinking; falling back")
+        if tool_input is None or not _has_required_fields(tool_input):
+            # thinking off + tool 이름 강제 폴백 (확정적·완전한 tool_use 응답)
+            missing = (
+                _missing_fields(tool_input) if tool_input is not None else ["<tool_use missing>"]
+            )
+            logger.warning(
+                "outline tool_use incomplete under thinking; falling back. missing=%s",
+                missing,
+            )
             response = _invoke(
                 shared_system=shared_system,
                 tool_schema=tool_schema,
@@ -86,7 +104,22 @@ def generate_outline(
         )
         tool_input = _extract_tool_input(response)
 
+    _assert_required_fields(tool_input)
     return _parse_outline(tool_input)
+
+
+def _has_required_fields(tool_input: dict[str, Any]) -> bool:
+    return all(field in tool_input for field in _REQUIRED_OUTLINE_FIELDS)
+
+
+def _missing_fields(tool_input: dict[str, Any]) -> list[str]:
+    return [f for f in _REQUIRED_OUTLINE_FIELDS if f not in tool_input]
+
+
+def _assert_required_fields(tool_input: dict[str, Any]) -> None:
+    missing = _missing_fields(tool_input)
+    if missing:
+        raise ValueError(f"outline tool_use 응답에 필수 필드 누락: {missing}")
 
 
 def _invoke(

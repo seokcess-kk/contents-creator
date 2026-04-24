@@ -69,12 +69,20 @@ class TestBuildOutlinePrompt:
         assert "중립" in shared_system or "일반화" in shared_system
 
     def test_user_message_minimal_for_caching(self, sample_pattern_card: PatternCard) -> None:
-        """user 메시지는 짧아야 한다 (시스템 프롬프트는 system 배열로 분리됨)."""
+        """user 메시지는 짧아야 한다 (시스템 프롬프트는 system 배열로 분리됨).
+
+        user 에는 도구 호출 지시 + required 필드 nudge 만 두고, 패턴 카드 내용은
+        모두 system 으로 분리되어야 cache hit 가능.
+        """
         shared_system, messages, _ = build_outline_prompt(sample_pattern_card)
         user_content = messages[0]["content"]
-        # 시스템 프롬프트가 user 에 새지 않아야 함
+        # 동적 패턴 카드 데이터가 user 에 새지 않아야 함 (캐시 무효화 방지)
         assert sample_pattern_card.keyword not in user_content
-        assert "image_prompts" not in user_content
+        # 시스템 프롬프트 고유 헤더 블록이 user 에 없어야 함
+        assert "[톤앤매너]" not in user_content
+        assert "[키워드 배치 전략]" not in user_content
+        # user 는 한 화면 분량을 넘지 않아야 함 (캐시 효율 + 비용 모두)
+        assert len(user_content) < 500
 
 
 class TestBuildBodyPrompt:

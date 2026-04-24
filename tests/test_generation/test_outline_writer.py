@@ -146,3 +146,46 @@ class TestGenerateOutline:
 
         with pytest.raises(ValueError, match="tool_use"):
             generate_outline(sample_pattern_card)
+
+    @patch("domain.common.anthropic_client.anthropic")
+    @patch("domain.common.anthropic_client.require")
+    def test_falls_back_when_required_fields_missing(
+        self,
+        mock_require: MagicMock,
+        mock_anthropic: MagicMock,
+        sample_pattern_card: PatternCard,
+    ) -> None:
+        """thinking 응답에 target_chars 등 required 필드 누락 → thinking off 폴백."""
+        mock_require.return_value = "test-key"
+        mock_client = MagicMock()
+        mock_anthropic.Anthropic.return_value = mock_client
+        # 1차 응답: target_chars 누락
+        partial = {k: v for k, v in _VALID_OUTLINE_DATA.items() if k != "target_chars"}
+        # 2차 응답 (폴백): 완전한 데이터
+        mock_client.messages.create.side_effect = [
+            _make_tool_response(partial),
+            _make_tool_response(_VALID_OUTLINE_DATA),
+        ]
+
+        result = generate_outline(sample_pattern_card)
+
+        assert isinstance(result, Outline)
+        assert mock_client.messages.create.call_count == 2
+
+    @patch("domain.common.anthropic_client.anthropic")
+    @patch("domain.common.anthropic_client.require")
+    def test_raises_when_fallback_also_incomplete(
+        self,
+        mock_require: MagicMock,
+        mock_anthropic: MagicMock,
+        sample_pattern_card: PatternCard,
+    ) -> None:
+        """폴백 응답마저 필수 필드 누락 시 명시적 ValueError."""
+        mock_require.return_value = "test-key"
+        mock_client = MagicMock()
+        mock_anthropic.Anthropic.return_value = mock_client
+        partial = {k: v for k, v in _VALID_OUTLINE_DATA.items() if k != "target_chars"}
+        mock_client.messages.create.return_value = _make_tool_response(partial)
+
+        with pytest.raises(ValueError, match="target_chars"):
+            generate_outline(sample_pattern_card)
