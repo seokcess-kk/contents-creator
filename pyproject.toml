@@ -25,6 +25,8 @@ dependencies = [
     "pdfplumber>=0.11",      # pdf fallback (pypdf 실패 시)
     "pillow>=10.4",          # PNG 메타·분할·리사이즈
     "markdown>=3.6",         # 마크다운 → HTML 변환 (composer 도메인)
+    # 순위 추적 트랙 (SPEC-RANKING.md §5)
+    "apscheduler>=3.10",     # 매일 09:00 KST 자동 SERP 재크롤 (AsyncIOScheduler)
 ]
 
 [project.optional-dependencies]
@@ -78,7 +80,7 @@ disallow_untyped_defs = true
 no_implicit_optional = true
 
 [[tool.mypy.overrides]]
-module = ["bs4.*", "supabase.*", "tenacity.*", "markdown.*"]
+module = ["bs4.*", "supabase.*", "tenacity.*", "markdown.*", "apscheduler.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

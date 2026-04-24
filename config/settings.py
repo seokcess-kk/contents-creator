@@ -87,6 +87,13 @@ class Settings(BaseSettings):
     image_max_width: int = 720  # 네이버 블로그 본문 폭 기준 리사이즈
     image_jpeg_quality: int = 85  # JPEG 변환 품질 (1~100)
 
+    # 순위 추적 (SPEC-RANKING.md). False 면 스케줄러 비활성 (테스트·디버깅용)
+    ranking_scheduler_enabled: bool = True
+    ranking_scheduler_hour: int = 9  # KST 매일 실행 시각
+    ranking_scheduler_minute: int = 0
+    # publication 간 대기 (Bright Data rate 보호)
+    ranking_check_sleep_seconds: float = 1.0
+
 
 settings = Settings()
 

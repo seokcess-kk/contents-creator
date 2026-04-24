@@ -123,12 +123,14 @@ bash .claude/hooks/build-check.sh  # 위 4개 일괄
 
 - SPEC-SEO-TEXT.md — 전체 기획서 (10단계 파이프라인, 스키마, 모델 매핑)
 - SPEC-BRAND-CARD.md — 브랜드 카드 트랙 (병행, BRAND_LENIENT 프로필)
+- SPEC-RANKING.md — 순위 추적 시스템 (병행 보조 트랙, 실측 피드백 루프 MVP)
 - application/CLAUDE.md — Application 레이어 오케스트레이션 규칙
 - domain/analysis/CLAUDE.md — [3][4a][4b][5] 분석 규칙 + DIA+ + 물리 파싱
 - domain/generation/CLAUDE.md — [6][7] 생성 규칙 + M2 불변 + 이미지 prompt
 - domain/compliance/CLAUDE.md — [8] 의료법 3중 방어 + fixer + 이미지 prompt 검증
 - domain/image_generation/CLAUDE.md — [9] Gemini 이미지 + 캐시 + 예산 가드
 - domain/composer/CLAUDE.md — [10] 조립 + 네이버 HTML 화이트리스트
+- domain/ranking/CLAUDE.md — 순위 추적 도메인 (격리, DI 패턴, 정규식 의도적 복제)
 - tasks/todo.md — 현재 작업 체크리스트
 - tasks/lessons.md — 실수 패턴 기록
 

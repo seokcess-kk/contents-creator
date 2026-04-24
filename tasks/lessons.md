@@ -469,6 +469,42 @@ alter default privileges in schema public grant all on tables to postgres, anon,
 
 **재발 방지**: `config/schema.sql` 하단에 GRANT/ALTER DEFAULT PRIVILEGES 구문을 항상 포함한다. public 스키마 리셋 절차는 Supabase 공식 예시를 따른다.
 
+### 신규 도메인 등록 시 architecture-check STAGE_ORDER 동시 갱신 (2026-04-24)
+
+**증상**: 신규 도메인 추가 후 `architecture-check.sh` 가 "알려지지 않은 도메인" 으로 차단
+
+**해결**: `.claude/hooks/architecture-check.sh` 의 `STAGE_ORDER` 배열에 신규 도메인 등록 필수.
+파이프라인과 무관한 격리 도메인은 0 으로 두고 다른 도메인을 import 하지 않는 방식이 안전 (예: `[ranking]=0`).
+
+**재발 방지**: 새 `domain/X/` 디렉토리 생성 시 STAGE_ORDER 갱신을 todo.md 의 첫 task 로 둔다.
+
+### `BLOG_POST_URL_RE` 의도적 복제 — 동기화 책임 (2026-04-24)
+
+**상황**: `domain/ranking/url_match.py` 가 `domain/crawler/serp_collector.BLOG_POST_URL_RE` 와 동일한 정규식을 의도적으로 복제.
+
+**이유**: 도메인 격리 원칙 (`domain/ranking → domain/crawler` import 금지). DI 패턴으로 SERP fetch/parse 는 application 이 합성하지만 정규식 자체는 복제가 합리적.
+
+**위험**: 한쪽 변경 시 다른 쪽 누락 → 매칭 미스로 SPEC-RANKING.md §11 R1 위험.
+
+**완화**:
+1. 양쪽 파일 상단 주석에 "의도적 복제, 동기화 필수" 명시
+2. `tests/test_ranking/test_url_match.py::TestRegexCopySync::test_pattern_string_identical` 가 패턴 문자열을 자동 비교 (분기 시 즉시 실패)
+
+**재발 방지**: serp_collector 의 정규식을 수정할 때는 무조건 url_match 도 같이 수정. 위 자동 비교 테스트가 1차 방어.
+
+### Ranking Tracker — 멀티 인스턴스 advisory lock 필수 (2026-04-24)
+
+**상황**: SPEC-RANKING.md §10 8 — APScheduler in-process 가 매일 09:00 KST cron job 실행. **단일 인스턴스 전제**.
+
+**위험**: render.yaml 을 free → paid (수평 확장) 또는 다른 클라우드 멀티 인스턴스 배포 전환 시 각 인스턴스의 APScheduler 가 동시에 동일 잡 실행 → SERP 호출 N배, ranking_snapshots 중복 insert.
+
+**완화 (전환 시점에 적용)**:
+- Supabase 에 advisory lock 테이블 추가 (`ranking_check_locks(date pk, locked_at, owner)`)
+- `_run_daily_check()` 시작 시 `INSERT ... ON CONFLICT DO NOTHING` 으로 그날 락 획득 시도. 실패하면 즉시 종료
+- 또는 Redis 분산 락 (운영 인프라가 더 큰 경우)
+
+**재발 방지**: render.yaml 또는 배포 설정에 인스턴스 수 변경 시 본 메모를 확인하고 advisory lock 추가 PR 을 함께.
+
 ## 참고 패턴
 
 _(유용한 패턴이나 관례를 기록)_

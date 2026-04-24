@@ -37,6 +37,7 @@ export default function RootLayout({
           </div>
           <nav className="flex items-center gap-5 text-sm font-medium">
             <a href="/" className="text-gray-700 hover:text-blue-700">대시보드</a>
+            <a href="/rankings" className="text-gray-700 hover:text-blue-700">순위 추적</a>
             <a href="/usage" className="text-gray-700 hover:text-blue-700">API 사용량</a>
           </nav>
         </header>

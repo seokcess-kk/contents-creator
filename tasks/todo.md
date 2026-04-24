@@ -250,3 +250,242 @@
 - [ ] 의료 콘텐츠 관련 변경 시 `python scripts/validate.py` 추가 실행
 - [ ] 브랜드 카드 관련 변경 시 `domain/brand_card/` import 규칙 확인 (다른 도메인 import 금지, compliance/rules.py 만 예외)
 - [ ] 사용자 교정 받으면 즉시 `tasks/lessons.md` 에 기록
+
+---
+
+# 순위 추적 시스템 (Ranking Tracker) MVP — 2026-04-24 착수
+
+> 목표: 발행한 SEO 원고의 네이버 통합검색 순위를 매일 자동 측정해 피드백 루프 완성.
+> SPEC 참조: SPEC-SEO-TEXT.md §3 [1] (SERP 수집 — 재사용), §12 (application 레이어 규칙)
+> CLAUDE 규칙 준수: 레이어 import 단방향, Pydantic 반환, settings 단일 출처, Bright Data 단일 클라이언트, 30줄/300줄 한계
+>
+> 사용자 결정 (불변):
+> 1. URL 입력 = 사용자 직접 등록 (도메인 매칭은 Phase 2 별건)
+> 2. 한 PR 에 backend+API+UI+CLI+tests 일괄
+> 3. 매일 1회 누적
+> 4. 기존 Bright Data Web Unlocker 재사용
+> 5. APScheduler in-process (FastAPI lifespan)
+
+## 🧭 핵심 설계 결정 (Phase 1 진입 전 확정)
+
+> **결정 1 — ranking 도메인의 SERP 호출 방식**
+> ⚠️ `architecture-check.sh` 의 `STAGE_ORDER` 는 `crawler=1`, `analysis=2`, ... 로 정의되어 있고 새 도메인 `ranking` 이 `crawler` 를 직접 import 하면 동급 교차로 차단된다.
+> **선택지 A (채택)**: `ranking` 을 `STAGE_ORDER[ranking]=0` 격리 도메인으로 등록 + 의존성 주입.
+> - `domain/ranking/tracker.py` 가 `Callable[[str], str]` (URL → HTML) 타입의 `serp_fetcher` 를 인자로 받음
+> - 실제 `BrightDataClient.fetch` 주입은 `application/ranking_orchestrator.py` 에서 수행
+> - `domain/ranking/*.py` 는 `domain.crawler` 를 절대 import 하지 않음 (DAG 격리 유지)
+> - 단, `domain.crawler.serp_collector._parse_serp_html` 같은 파서 헬퍼는 **재구현하지 않고 application 이 호출해 ranking 에 결과만 전달**
+>
+> **결정 2 — 매칭 로직 위치**
+> "내 publication URL 이 SERP 에 있는가?" 매칭은 ranking 의 책임. publication URL 을 `m.blog.naver.com` 정규화 + `_normalize_href` 와 동일한 정규식으로 후보 URL 정규화 후 동등 비교. (SPEC-SEO-TEXT.md §3 [1] BLOG_POST_URL_RE 와 동일 패턴 — `domain/ranking/url_match.py` 에 재정의, regex 상수만 복제)
+>
+> **결정 3 — 스케줄러 단위**
+> APScheduler `AsyncIOScheduler` 사용 (FastAPI 가 이미 asyncio loop 가 있음). job 함수는 동기지만 `run_in_executor` 로 위임. 단일 인스턴스 전제 (이중 실행 방지 락은 Phase 2)
+
+---
+
+## Phase R1: Backend Foundation (도메인 + Supabase) — 예상 6h
+
+### R1.1 Supabase 마이그레이션 (45분)
+- [ ] R1.1.1 `config/schema.sql` 끝에 `publications` 테이블 SQL 추가 (id uuid pk, job_id text nullable, keyword text not null, slug text not null, url text not null unique, published_at timestamptz nullable, created_at default now). 검증: SQL 문법만 검사 (실제 적용은 R1.1.3)
+- [ ] R1.1.2 같은 파일에 `ranking_snapshots` 테이블 SQL 추가 (id uuid pk, publication_id uuid fk on delete cascade, position int nullable, total_results int nullable, captured_at default now, serp_html_path text nullable). 인덱스: `(publication_id, captured_at desc)`, publications 는 `(keyword)` `(slug)`
+- [ ] R1.1.3 Supabase 대시보드 SQL Editor 에 추가분만 실행 (기존 테이블 영향 X 확인). 검증: `select count(*) from publications` `select count(*) from ranking_snapshots` 둘 다 0 반환
+- [ ] R1.1.4 `tasks/lessons.md` 에 적용 결과 + 롤백용 `drop table ranking_snapshots; drop table publications;` 스니펫 기록
+
+### R1.2 도메인 모델 (30분)
+- [ ] R1.2.1 `domain/ranking/__init__.py` 빈 파일 생성
+- [ ] R1.2.2 `domain/ranking/model.py` 생성 — Pydantic `Publication`, `RankingSnapshot`, `RankingTimeline` (publication + list[RankingSnapshot] + 메타). `RankingMatchError` 예외 정의. 모든 필드 타입힌트, frozen 설정. 30줄 이내 함수 보장
+- [ ] R1.2.3 `tests/test_ranking/__init__.py` + `tests/test_ranking/test_model.py` 생성 — Publication/RankingSnapshot 직렬화·기본값·검증 단위 테스트 (3개 케이스)
+
+### R1.3 도메인 ranking/url_match.py (45분)
+- [ ] R1.3.1 `domain/ranking/url_match.py` 신규 — `BLOG_POST_URL_RE` 상수 (serp_collector 와 동일 패턴, 의도적 복제), `normalize_blog_url(url) -> str | None` (스킴 보정 + `m.blog.naver.com` 우선 정규화), `urls_match(a, b) -> bool`
+- [ ] R1.3.2 `tests/test_ranking/test_url_match.py` — `blog.naver.com/userid/123456789` ↔ `m.blog.naver.com/userid/123456789` 동치, 트레일링 슬래시·쿼리 무시, 비매칭 케이스 (각 5개 이상)
+
+### R1.4 도메인 ranking/tracker.py (60분)
+- [ ] R1.4.1 `domain/ranking/tracker.py` 신규 — `find_position(keyword: str, target_url: str, serp_fetcher: Callable[[str], str], serp_parser: Callable[[str], list[ParsedSerpItem]]) -> RankingSnapshot` 시그니처. `domain.crawler` 를 import 하지 않음 (의존성 주입 패턴)
+- [ ] R1.4.2 `find_position` 내부: integrated SERP URL 빌드 → `serp_fetcher(url)` → `serp_parser(html)` → 각 결과를 `urls_match` 비교 → 발견 시 `position=인덱스+1`, 미발견 시 `position=None`
+- [ ] R1.4.3 `tests/test_ranking/test_tracker.py` — fake fetcher/parser 주입한 시나리오 5개: 1위, 5위, 100위 밖, fetcher 예외, parser 빈 결과
+
+### R1.5 도메인 ranking/storage.py (60분)
+- [ ] R1.5.1 `domain/ranking/storage.py` 신규 — `insert_publication(publication: Publication) -> Publication` (id 채워서 반환), `get_publication(id) -> Publication | None`, `list_publications(keyword: str | None, limit: int) -> list[Publication]`, `insert_snapshot(snapshot: RankingSnapshot) -> RankingSnapshot`, `list_snapshots(publication_id, limit) -> list[RankingSnapshot]`. 모두 `config.supabase.get_client()` 만 사용
+- [ ] R1.5.2 url unique 충돌 시 `RankingDuplicateUrlError` 발생 (Pydantic 모델 X, 일반 Exception). orchestrator 에서 변환
+- [ ] R1.5.3 `tests/test_ranking/test_storage.py` — Supabase mock (기존 `tests/test_application/test_stage_runner.py` 의 `monkeypatch + MagicMock` 패턴 따라가기). 5개 케이스: insert/get/list/duplicate/cascade
+
+### R1.6 도메인 CLAUDE.md 작성 (30분)
+- [ ] R1.6.1 `domain/ranking/CLAUDE.md` 신규 작성. 핵심 규칙: (1) `domain.crawler` 직접 import 금지 — DI 패턴, (2) URL 정규화 단일 출처는 `url_match.py`, (3) 모든 함수 Pydantic 반환, (4) 30줄/300줄 한계, (5) print 금지·logging 사용, (6) `BLOG_POST_URL_RE` 는 의도적 복제이며 serp_collector 변경 시 수동 동기화 (lessons.md 에 명시)
+- [ ] R1.6.2 루트 `CLAUDE.md` 의 "참조 문서" 섹션에 `domain/ranking/CLAUDE.md` 1줄 추가. "디렉터리 구조" 트리에도 `ranking/` 1줄 추가
+
+### R1.7 architecture-check 갱신 (15분)
+- [ ] R1.7.1 `.claude/hooks/architecture-check.sh` 의 `STAGE_ORDER` 에 `[ranking]=0` 추가 (격리 도메인). 검증: 셸에서 `bash .claude/hooks/architecture-check.sh` 실행, 통과
+- [ ] R1.7.2 `tasks/lessons.md` 에 "신규 도메인 등록 시 STAGE_ORDER 동시 갱신" 패턴 기록
+
+---
+
+## Phase R2: Application Layer (오케스트레이션 + 스케줄러) — 예상 4h
+
+### R2.1 ranking_orchestrator.py (75분)
+- [ ] R2.1.1 `application/ranking_orchestrator.py` 신규 — `register_publication(job_id: str | None, keyword: str, slug: str, url: str, published_at: datetime | None) -> Publication`. 내부에서 `url_match.normalize_blog_url` 로 정규화 → `storage.insert_publication`. duplicate 시 기존 publication 반환 (멱등)
+- [ ] R2.1.2 같은 파일에 `check_rankings_for_publication(publication_id: str) -> RankingSnapshot`. `BrightDataClient` 인스턴스화 → `serp_collector.build_integrated_serp_url` + `_parse_serp_html` 을 wrapper 로 묶어 `tracker.find_position` 에 주입 → 결과를 `storage.insert_snapshot` 저장 후 반환
+- [ ] R2.1.3 같은 파일에 `check_all_active_rankings(reporter: ProgressReporter | None = None) -> list[RankingSnapshot]`. publications 전체 순회, publication 당 호출 (Bright Data rate 보호 위해 1초 sleep). 진행률 logging
+- [ ] R2.1.4 모든 함수 Pydantic 반환, 예외는 `raise` 가능 (orchestrator 레이어), 에러 핸들링은 reporter.pipeline_error 호출
+
+### R2.2 scheduler.py (60분)
+- [ ] R2.2.1 `application/scheduler.py` 신규 — `start_scheduler(loop: asyncio.AbstractEventLoop) -> AsyncIOScheduler`, `stop_scheduler(scheduler) -> None`. APScheduler `AsyncIOScheduler` 사용. cron trigger: `hour=9, minute=0, timezone='Asia/Seoul'`
+- [ ] R2.2.2 job 함수는 `_run_daily_check()` — sync 함수, 내부에서 `check_all_active_rankings()` 호출. logging.info 로 시작/종료/카운트 기록
+- [ ] R2.2.3 `pyproject.toml` 의 dependencies 에 `apscheduler>=3.10` 추가. `pip install -e ".[dev]"` 로 설치
+- [ ] R2.2.4 max_instances=1 + coalesce=True 설정 (서버 재시작 직후 누락분 1회만 보충)
+
+### R2.3 application 모델 확장 (15분)
+- [ ] R2.3.1 `application/models.py` 에 `RankingCheckSummary` Pydantic 추가 (checked_count, found_count, errors_count, duration_seconds). orchestrator return 보조용
+- [ ] R2.3.2 `application/CLAUDE.md` 에 ranking_orchestrator/scheduler 책임 1문단 추가
+
+### R2.4 application 테스트 (45분)
+- [ ] R2.4.1 `tests/test_application/test_ranking_orchestrator.py` — 5개 케이스: register 신규/중복, check_rankings 발견/미발견, check_all 다중 publication. BrightDataClient + storage mock
+- [ ] R2.4.2 `tests/test_application/test_scheduler.py` — `start_scheduler` 가 `AsyncIOScheduler` 인스턴스 반환 + cron 트리거 등록 확인 + stop 후 jobs 비어있는지. apscheduler 의 mock 트리거 사용
+
+---
+
+## Phase R3: API (FastAPI 라우터) — 예상 3h
+
+### R3.1 라우터 + 스키마 (60분)
+- [ ] R3.1.1 `web/api/schemas.py` 끝에 추가: `PublicationCreateRequest` (job_id?, keyword, slug, url, published_at?), `PublicationResponse`, `RankingSnapshotResponse`, `RankingTimelineResponse`. 모두 datetime → ISO string serialization
+- [ ] R3.1.2 `web/api/routers/rankings.py` 신규 — `router = APIRouter(prefix="/rankings", tags=["rankings"], dependencies=[Depends(require_api_key)])`. 엔드포인트 5개:
+  - `POST /publications` → ranking_orchestrator.register_publication
+  - `GET /publications?keyword=...&limit=...`
+  - `GET /publications/{id}` (timeline 30개 포함)
+  - `POST /publications/{id}/check` (수동 즉시 체크)
+  - `GET /publications/{id}/snapshots?limit=...`
+- [ ] R3.1.3 모든 핸들러 30줄 이내. `_get_orchestrator()` 패턴은 ranking_orchestrator 가 stateless 라 불필요 — 함수 직접 호출
+- [ ] R3.1.4 `web/api/main.py` 의 `app.include_router` 에 `rankings.router` 추가 (prefix `/api`)
+
+### R3.2 lifespan 통합 (30분)
+- [ ] R3.2.1 `web/api/main.py` 의 `lifespan` 함수에 스케줄러 시작/종료 통합. `start_scheduler(loop)` 호출 결과를 클로저 변수로 보관, yield 후 `stop_scheduler` 호출
+- [ ] R3.2.2 `settings.py` 에 `ranking_scheduler_enabled: bool = True` 추가. 환경변수 `RANKING_SCHEDULER_ENABLED=false` 면 비활성 (테스트용)
+- [ ] R3.2.3 lifespan 내부에서 `if settings.ranking_scheduler_enabled:` 가드
+
+### R3.3 API 테스트 (45분)
+- [ ] R3.3.1 `tests/test_web/__init__.py` (없으면) + `tests/test_web/test_rankings_api.py` — FastAPI TestClient 로 5개 엔드포인트 happy path + 401 (인증 미들웨어). orchestrator mock 으로 격리
+- [ ] R3.3.2 `tests/test_web/test_main_lifespan.py` — `RANKING_SCHEDULER_ENABLED=false` 시 스케줄러 미시작 검증
+
+### R3.4 OpenAPI/문서 (15분)
+- [ ] R3.4.1 각 핸들러에 docstring + response_model 명시. `/docs` 에서 5개 엔드포인트 표시 확인 (수동 검증)
+
+---
+
+## Phase R4: CLI — 예상 1.5h
+
+### R4.1 register_publication.py (30분)
+- [ ] R4.1.1 `scripts/register_publication.py` 신규 — argparse `--job-id` (선택), `--keyword`, `--slug`, `--url` (필수), `--published-at` (ISO date 선택). type validator 로 빈 값 거부
+- [ ] R4.1.2 `application.ranking_orchestrator.register_publication` 호출 → 결과를 `print(json.dumps(...))` ❌ 금지 → `logging.info(json.dumps(...))` 로 출력. 종료 코드 0/1
+- [ ] R4.1.3 `tests/test_scripts/test_register_publication_cli.py` (없으면 디렉토리 생성) — argparse 검증 2개 (keyword 누락, url 형식 불량)
+
+### R4.2 check_rankings.py (45분)
+- [ ] R4.2.1 `scripts/check_rankings.py` 신규 — argparse `--publication-id` 또는 `--all` (mutually exclusive group). `LoggingProgressReporter` 사용
+- [ ] R4.2.2 `--publication-id` → `check_rankings_for_publication`, `--all` → `check_all_active_rankings`. 결과 카운트 logging
+- [ ] R4.2.3 `tests/test_scripts/test_check_rankings_cli.py` — 두 모드 분기 검증, mutually exclusive 검증
+
+### R4.3 README/help 갱신 (15분)
+- [ ] R4.3.1 루트 `CLAUDE.md` 의 "빌드 & 실행" 코드블럭에 신규 CLI 2줄 추가
+- [ ] R4.3.2 SPEC-SEO-TEXT.md 변경 ❌ 금지 — ranking 은 SPEC v2 범위 밖. 별도 SPEC-RANKING.md 신규 필요 여부는 사용자에게 질문
+
+---
+
+## Phase R5: Web UI (Next.js) — 예상 4h
+
+### R5.1 타입 + API 클라이언트 (30분)
+- [ ] R5.1.1 `web/frontend/src/types/index.ts` 에 `Publication`, `RankingSnapshot`, `RankingTimeline` 타입 추가 (백엔드 Pydantic 과 1:1)
+- [ ] R5.1.2 `web/frontend/src/lib/api.ts` 에 5개 함수 추가: `createPublication`, `listPublications`, `getPublication`, `checkRanking`, `listSnapshots`. 기존 `fetcher` + X-API-Key 패턴 동일
+
+### R5.2 PublicationForm 컴포넌트 (45분)
+- [ ] R5.2.1 `web/frontend/src/components/PublicationForm.tsx` 신규 — props: `{slug, keyword, jobId?, existing?: Publication, onSubmit?: (p: Publication) => void}`. URL input + published_at date picker + 저장 버튼
+- [ ] R5.2.2 URL 형식 클라이언트 검증 (`/^https?:\/\/(m\.)?blog\.naver\.com\/[\w-]+\/\d{9,}$/`). 실패 시 inline 에러 표시
+- [ ] R5.2.3 기존 publication 있으면 input prefill + "수정" 버튼. 제출 시 createPublication 호출 (orchestrator 가 멱등)
+
+### R5.3 RankingTimeline 컴포넌트 (45분)
+- [ ] R5.3.1 `web/frontend/src/components/RankingTimeline.tsx` 신규 — props: `{snapshots: RankingSnapshot[]}`. 표 렌더 (date, position, change vs 전일). 100위 밖은 "—" 표시
+- [ ] R5.3.2 sparkline 은 Phase 2 — 일단 표만. position null/숫자 모두 처리
+
+### R5.4 결과 페이지 통합 (45분)
+- [ ] R5.4.1 `web/frontend/src/app/results/[slug]/page.tsx` 수정 — 페이지 상단에 "발행 URL 등록" 영역 추가. mount 시 `listPublications({keyword, slug})` 호출해 기존 publication 조회
+- [ ] R5.4.2 publication 등록 완료 시 자동으로 `getPublication(id)` 호출해 timeline 표시. "지금 체크" 버튼 → `checkRanking` → 시계열 갱신
+- [ ] R5.4.3 페이지 300줄 초과 시 컴포넌트 분리 (RankingPanel.tsx 등)
+
+### R5.5 신규 /rankings 페이지 (45분)
+- [ ] R5.5.1 `web/frontend/src/app/rankings/page.tsx` 신규 — 모든 publications 목록 표 (키워드, slug, URL, 최신 순위). 키워드 필터 input, 정렬 dropdown (최신순/순위 좋은 순)
+- [ ] R5.5.2 행 클릭 시 인라인 RankingTimeline 펼치기 또는 `/results/{slug}` 로 이동
+- [ ] R5.5.3 layout.tsx 또는 nav 컴포넌트에 "/rankings" 링크 추가 (있으면)
+
+### R5.6 frontend lint/type-check (15분)
+- [ ] R5.6.1 `cd web/frontend && npm run lint && npm run typecheck` (또는 build) 0 에러
+
+---
+
+## Phase R6: Tests (통합 검증) — 예상 1.5h
+
+### R6.1 통합 시나리오 (45분)
+- [ ] R6.1.1 `tests/test_ranking/test_e2e_flow.py` — register → check → list snapshots 흐름. BrightDataClient 만 mock (다른 레이어는 실제). 네이버 SERP HTML 픽스처: `tests/fixtures/ranking_serp/integrated_with_target.html`, `..._without_target.html` 2개 작성
+- [ ] R6.1.2 fixture HTML 은 실제 네이버 통합검색 결과 모방 (m.blog.naver.com 링크 5개 포함). serp_collector 의 `_parse_serp_html` 이 그대로 파싱하는지 함께 검증
+
+### R6.2 회귀 + 커버리지 (30분)
+- [ ] R6.2.1 `pytest tests/ -v` 전체 통과 확인. 기존 371개 + 신규 ranking 테스트 (예상 25~30개) 모두 통과
+- [ ] R6.2.2 신규 도메인 라인 커버리지 80% 이상 (수동 확인)
+
+### R6.3 lessons.md 갱신 (15분)
+- [ ] R6.3.1 `tasks/lessons.md` 에 ranking MVP 작업 중 발견한 패턴 기록 (의존성 주입 패턴, BLOG_POST_URL_RE 복제 결정, lifespan 스케줄러 패턴 등)
+
+---
+
+## Phase R7: 검증 + 커밋 — 예상 30분
+
+- [ ] R7.1 `bash .claude/hooks/build-check.sh` 통과 (ruff check/format, architecture-check, mypy, pytest 모두 0)
+- [ ] R7.2 `bash .claude/hooks/architecture-check.sh` 단독 통과 — ranking 격리 확인
+- [ ] R7.3 수동 smoke test: 로컬 uvicorn 기동 → `/docs` 에서 ranking 5개 엔드포인트 호출 → publication 1건 등록 → 즉시 체크 → snapshot 1건 생성 확인
+- [ ] R7.4 frontend smoke test: `/results/{slug}` 에 URL 등록 → timeline 표시 확인, `/rankings` 페이지 접근 가능 확인
+- [ ] R7.5 git status 확인 → 변경 파일 일괄 staging (uvicorn.*.log 제외)
+- [ ] R7.6 commit 메시지 draft: `feat(ranking): add daily ranking tracker MVP (backend+api+ui+cli)`. body 에 사용자 결정 5가지 + 신규 도메인/스케줄러 명시
+- [ ] R7.7 🔴 push 는 사용자 명시 요청 시에만 (CLAUDE.md 규칙)
+
+---
+
+## ⚠️ 위험 요소 (Risk Register)
+
+### Risk-R1: ranking → crawler 도메인 의존성
+- **현상**: `domain/ranking/tracker.py` 가 `domain/crawler/serp_collector.py` 의 함수를 import 하면 `architecture-check.sh` 의 DAG 검사가 차단 (수평 교차)
+- **완화**: 채택안 = 의존성 주입. ranking 은 `Callable` 만 받고, 실제 BrightDataClient 주입은 application 레이어가 수행. STAGE_ORDER 에 `[ranking]=0` 등록해 격리 도메인으로 명시
+- **잔존 리스크**: BLOG_POST_URL_RE 정규식이 두 곳 (serp_collector + ranking/url_match) 에 복제됨 → serp_collector 변경 시 ranking 동기화 누락 가능
+- **모니터링**: lessons.md 에 명시 + 양쪽 파일 상단 주석에 "동기화 대상" 표기
+
+### Risk-R2: Supabase 마이그레이션 실패 롤백
+- **현상**: `publications` / `ranking_snapshots` 생성 SQL 실행 중 권한 오류 또는 FK 충돌
+- **완화 절차**:
+  1. 마이그레이션 전 Supabase 대시보드에서 기존 schema export (백업)
+  2. 새 테이블 SQL 만 분리해 실행 (기존 pattern_cards/generated_contents 영향 X)
+  3. 실패 시 `drop table if exists ranking_snapshots; drop table if exists publications;` 로 청소 후 재시도
+- **잔존 리스크**: cascade delete 가 publication 삭제 시 snapshots 일괄 삭제 → 의도 맞지만 명시 필요
+
+### Risk-R3: APScheduler 재시작 시 잡 손실/중복
+- **현상**: in-process AsyncIOScheduler 는 영속 저장소 없음. uvicorn 재시작 시 09:00 KST 직전 재시작되면 누락, 직후 재시작되면 중복 트리거 가능
+- **완화**: `coalesce=True` (밀린 잡 1회로 합침) + `max_instances=1` (동시 1개) 설정. 멀티 인스턴스 배포는 SPEC 범위 밖 (1 인스턴스 전제)
+- **잔존 리스크**: Render.com 같은 스케일링 환경에서 인스턴스 2개 이상 시 중복 호출 → 추후 Postgres advisory lock 또는 Redis lock 필요. 본 MVP 에서는 lessons.md 에 경고만
+
+### Risk-R4: Bright Data 비용
+- **현상**: 매일 모든 publication SERP 1회 호출. 100개 publication 시 월 3000회 추가
+- **추정**: Web Unlocker 1회당 약 $0.001~$0.003 (zone 요금제 기준) → 100 publication × 30일 × $0.002 ≈ **월 $6**. 1000 publication 이면 월 $60
+- **완화**: (1) 7일 이상 100위 밖 publication 자동 비활성화 (Phase 2), (2) `application/usage_tracker.py` 에 ranking 호출 카운트 추가, (3) settings 에 `ranking_max_publications_per_check: int = 200` 가드
+- **잔존 리스크**: SERP 트래픽 폭증 시 Bright Data zone rate limit 트리거. R2.1.3 의 1초 sleep 으로 완화
+
+### Risk-R5: 도입부 톤 락 / 의료법 무관성
+- **현상**: ranking 은 콘텐츠 생성·수정 X → M2 톤 락, compliance 3중 방어 무관
+- **확인**: 본 작업 중 `domain/generation/`, `domain/compliance/`, `body_writer.py` 어떤 파일도 수정 X. post-edit-lint.sh / seo-writer-guardian 트리거 0회
+
+### Risk-R6: 프론트엔드 인증 헤더
+- **현상**: 최근 cef20ff 커밋에서 UsageDashboard 가 직접 origin 호출 + 인증 헤더 전환. ranking 컴포넌트도 동일 패턴 따라가야 함
+- **완화**: R5.1.2 에서 `lib/api.ts` 의 기존 fetcher 만 사용. 직접 fetch 금지
+
+---
+
+## 📝 SPEC 정합성 메모
+
+- 본 ranking 트랙은 SPEC-SEO-TEXT.md / SPEC-BRAND-CARD.md 어느 쪽에도 정의 없음. **별도 SPEC-RANKING.md 신규 작성 필요 여부는 사용자 결정 사항** — Phase R1 착수 전 확인. 미작성 시 `tasks/todo.md` 본 섹션이 사실상 SPEC 역할
+- SPEC v2 범위 변경 ❌ — 기존 8단계 파이프라인은 손대지 않음
+- 변경 이력 기록 대상: 루트 `CLAUDE.md` "변경 이력" 섹션에 `2026-04-24: 순위 추적 도메인(ranking) 추가, APScheduler in-process 통합` 1줄 추가 (Phase R7 단계에서)

@@ -177,6 +177,51 @@ create index if not exists idx_api_usage_provider
 
 
 -- ============================================================
+-- publications — 사용자가 네이버 블로그에 발행한 URL 등록 (순위 추적 입력)
+-- SPEC-RANKING.md §4 참조
+-- ============================================================
+create table if not exists publications (
+    id uuid primary key default gen_random_uuid(),
+    job_id text,
+    keyword text not null,
+    slug text not null,
+    url text not null unique,
+    published_at timestamptz,
+    created_at timestamptz default now()
+);
+
+create index if not exists idx_publications_keyword
+    on publications (keyword);
+
+create index if not exists idx_publications_slug
+    on publications (slug);
+
+
+-- ============================================================
+-- ranking_snapshots — 네이버 SERP 순위 시계열 (append-only)
+-- position NULL = 100위 밖. captured_at desc 인덱스로 timeline 조회 최적화
+-- ============================================================
+create table if not exists ranking_snapshots (
+    id uuid primary key default gen_random_uuid(),
+    publication_id uuid not null references publications(id) on delete cascade,
+    position int,
+    total_results int,
+    captured_at timestamptz default now(),
+    serp_html_path text
+);
+
+create index if not exists idx_ranking_snapshots_publication
+    on ranking_snapshots (publication_id, captured_at desc);
+
+
+-- ============================================================
+-- 롤백 (배포 실패 시)
+--   drop table if exists ranking_snapshots;
+--   drop table if exists publications;
+-- ============================================================
+
+
+-- ============================================================
 -- 향후 확장 시 이 파일에 테이블 추가 (Phase 2):
 --   - client_profiles  (클라이언트 프로필, 브랜드와 구분)
 --   - visual_patterns  (비주얼 분석 / VLM)

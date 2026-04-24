@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config.settings import settings
 from web.api.job_manager import JobManager
-from web.api.routers import jobs, results, usage, ws
+from web.api.routers import jobs, rankings, results, usage, ws
 
 logger = logging.getLogger(__name__)
 
@@ -24,12 +24,23 @@ job_manager = JobManager()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """앱 시작/종료 시 리소스 관리."""
+    """앱 시작/종료 시 리소스 관리. APScheduler 도 lifecycle 에 통합."""
     loop = asyncio.get_running_loop()
     job_manager.set_loop(loop)
+
+    ranking_scheduler = None
+    if settings.ranking_scheduler_enabled:
+        from application.scheduler import start_scheduler
+
+        ranking_scheduler = start_scheduler()
+
     logger.info("Contents Creator API started")
     yield
     job_manager.shutdown()
+    if ranking_scheduler is not None:
+        from application.scheduler import stop_scheduler
+
+        stop_scheduler(ranking_scheduler)
     logger.info("Contents Creator API stopped")
 
 
@@ -54,5 +65,6 @@ app.include_router(jobs.router, prefix="/api")
 app.include_router(results.router, prefix="/api")
 app.include_router(ws.router, prefix="/api")
 app.include_router(usage.router, prefix="/api")
+app.include_router(rankings.router, prefix="/api")
 
 # /output 정적 마운트는 인증 우회 통로가 되어 제거. 결과물은 인증된 /api/results/* 로만 접근.
