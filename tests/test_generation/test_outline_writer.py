@@ -122,9 +122,10 @@ class TestGenerateOutline:
         assert len(tools) == 1
         assert tools[0]["name"] == "record_outline"
         tool_choice = call_kwargs.kwargs.get("tool_choice", {})
-        # outline_thinking_budget > 0 기본값 → tool_choice=auto (thinking 호환).
-        # 프롬프트 강제 + tool_use 누락 시 재시도로 구조화 응답 보장.
-        assert tool_choice.get("type") == "auto"
+        # outline_thinking_budget 기본값 0 → thinking 비활성 경로
+        # → tool_choice=tool 로 이름 강제 (구조화 응답 보장).
+        assert tool_choice.get("type") == "tool"
+        assert tool_choice.get("name") == "record_outline"
 
     @patch("domain.common.anthropic_client.anthropic")
     @patch("domain.common.anthropic_client.require")
@@ -154,8 +155,16 @@ class TestGenerateOutline:
         mock_require: MagicMock,
         mock_anthropic: MagicMock,
         sample_pattern_card: PatternCard,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """thinking 응답에 target_chars 등 required 필드 누락 → thinking off 폴백."""
+        """thinking 응답에 target_chars 등 required 필드 누락 → thinking off 폴백.
+
+        기본값이 thinking=0 이므로 이 시나리오 재현을 위해 명시적으로 예산을 켠다.
+        (실측에서 thinking 활성 시 tool_use 누락/부분 응답이 드물게 발생하는 케이스 보호)
+        """
+        from config.settings import settings
+
+        monkeypatch.setattr(settings, "outline_thinking_budget", 2000)
         mock_require.return_value = "test-key"
         mock_client = MagicMock()
         mock_anthropic.Anthropic.return_value = mock_client

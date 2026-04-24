@@ -68,7 +68,7 @@ output/{slug}/{ts}/  ← 타임스탬프별 결과물 (재실행 이력 누적)
 | 계층 | 시점 | 파일 | 통제 방식 |
 |---|---|---|---|
 | Layer 1 | [6] 아웃라인 후 | `outline_validator.py` | 섹션 수·이미지 수·도입부 길이 코드 검증 → 미달 시 1회 재생성 |
-| Layer 2 | [7] 본문 후 | `body_quality_enforcer.py` | 섹션별 글자수·키워드 검증 → 약한 섹션만 Sonnet으로 보강 |
+| Layer 2 | [7] 본문 후 | `body_quality_enforcer.py` | 섹션별 글자수·키워드 검증 → 약한 섹션만 Opus로 보강 (하이브리드: 초안 Sonnet) |
 | Layer 3 | [10] 조립 시 | `assembler.py` | 이미지 위치를 LLM position 무시, `_build_even_image_map()`으로 균등 배분 |
 
 ## 🔴 분석→생성 반영 규칙 (Analysis-to-Generation Integrity)

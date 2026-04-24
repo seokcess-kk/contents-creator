@@ -42,21 +42,24 @@ class Settings(BaseSettings):
     supabase_key: str | None = Field(default=None, description="Supabase service role key")
 
     # LLM 모델 식별자 (SPEC-SEO-TEXT.md §5 — 역할별 매핑)
-    # 창작 ([6] 아웃라인·도입부·image_prompts, [7] 본문) — SEO 성과 최대 지렛대
+    # 창작 — [6] 아웃라인·도입부·image_prompts 는 Opus 유지.
+    # [7] 본문 초안은 Sonnet 으로 내리고 약한 섹션만 Opus 로 보정 (하이브리드).
     model_opus: str = "claude-opus-4-7"
-    # 에디터 ([7-후] 약한 섹션 보강, [8] 문단 재생성) — 미세 보정 역할이라 Sonnet 으로 충분.
-    # 비용 최적화(Opus 대비 ~5배 저렴)와 적정 품질 균형.
-    model_editor: str = "claude-sonnet-4-6"
-    # 분류·검증 ([4a][4b] 추출, [8] LLM 검증, [8] 이미지 prompt 재생성)
+    # 에디터 ([7-후] 약한 섹션 보강, [8] 문단 재생성) — 본문 초안을 Sonnet 으로
+    # 낮췄기 때문에 여기서는 Opus 로 상향해 "약한 섹션만 고급 모델로 보정" 한다.
+    model_editor: str = "claude-opus-4-7"
+    # 분류·검증 ([4a][4b] 추출, [7] 본문 초안, [8] LLM 검증, [8] 이미지 prompt 재생성)
     model_sonnet: str = "claude-sonnet-4-6"
     image_model: str = "gemini-2.5-flash-image"
     image_size: str = "1024x1024"
 
-    # Extended Thinking — [6] 아웃라인 사고 예산. 0 이면 비활성.
+    # Extended Thinking — [6] 아웃라인 사고 예산. 0 이면 비활성 (기본값).
     # outline_writer 는 thinking 활성 시 tool_choice=auto + 프롬프트 강제 + tool_use
     # 누락 시 1회 재시도 패턴으로 Anthropic 제약을 우회한다.
-    # 복잡 제약 동시 충족(SEO·의료법·톤·DIA·키워드 밀도)에 효과적.
-    outline_thinking_budget: int = 2000
+    # 복잡 제약 동시 충족(SEO·의료법·톤·DIA·키워드 밀도)에 효과적이지만 비용이 크다.
+    # 실측상 thinking off + `_assert_required_fields` + outline_validator 폴백이
+    # 품질을 충분히 잡아내므로 기본값은 0. 품질 저하 확인 시 env 로 복원.
+    outline_thinking_budget: int = 0
 
     # 웹 UI
     cors_origins: str = "http://localhost:3000"  # 쉼표 구분 복수 origin
@@ -72,9 +75,10 @@ class Settings(BaseSettings):
     # API 비용 (USD per 1M tokens, 2026-04 기준)
     cost_anthropic_opus_input: float = 15.0
     cost_anthropic_opus_output: float = 75.0
-    # 에디터는 Sonnet 4.6 기준. model_editor 를 다른 모델로 바꾸면 이 단가도 동기화.
-    cost_anthropic_editor_input: float = 3.0
-    cost_anthropic_editor_output: float = 15.0
+    # 에디터는 Opus 4.7 기준 (하이브리드: 약한 섹션만 고급 모델로 보정).
+    # model_editor 를 바꾸면 이 단가도 동기화.
+    cost_anthropic_editor_input: float = 15.0
+    cost_anthropic_editor_output: float = 75.0
     cost_anthropic_sonnet_input: float = 3.0
     cost_anthropic_sonnet_output: float = 15.0
     cost_gemini_image_per_request: float = 0.04

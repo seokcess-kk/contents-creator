@@ -1,7 +1,11 @@
-"""[7] 본문 생성 (Opus). M2 불변 + 섹션 병렬.
+"""[7] 본문 생성 (Sonnet 초안 + 약한 섹션 Opus 보정). M2 불변 + 섹션 병렬.
 
 SPEC-SEO-TEXT.md §3 [7] 구현.
 2번째 섹션부터 각 섹션을 **병렬**로 생성한다.
+
+비용 최적화: 초안은 `settings.model_sonnet`, body_quality_enforcer 가 약한
+섹션만 `settings.model_editor`(Opus) 로 재작성 (하이브리드). SEO 품질은 구조·
+키워드 배치·약한 단락 보정에 좌우되므로 초안을 Opus 로 쓰는 것은 과투자였다.
 
 M2 불변 규칙:
   - 이 파일은 intro 원문 파라미터를 받지 않는다.
@@ -92,7 +96,11 @@ def _generate_section(
     pattern_card: PatternCard,
     compliance_rules: str | None,
 ) -> BodySection:
-    """단일 섹션을 Opus 로 생성한다."""
+    """단일 섹션을 Sonnet 으로 초안 생성한다 (하이브리드 초안).
+
+    품질이 기준 미달이면 `body_quality_enforcer` + `_fix_weak_sections` 가
+    `settings.model_editor` (Opus) 로 해당 섹션만 재작성한다.
+    """
     shared_system, messages, tool_schema = build_body_section_prompt(
         section, outline, intro_tone_hint, pattern_card, compliance_rules
     )
@@ -100,7 +108,7 @@ def _generate_section(
     client = build_client()
     response = messages_create_with_retry(
         client,
-        model=settings.model_opus,
+        model=settings.model_sonnet,
         max_tokens=_SECTION_MAX_TOKENS,
         system=[
             {
@@ -116,7 +124,7 @@ def _generate_section(
     record_usage(
         ApiUsage(
             provider="anthropic",
-            model=settings.model_opus,
+            model=settings.model_sonnet,
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
         )

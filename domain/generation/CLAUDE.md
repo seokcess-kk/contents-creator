@@ -25,7 +25,12 @@
 
 - [6] 아웃라인 출력: 제목 + 섹션 구조 + 도입부 200~300자 + `suggested_tags` + **`image_prompts`**
 - [7] 본문은 **2번째 섹션부터만** 생성. 도입부는 재생성하지 않음
-- 모델: Opus 4.6 (두 단계 모두)
+- 모델 정책 (하이브리드):
+  - [6] 아웃라인·도입부·image_prompts — **Opus 4.7** (SEO 성과 최대 지렛대)
+  - [7] 본문 초안 — **Sonnet 4.6** (비용 최적화)
+  - [7-후] 약한 섹션 보정만 **Opus 4.7** (`settings.model_editor`, `_fix_weak_sections`)
+  - 이유: SEO 품질은 구조·키워드 배치·약한 단락 보정에 좌우. 초안을 Opus 로 쓰는 것은 과투자.
+- `outline_thinking_budget` 기본값 0. 품질 저하 확인 시 env `OUTLINE_THINKING_BUDGET` 로 복원
 - LLM 호출은 `tool_use` 로 JSON 스키마 강제 (Pydantic → JSON schema)
 - 중립화 프롬프트: 홍보성 소구 포인트를 일반 정보로 재서술 지시
 - 태그 개수는 `round(avg_tag_count_per_post)` 분석값 그대로. 클램프 없음 (Naver 30개 상한만 예외)
@@ -56,8 +61,8 @@
 ## 파일 책임
 
 - `prompt_builder.py` — **단일 프롬프트 진입점**
-- `outline_writer.py` — [6] 아웃라인 + 도입부 생성 (Opus 4.6, tool_use)
-- `body_writer.py` — [7] 본문 생성 (Opus 4.6, intro 미유입)
+- `outline_writer.py` — [6] 아웃라인 + 도입부 생성 (Opus 4.7, tool_use, thinking 기본 off)
+- `body_writer.py` — [7] 본문 생성 (Sonnet 4.6 초안, intro 미유입)
 - `model.py` — `Outline`, `OutlineSection`, `BodyResult`, `SuggestedTags`, `ImagePromptDraft` Pydantic 모델
 
 ## 금지

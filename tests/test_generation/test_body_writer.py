@@ -92,13 +92,14 @@ class TestGenerateBody:
 
     @patch("domain.common.anthropic_client.anthropic")
     @patch("domain.common.anthropic_client.require")
-    def test_uses_opus_model(
+    def test_uses_sonnet_model(
         self,
         mock_require: MagicMock,
         mock_anthropic: MagicMock,
         outline_without_intro: Outline,
         sample_pattern_card: PatternCard,
     ) -> None:
+        """하이브리드: 초안은 Sonnet. 약한 섹션 보정만 Opus (stage_runner 에서)."""
         mock_require.return_value = "test-key"
         mock_client = MagicMock()
         mock_anthropic.Anthropic.return_value = mock_client
@@ -107,7 +108,7 @@ class TestGenerateBody:
         generate_body(outline_without_intro, "톤", sample_pattern_card)
 
         call_kwargs = mock_client.messages.create.call_args
-        assert "opus" in call_kwargs.kwargs.get("model", "")
+        assert "sonnet" in call_kwargs.kwargs.get("model", "")
 
     @patch("domain.common.anthropic_client.anthropic")
     @patch("domain.common.anthropic_client.require")

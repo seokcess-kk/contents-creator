@@ -485,8 +485,9 @@ def _fix_weak_sections(
 def _call_section_fix(fix_prompt: str) -> str | None:
     """에디터 모델로 약한 섹션 보강. 실패 시 None (원본 유지).
 
-    Layer 2 품질 검증이 실패한 섹션을 재작성하는 에디팅 작업이므로
-    창작 품질이 중요. model_editor(Opus 4.7) 사용.
+    하이브리드 전략: body 초안은 Sonnet 이 쓰고, 여기서만 Opus 가 약한 섹션을
+    재작성한다. "초안은 저렴하게, 부족한 곳만 고급 모델로 보정" 이 비용 대비
+    품질이 가장 좋은 지점. `settings.model_editor` = Opus 4.7.
     """
     try:
         import anthropic
