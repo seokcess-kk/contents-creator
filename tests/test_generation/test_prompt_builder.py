@@ -20,59 +20,61 @@ from domain.generation.prompt_builder import (
 
 
 class TestBuildOutlinePrompt:
-    def test_returns_messages_and_tool(self, sample_pattern_card: PatternCard) -> None:
-        messages, tool = build_outline_prompt(sample_pattern_card)
+    def test_returns_system_messages_and_tool(self, sample_pattern_card: PatternCard) -> None:
+        shared_system, messages, tool = build_outline_prompt(sample_pattern_card)
+        assert isinstance(shared_system, str)
+        assert len(shared_system) > 0
         assert isinstance(messages, list)
         assert len(messages) >= 1
         assert messages[0]["role"] == "user"
         assert tool["name"] == "record_outline"
 
     def test_contains_keyword(self, sample_pattern_card: PatternCard) -> None:
-        messages, _ = build_outline_prompt(sample_pattern_card)
-        content = messages[0]["content"]
-        assert sample_pattern_card.keyword in content
+        shared_system, _, _ = build_outline_prompt(sample_pattern_card)
+        assert sample_pattern_card.keyword in shared_system
 
     def test_contains_sections(self, sample_pattern_card: PatternCard) -> None:
-        messages, _ = build_outline_prompt(sample_pattern_card)
-        content = messages[0]["content"]
+        shared_system, _, _ = build_outline_prompt(sample_pattern_card)
         for req in sample_pattern_card.sections.required:
-            assert req in content
+            assert req in shared_system
 
     def test_contains_tag_instructions(self, sample_pattern_card: PatternCard) -> None:
-        messages, _ = build_outline_prompt(sample_pattern_card)
-        content = messages[0]["content"]
-        assert "suggested_tags" in content
-        assert "태그" in content
+        shared_system, _, _ = build_outline_prompt(sample_pattern_card)
+        assert "suggested_tags" in shared_system
+        assert "태그" in shared_system
 
     def test_contains_image_instructions(self, sample_pattern_card: PatternCard) -> None:
-        messages, _ = build_outline_prompt(sample_pattern_card)
-        content = messages[0]["content"]
-        assert "image_prompts" in content
-        assert "no text" in content.lower()
+        shared_system, _, _ = build_outline_prompt(sample_pattern_card)
+        assert "image_prompts" in shared_system
+        assert "no text" in shared_system.lower()
 
     def test_compliance_rules_injected(self, sample_pattern_card: PatternCard) -> None:
         rules = "테스트 의료법 규칙: 효과 보장 금지"
-        messages, _ = build_outline_prompt(sample_pattern_card, compliance_rules=rules)
-        content = messages[0]["content"]
-        assert "테스트 의료법 규칙" in content
+        shared_system, _, _ = build_outline_prompt(sample_pattern_card, compliance_rules=rules)
+        assert "테스트 의료법 규칙" in shared_system
 
     def test_default_compliance_when_none(self, sample_pattern_card: PatternCard) -> None:
-        messages, _ = build_outline_prompt(sample_pattern_card)
-        content = messages[0]["content"]
-        assert "의료법" in content
-        assert "치료 효과 보장" in content
+        shared_system, _, _ = build_outline_prompt(sample_pattern_card)
+        assert "의료법" in shared_system
+        assert "치료 효과 보장" in shared_system
 
     def test_dia_plus_instructions(self, sample_pattern_card: PatternCard) -> None:
-        messages, _ = build_outline_prompt(sample_pattern_card)
-        content = messages[0]["content"]
+        shared_system, _, _ = build_outline_prompt(sample_pattern_card)
         # tables > 0.5, lists > 0.7 이므로 관련 지시 포함
-        assert "표" in content
-        assert "리스트" in content
+        assert "표" in shared_system
+        assert "리스트" in shared_system
 
     def test_neutralization_instructions(self, sample_pattern_card: PatternCard) -> None:
-        messages, _ = build_outline_prompt(sample_pattern_card)
-        content = messages[0]["content"]
-        assert "중립" in content or "일반화" in content
+        shared_system, _, _ = build_outline_prompt(sample_pattern_card)
+        assert "중립" in shared_system or "일반화" in shared_system
+
+    def test_user_message_minimal_for_caching(self, sample_pattern_card: PatternCard) -> None:
+        """user 메시지는 짧아야 한다 (시스템 프롬프트는 system 배열로 분리됨)."""
+        shared_system, messages, _ = build_outline_prompt(sample_pattern_card)
+        user_content = messages[0]["content"]
+        # 시스템 프롬프트가 user 에 새지 않아야 함
+        assert sample_pattern_card.keyword not in user_content
+        assert "image_prompts" not in user_content
 
 
 class TestBuildBodyPrompt:

@@ -173,19 +173,23 @@ BODY_SECTION_TOOL: dict[str, Any] = {
 def build_outline_prompt(
     pattern_card: PatternCard,
     compliance_rules: str | None = None,
-) -> tuple[list[dict[str, str]], dict[str, Any]]:
+) -> tuple[str, list[dict[str, str]], dict[str, Any]]:
     """[6] 아웃라인+도입부+image_prompts 프롬프트 빌드.
 
+    공용 시스템 프롬프트(shared_system)를 별도 분리해 Anthropic Prompt Caching 활성.
+    outline_writer 가 `system=[{text, cache_control: ephemeral}]` 로 전달하면
+    재시도(thinking 폴백, feedback 재생성) 또는 5분 내 재실행 시 cache hit.
+
     Returns:
-        (messages, tool_schema) 튜플.
+        (shared_system, messages, tool_schema) 3-tuple.
     """
     pc = pattern_card
-    system = _build_outline_system(pc, compliance_rules)
+    shared_system = _build_outline_system(pc, compliance_rules)
     user = "위 지시에 따라 record_outline 도구로 아웃라인을 기록하라."
     messages: list[dict[str, str]] = [
-        {"role": "user", "content": f"[시스템 지시]\n{system}\n\n{user}"},
+        {"role": "user", "content": user},
     ]
-    return messages, OUTLINE_TOOL
+    return shared_system, messages, OUTLINE_TOOL
 
 
 def build_body_prompt(

@@ -52,15 +52,16 @@ def generate_outline(
     thinking 과 tool 이름 강제는 Anthropic 규약상 비호환이므로, auto 에서도
     프롬프트로 tool 사용을 강제하고 tool_use 블록이 없으면 1회 재호출한다.
     """
-    messages, tool_schema = build_outline_prompt(pattern_card, compliance_rules)
+    shared_system, messages, tool_schema = build_outline_prompt(pattern_card, compliance_rules)
     if feedback:
-        messages[0]["content"] += f"\n\n[이전 생성 결과 피드백]\n{feedback}"
+        messages[-1]["content"] += f"\n\n[이전 생성 결과 피드백]\n{feedback}"
 
     thinking_budget = settings.outline_thinking_budget
     if thinking_budget > 0:
         # thinking 경로 — tool_choice=auto + 프롬프트 강제 + tool_use 누락 시 1회 재시도
         messages[-1]["content"] += _TOOL_ENFORCE_HINT.format(tool_name=tool_schema["name"])
         response = _invoke(
+            shared_system=shared_system,
             tool_schema=tool_schema,
             messages=messages,
             thinking_budget=thinking_budget,
@@ -70,13 +71,19 @@ def generate_outline(
             # thinking off + tool 이름 강제 폴백 (확정적 tool_use 응답)
             logger.warning("outline tool_use missing under thinking; falling back")
             response = _invoke(
+                shared_system=shared_system,
                 tool_schema=tool_schema,
                 messages=messages,
                 thinking_budget=0,
             )
             tool_input = _extract_tool_input(response)
     else:
-        response = _invoke(tool_schema=tool_schema, messages=messages, thinking_budget=0)
+        response = _invoke(
+            shared_system=shared_system,
+            tool_schema=tool_schema,
+            messages=messages,
+            thinking_budget=0,
+        )
         tool_input = _extract_tool_input(response)
 
     return _parse_outline(tool_input)
@@ -84,6 +91,7 @@ def generate_outline(
 
 def _invoke(
     *,
+    shared_system: str,
     tool_schema: dict[str, Any],
     messages: list[dict[str, Any]],
     thinking_budget: int,
@@ -93,6 +101,8 @@ def _invoke(
     최신 Anthropic API (4.7+) 는 thinking.type.enabled + budget_tokens 대신
     thinking.type.adaptive + output_config.effort 조합을 쓴다. thinking_budget 는
     on/off 플래그로만 남기고, 실제 사고 깊이는 effort 로 고정한다 (SEO 품질 우선).
+
+    shared_system 은 cache_control: ephemeral 로 전달해 재시도/연속 호출 시 cache hit.
     """
     client = build_client()
     extra_kwargs: dict[str, Any] = {}
@@ -109,6 +119,13 @@ def _invoke(
         client,
         model=settings.model_opus,
         max_tokens=max_tokens,
+        system=[
+            {
+                "type": "text",
+                "text": shared_system,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
         tools=[tool_schema],
         tool_choice=tool_choice,
         messages=messages,
