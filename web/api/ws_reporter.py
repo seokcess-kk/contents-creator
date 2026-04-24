@@ -18,8 +18,9 @@ if TYPE_CHECKING:
 class WebSocketProgressReporter:
     """application.progress.ProgressReporter 프로토콜 구현체.
 
-    stage_start 에서 job.cancel_requested 플래그를 검사해 JobCancelled 를 raise.
-    이 지점이 협력적 취소(cooperative cancellation)의 유일한 폴링 지점이다.
+    stage_start/progress 와 명시적 check_cancel() 에서 job.cancel_requested 를 검사해
+    JobCancelled 를 raise. 장기 LLM 루프는 단계 경계가 없으므로 stage_runner 가
+    루프 반복마다 `reporter.check_cancel()` 을 직접 호출해야 취소가 즉시 반영된다.
     """
 
     def __init__(self, job_id: str, event_bus: JobEventBus, job: Job) -> None:
@@ -27,12 +28,15 @@ class WebSocketProgressReporter:
         self._bus = event_bus
         self._job = job
 
-    def _check_cancel(self) -> None:
+    def check_cancel(self) -> None:
         if self._job.cancel_requested:
             raise JobCancelled(f"job {self._job_id} cancelled by user")
 
+    # 하위 호환 — 기존 내부 호출자 보존
+    _check_cancel = check_cancel
+
     def stage_start(self, stage: str, total: int | None = None) -> None:
-        self._check_cancel()
+        self.check_cancel()
         event: dict[str, Any] = {
             "type": "stage_start",
             "stage": stage,
@@ -43,7 +47,7 @@ class WebSocketProgressReporter:
         self._bus.emit(self._job_id, event)
 
     def stage_progress(self, current: int, detail: str = "") -> None:
-        self._check_cancel()
+        self.check_cancel()
         event: dict[str, Any] = {
             "type": "stage_progress",
             "current": current,

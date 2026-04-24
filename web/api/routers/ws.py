@@ -22,7 +22,7 @@ def _get_manager():  # type: ignore[no-untyped-def]
 
 @router.websocket("/jobs/{job_id}")
 async def job_progress_ws(websocket: WebSocket, job_id: str) -> None:
-    if not await require_api_key_ws(websocket):
+    if not await require_api_key_ws(websocket, job_id=job_id):
         return
     mgr = _get_manager()
     job = mgr.get_job(job_id)

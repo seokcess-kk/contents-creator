@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { getApiKey, getApiOrigin } from "@/lib/api";
 
 interface UsageData {
   days: number;
@@ -27,10 +26,8 @@ export default function UsageDashboard() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const apiKey = getApiKey();
-      const headers: Record<string, string> = {};
-      if (apiKey) headers["X-API-Key"] = apiKey;
-      const res = await fetch(`${getApiOrigin()}/api/usage?days=${days}`, { headers });
+      // same-origin. src/proxy.ts 가 X-API-Key 주입.
+      const res = await fetch(`/api/usage?days=${days}`);
       if (!res.ok) throw new Error(`${res.status}`);
       setData(await res.json());
     } catch {

@@ -53,6 +53,15 @@ class ProgressReporter(Protocol):
         """파이프라인 중간 실패."""
         ...
 
+    def check_cancel(self) -> None:
+        """취소/타임아웃 폴링 지점. cancel_requested 플래그 시 JobCancelled raise.
+
+        stage_start/progress 가 닿지 않는 장기 루프(섹션 보강, compliance 이터레이션,
+        이미지 생성 반복 등) 직전에 명시적으로 호출해 협력적 취소 해상도를 높인다.
+        Logging/Null 구현은 no-op.
+        """
+        ...
+
 
 class NullProgressReporter:
     """모든 호출을 무시하는 Null Object.
@@ -73,6 +82,9 @@ class NullProgressReporter:
         pass
 
     def pipeline_error(self, stage: str, error: Exception) -> None:
+        pass
+
+    def check_cancel(self) -> None:
         pass
 
 
@@ -99,3 +111,7 @@ class LoggingProgressReporter:
 
     def pipeline_error(self, stage: str, error: Exception) -> None:
         logger.error("[pipeline] 실패 at %s: %s", stage, error)
+
+    def check_cancel(self) -> None:
+        # CLI 실행에는 외부 취소 신호가 없다 (Ctrl+C 는 SIGINT 로 따로 처리).
+        pass

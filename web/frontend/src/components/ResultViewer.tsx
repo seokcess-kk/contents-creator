@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { getApiKey, getApiOrigin } from "@/lib/api";
 import HtmlPreview from "./HtmlPreview";
 
 type Tab = "html" | "markdown" | "outline" | "images";
@@ -62,10 +61,8 @@ function MarkdownView({ slug, type = "markdown" }: { slug: string; type?: string
     setLoading(true);
     try {
       const endpoint = type === "outline" ? "outline" : "markdown";
-      const apiKey = getApiKey();
-      const headers: Record<string, string> = {};
-      if (apiKey) headers["X-API-Key"] = apiKey;
-      const res = await fetch(`${getApiOrigin()}/api/results/${slug}/latest/${endpoint}`, { headers });
+      // same-origin. src/proxy.ts 가 X-API-Key 주입.
+      const res = await fetch(`/api/results/${encodeURIComponent(slug)}/latest/${endpoint}`);
       if (!res.ok) throw new Error(`${res.status}`);
       setContent(await res.text());
     } catch {
@@ -95,15 +92,14 @@ function MarkdownView({ slug, type = "markdown" }: { slug: string; type?: string
 }
 
 function ImagesGrid({ slug, count }: { slug: string; count: number }) {
-  // img.src 는 X-API-Key 헤더 미지원 → query token 으로 전달.
-  const apiKey = getApiKey();
-  const qs = apiKey ? `?token=${encodeURIComponent(apiKey)}` : "";
+  // same-origin `/api/*`. proxy.ts 가 서버사이드에서 X-API-Key 를 주입하므로
+  // img.src 에 토큰·키를 실을 필요 없음.
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
       {Array.from({ length: count }, (_, i) => (
         <div key={i} className="border border-gray-200 rounded-lg overflow-hidden">
           <img
-            src={`${getApiOrigin()}/api/results/${slug}/latest/images/image_${i + 1}.png${qs}`}
+            src={`/api/results/${encodeURIComponent(slug)}/latest/images/image_${i + 1}.png`}
             alt={`생성 이미지 ${i + 1}`}
             className="w-full h-auto"
             loading="lazy"

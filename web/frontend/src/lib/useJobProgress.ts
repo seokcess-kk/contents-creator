@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { WsMessage } from "@/types";
-import { getApiKey } from "./api";
+import { getWsOrigin, mintJobWsToken } from "./api";
 
 interface UseJobProgressReturn {
   events: WsMessage[];
@@ -14,15 +14,21 @@ export function useJobProgress(jobId: string | null): UseJobProgressReturn {
   const [isConnected, setIsConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     if (!jobId) return;
 
-    // WebSocket URL: Next.js rewrites는 WS 미지원이므로 직접 연결.
-    // 브라우저는 WS 핸드셰이크에 커스텀 헤더를 붙일 수 없어 query param 으로 키 전달.
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL?.trim() || "https://sarubia.glitzy.kr";
-    const wsUrl = apiUrl.replace(/^http/, "ws");
-    const apiKey = getApiKey();
-    const query = apiKey ? `?token=${encodeURIComponent(apiKey)}` : "";
+    // WS 는 Next proxy 가 처리하지 못하므로 외부 origin 에 직접 연결한다.
+    // admin key 를 URL 에 싣지 않도록 jobId 바운드 단명 서명 토큰을 먼저 받는다.
+    // (토큰 발급 경로는 `/api/jobs/{id}/ws-token` same-origin 이며 서버사이드 키로 인증)
+    let token = "";
+    try {
+      token = await mintJobWsToken(jobId);
+    } catch {
+      // 토큰 발급 실패 시엔 토큰 없이 시도 — dev 모드(인증 비활성)면 통과, 운영은 401.
+    }
+
+    const wsUrl = getWsOrigin().replace(/^http/, "ws");
+    const query = token ? `?token=${encodeURIComponent(token)}` : "";
     const url = `${wsUrl}/api/ws/jobs/${jobId}${query}`;
 
     const ws = new WebSocket(url);
@@ -51,7 +57,7 @@ export function useJobProgress(jobId: string | null): UseJobProgressReturn {
 
   useEffect(() => {
     setEvents([]);
-    connect();
+    void connect();
     return () => {
       wsRef.current?.close();
       wsRef.current = null;

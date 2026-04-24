@@ -139,6 +139,10 @@ class JobManager:
 
         def _check() -> None:
             if job.status == "running":
+                # cancel_requested 를 먼저 세워야 reporter.check_cancel() 폴링 지점에서
+                # 워커가 실제로 중단된다. 이게 빠지면 상태만 timed_out 이고 백그라운드에서
+                # LLM/크롤링이 계속 과금되는 "cosmetic timeout" 이 된다.
+                job.cancel_requested = True
                 job.status = "timed_out"
                 job.error = f"job timed out after {timeout}s"
                 job.finished_at = datetime.now(tz=UTC)

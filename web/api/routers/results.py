@@ -5,6 +5,10 @@ Render 컨테이너는 재배포/슬립 시 파일이 휘발되므로 없으면 
 
 - HTML/Markdown/Outline: `generated_contents` 테이블 (slug 기준 최신 행) 에서 조회
 - 이미지: `results` Storage 버킷에서 Signed URL 로 리다이렉트
+
+인증:
+  - 기본은 X-API-Key 헤더
+  - iframe/img 처럼 헤더 불가 경로는 `/sign` 으로 발급받은 slug-bound 단명 토큰 사용
 """
 
 from __future__ import annotations
@@ -19,11 +23,14 @@ from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Red
 
 from config.supabase import get_client
 from domain.storage import get_signed_url
-from web.api.auth import require_api_key
+from web.api.auth import require_api_key, require_slug_access
+from web.api.signed_token import DEFAULT_TTL_SECONDS, MAX_TTL_SECONDS, mint
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/results", tags=["results"], dependencies=[Depends(require_api_key)])
+# router-level dependency 를 두지 않는다. slug 있는 라우트는 `require_slug_access`,
+# slug 없는 라우트는 `require_api_key` 로 분리한다.
+router = APIRouter(prefix="/results", tags=["results"])
 
 OUTPUT_ROOT = Path("output")
 
@@ -41,11 +48,16 @@ def _rewrite_image_src(html: str, slug: str, request: Request) -> str:
     """브라우저 미리보기용 img src 재작성.
 
     저장 HTML 의 상대 경로 `(../)?images/xxx` 를 인증된 라우터 절대 경로
-    `/api/results/{slug}/latest/images/xxx?token=...` 로 바꾼다.
+    `/api/results/{slug}/latest/images/xxx?token=<signed>` 로 바꾼다.
+    token 은 slug 바인딩 단명 토큰만 허용하며, 헤더로 접근한 경우에도 이미지 요청에
+    붙일 새 토큰을 발급해 전달한다 (admin key 를 URL 에 싣지 않는다).
     네이버 복붙 시에는 클라이언트가 다시 저장본을 받을 것이므로 저장 파일은 변경하지 않는다.
     """
-    token = request.query_params.get("token") or request.headers.get("x-api-key") or ""
-    qs = f"?token={quote(token)}" if token else ""
+    token = request.query_params.get("token") or ""
+    if not token:
+        # 헤더로 접근한 경우: 이미지 요청엔 헤더를 못 붙이니 단명 토큰을 새로 발급
+        token, _ = mint("slug", slug)
+    qs = f"?token={quote(token)}"
     base = f"/api/results/{quote(slug, safe='')}/latest/images"
     return _IMG_SRC_RE.sub(lambda m: f"{m.group(1)}{base}/{m.group(2)}{qs}{m.group(3)}", html)
 
@@ -69,7 +81,23 @@ def _fetch_latest_row(slug: str, columns: str) -> dict | None:
         return None
 
 
-@router.get("/{slug}/latest/html", response_model=None)
+@router.get("/{slug}/sign")
+def sign_slug(
+    slug: str,
+    ttl: int = DEFAULT_TTL_SECONDS,
+    _: None = Depends(require_api_key),
+) -> dict[str, object]:
+    """slug 전용 단명 토큰 발급. X-API-Key 헤더 필수.
+
+    프론트가 iframe/img 에 싣기 위한 `?token=` 값으로 이 토큰을 사용한다.
+    만료된 토큰은 자동 거부되므로 필요 시 재발급한다.
+    """
+    ttl = max(30, min(int(ttl), MAX_TTL_SECONDS))
+    token, expires_at = mint("slug", slug, ttl_seconds=ttl)
+    return {"token": token, "expires_at": expires_at, "ttl": ttl}
+
+
+@router.get("/{slug}/latest/html", response_model=None, dependencies=[Depends(require_slug_access)])
 def get_html(slug: str, request: Request) -> HTMLResponse:
     latest = _local_latest(slug)
     if latest is not None:
@@ -84,7 +112,9 @@ def get_html(slug: str, request: Request) -> HTMLResponse:
     raise HTTPException(status_code=404, detail="HTML not found")
 
 
-@router.get("/{slug}/latest/markdown", response_model=None)
+@router.get(
+    "/{slug}/latest/markdown", response_model=None, dependencies=[Depends(require_slug_access)]
+)
 def get_markdown(slug: str) -> FileResponse | PlainTextResponse:
     latest = _local_latest(slug)
     if latest is not None:
@@ -98,7 +128,9 @@ def get_markdown(slug: str) -> FileResponse | PlainTextResponse:
     raise HTTPException(status_code=404, detail="Markdown not found")
 
 
-@router.get("/{slug}/latest/outline", response_model=None)
+@router.get(
+    "/{slug}/latest/outline", response_model=None, dependencies=[Depends(require_slug_access)]
+)
 def get_outline(slug: str) -> FileResponse | PlainTextResponse:
     latest = _local_latest(slug)
     if latest is not None:
@@ -112,7 +144,11 @@ def get_outline(slug: str) -> FileResponse | PlainTextResponse:
     raise HTTPException(status_code=404, detail="Outline not found")
 
 
-@router.get("/{slug}/latest/images/{filename}", response_model=None)
+@router.get(
+    "/{slug}/latest/images/{filename}",
+    response_model=None,
+    dependencies=[Depends(require_slug_access)],
+)
 def get_image(slug: str, filename: str) -> FileResponse | RedirectResponse:
     # 경로 순회 공격 방지
     if ".." in filename or "/" in filename or "\\" in filename:
@@ -140,7 +176,7 @@ def get_image(slug: str, filename: str) -> FileResponse | RedirectResponse:
     return RedirectResponse(url=url, status_code=307)
 
 
-@router.get("/recent")
+@router.get("/recent", dependencies=[Depends(require_api_key)])
 def list_recent(limit: int = 50) -> list[dict]:
     """완료된 원고 목록(최신순). generated_contents 테이블 기반 — 영구 저장.
 
@@ -164,7 +200,7 @@ def list_recent(limit: int = 50) -> list[dict]:
         raise HTTPException(status_code=500, detail="failed to fetch recent results") from None
 
 
-@router.get("/{slug}/runs")
+@router.get("/{slug}/runs", dependencies=[Depends(require_slug_access)])
 def list_runs(slug: str) -> list[dict[str, str]]:
     slug_dir = OUTPUT_ROOT / slug
     if not slug_dir.exists():

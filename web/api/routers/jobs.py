@@ -15,6 +15,7 @@ from web.api.schemas import (
     PipelineRequest,
     ValidateRequest,
 )
+from web.api.signed_token import MAX_TTL_SECONDS, mint
 
 if TYPE_CHECKING:
     from web.api.job_manager import Job
@@ -79,6 +80,21 @@ def get_job(job_id: str) -> JobResponse:
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     return _job_to_response(job)
+
+
+@router.get("/{job_id}/ws-token")
+def mint_ws_token(job_id: str) -> dict[str, object]:
+    """WS 연결용 단명 토큰 발급. X-API-Key 헤더 필수.
+
+    브라우저 WS 는 커스텀 헤더를 못 붙이므로 기존에는 admin_api_key 를 `?token=` 으로
+    넣었다. 이제는 jobId 에 바인딩된 HMAC 토큰을 받아 WS 핸드셰이크에만 쓴다.
+    job_timeout_seconds 상한까지 TTL 허용.
+    """
+    mgr = _get_manager()
+    if mgr.get_job(job_id) is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    token, expires_at = mint("job", job_id, ttl_seconds=MAX_TTL_SECONDS)
+    return {"token": token, "expires_at": expires_at}
 
 
 @router.delete("/{job_id}", status_code=202)

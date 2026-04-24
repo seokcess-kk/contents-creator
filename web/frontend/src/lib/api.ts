@@ -1,19 +1,17 @@
 import type { Job, JobSubmitResponse, RecentResult } from "@/types";
 
-// 프론트가 Cloudflare Tunnel(sarubia.glitzy.kr)로 직접 호출.
-// Vercel rewrites 를 경유할 때 edge 일관성 문제로 간헐 502 가 발생해 우회.
-const API_ORIGIN = process.env.NEXT_PUBLIC_API_URL?.trim() || "https://sarubia.glitzy.kr";
-const API_BASE = `${API_ORIGIN}/api`;
-// 백엔드 ADMIN_API_KEY 가 설정된 경우 이 값이 서버의 값과 일치해야 한다.
-// NEXT_PUBLIC_ 은 번들에 포함되어 브라우저에 노출되므로 운영은 최소 1~3명 전제.
-// 본격 공개 시 Next.js Route Handler 로 서버사이드 프록시 전환 권장.
-const API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? "";
+// Same-origin BFF. admin API 키는 서버사이드 `src/proxy.ts` 에서 주입되므로
+// 클라이언트는 `/api/*` same-origin 으로만 호출한다. NEXT_PUBLIC_API_KEY 는
+// 사용하지 않는다 (브라우저 번들 노출 방지).
+const API_BASE = "/api";
+
+// WebSocket 전용 origin. Next rewrites 는 WS 업그레이드를 프록시하지 않으므로
+// WS 는 외부 origin 에 직접 연결한다. 이 값은 키가 아닌 "공개 가능한 origin" 이라
+// NEXT_PUBLIC_ 접두어가 허용된다. admin key 는 여기 안 실린다 (signed token 사용).
+const WS_ORIGIN = process.env.NEXT_PUBLIC_WS_URL?.trim() || "https://sarubia.glitzy.kr";
 
 function buildHeaders(extra?: HeadersInit): HeadersInit {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (API_KEY) {
-    headers["X-API-Key"] = API_KEY;
-  }
   if (extra) {
     const merged = new Headers(extra);
     merged.forEach((value, key) => {
@@ -35,12 +33,15 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export function getApiKey(): string {
-  return API_KEY;
+// iframe/img src 는 same-origin 경로로 직접 구성한다.
+// proxy.ts 가 헤더 주입을 담당하므로 URL 에 토큰을 실을 필요가 없다.
+export function getApiBase(): string {
+  return API_BASE;
 }
 
-export function getApiOrigin(): string {
-  return API_ORIGIN;
+// WS URL — WebSocket 연결용 외부 origin (jobId 바운드 단명 토큰 필수).
+export function getWsOrigin(): string {
+  return WS_ORIGIN;
 }
 
 // 작업 목록
@@ -103,4 +104,78 @@ export async function cancelJob(id: string): Promise<void> {
     const text = await res.text();
     throw new Error(`API ${res.status}: ${text}`);
   }
+}
+
+// WebSocket 연결 직전에 jobId 바운드 단명 토큰을 발급받아 URL 쿼리에 담는다.
+// 이 경로만이 admin key 를 쓰지 않고 WS 를 인증하는 유일한 방법이다.
+export async function mintJobWsToken(jobId: string): Promise<string> {
+  const data = await fetchJson<{ token: string; expires_at: number }>(
+    `/jobs/${encodeURIComponent(jobId)}/ws-token`,
+  );
+  return data.token;
+}
+
+// ── 순위 추적 (SPEC-RANKING.md §3 [조회]) ──
+
+export interface Publication {
+  id: string;
+  job_id: string | null;
+  keyword: string;
+  slug: string;
+  url: string;
+  published_at: string | null;
+  created_at: string;
+}
+
+export interface RankingSnapshot {
+  id: string;
+  publication_id: string;
+  position: number | null;
+  total_results: number | null;
+  captured_at: string;
+}
+
+export interface RankingTimeline {
+  publication: Publication;
+  snapshots: RankingSnapshot[];
+}
+
+export function listPublications(
+  keyword?: string,
+  limit = 50,
+): Promise<{ count: number; items: Publication[] }> {
+  const qs = new URLSearchParams();
+  if (keyword) qs.set("keyword", keyword);
+  qs.set("limit", String(limit));
+  return fetchJson(`/rankings/publications?${qs.toString()}`);
+}
+
+export function createPublication(params: {
+  keyword: string;
+  slug: string;
+  url: string;
+  job_id?: string | null;
+  published_at?: string | null;
+}): Promise<Publication> {
+  return fetchJson("/rankings/publications", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
+export function getPublicationTimeline(publicationId: string): Promise<RankingTimeline> {
+  return fetchJson(`/rankings/publications/${encodeURIComponent(publicationId)}`);
+}
+
+export function triggerRankingCheck(publicationId: string): Promise<RankingSnapshot> {
+  return fetchJson(`/rankings/check/${encodeURIComponent(publicationId)}`, {
+    method: "POST",
+  });
+}
+
+export function listRankingSnapshots(
+  publicationId: string,
+  limit = 90,
+): Promise<{ publication_id: string; count: number; items: RankingSnapshot[] }> {
+  return fetchJson(`/rankings/${encodeURIComponent(publicationId)}?limit=${limit}`);
 }

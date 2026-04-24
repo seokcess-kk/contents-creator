@@ -241,6 +241,7 @@ def run_stage_semantic_extraction(
     phys_by_url = {str(p.url): p for p in physicals}
 
     for i, page in enumerate(pages):
+        reporter.check_cancel()
         phys = phys_by_url.get(str(page.url))
         title = phys.title if phys else ""
         subtitle_count = phys.subtitle_count if phys else 0
@@ -281,6 +282,7 @@ def run_stage_appeal_extraction(
     phys_by_url = {str(p.url): p for p in physicals}
 
     for i, page in enumerate(pages):
+        reporter.check_cancel()
         phys = phys_by_url.get(str(page.url))
         title = phys.title if phys else ""
         try:
@@ -433,7 +435,7 @@ def run_stage_body_generation(
     if issues:
         weak_count = len({i.index for i in issues})
         logger.info("body_quality.weak_sections_found count=%d", weak_count)
-        body = _fix_weak_sections(body, issues, pattern_card, intro_tone_hint)
+        body = _fix_weak_sections(body, issues, pattern_card, intro_tone_hint, reporter)
 
     content_dir = output_dir / "content"
     content_dir.mkdir(parents=True, exist_ok=True)
@@ -452,6 +454,7 @@ def _fix_weak_sections(
     issues: list[SectionIssue],
     pattern_card: PatternCard,
     intro_tone_hint: str,
+    reporter: ProgressReporter,
 ) -> BodyResult:
     """약한 섹션을 LLM 으로 보강한다. Sonnet 사용."""
     from domain.generation.body_quality_enforcer import build_section_fix_prompt
@@ -459,6 +462,7 @@ def _fix_weak_sections(
     sections_to_fix = {i.index for i in issues}
 
     for sec_idx in sections_to_fix:
+        reporter.check_cancel()
         section = next((s for s in body.body_sections if s.index == sec_idx), None)
         if section is None:
             continue
@@ -545,6 +549,7 @@ def run_stage_compliance_check(
     iterations = 0
 
     for iteration in range(MAX_COMPLIANCE_ITERATIONS + 1):
+        reporter.check_cancel()
         violations = check_compliance(text, keyword=keyword)
         iterations = iteration + 1
         reporter.stage_progress(iteration + 1, f"iteration {iterations}")
