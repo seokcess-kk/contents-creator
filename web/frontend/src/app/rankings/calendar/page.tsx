@@ -121,7 +121,7 @@ export default function RankingCalendarPage() {
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder="키워드/URL 검색"
-          className="ml-auto px-3 py-0.5 border border-gray-300 rounded text-sm w-[220px]"
+          className="ml-2 px-3 py-0.5 border border-gray-300 rounded text-sm w-[200px]"
         />
         <span className="text-xs text-gray-500">{rows.length}개</span>
       </div>
