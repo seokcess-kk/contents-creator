@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field, field_validator
@@ -224,6 +224,35 @@ def record_diagnosis_action(diagnosis_id: str, req: DiagnosisActionRequest) -> d
     if updated is None:
         raise HTTPException(status_code=404, detail="diagnosis 미존재")
     return updated.model_dump(mode="json")
+
+
+class BulkCheckRequest(BaseModel):
+    """publication_ids=None 이면 measurable 전체."""
+
+    publication_ids: list[str] | None = None
+
+
+@router.get("/bulk-check/preview")
+def bulk_check_preview(
+    publication_ids: Annotated[list[str] | None, Query()] = None,
+) -> dict[str, int]:
+    """일괄 측정 시 실제 대상 publication 개수 미리보기 (UI 모달용)."""
+    from application.ranking_bulk_check import count_measurable
+
+    count = count_measurable(publication_ids)
+    return {"measurable_count": count}
+
+
+@router.post("/bulk-check", status_code=202)
+def trigger_bulk_check(req: BulkCheckRequest) -> dict[str, str]:
+    """일괄 SERP 측정 job 시작. job_id 반환 → /jobs/{id} 로 진행률 폴링.
+
+    publication_ids=None 이면 measurable 전체 (URL 있고 active/action_required).
+    """
+    from web.api.main import job_manager
+
+    job = job_manager.submit_ranking_bulk_check({"publication_ids": req.publication_ids})
+    return {"job_id": job.id}
 
 
 @router.get("/summary")

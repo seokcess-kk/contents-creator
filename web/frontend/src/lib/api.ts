@@ -192,6 +192,28 @@ export function bulkRegisterPublications(
   });
 }
 
+// ── 일괄 SERP 측정 ──
+
+export function previewBulkCheck(
+  publicationIds?: string[],
+): Promise<{ measurable_count: number }> {
+  const qs = new URLSearchParams();
+  for (const id of publicationIds ?? []) qs.append("publication_ids", id);
+  const path = qs.toString()
+    ? `/rankings/bulk-check/preview?${qs.toString()}`
+    : "/rankings/bulk-check/preview";
+  return fetchJson(path);
+}
+
+export function triggerBulkCheck(
+  publicationIds?: string[],
+): Promise<{ job_id: string }> {
+  return fetchJson("/rankings/bulk-check", {
+    method: "POST",
+    body: JSON.stringify({ publication_ids: publicationIds ?? null }),
+  });
+}
+
 export function getPublicationTimeline(publicationId: string): Promise<RankingTimeline> {
   return fetchJson(`/rankings/publications/${encodeURIComponent(publicationId)}`);
 }

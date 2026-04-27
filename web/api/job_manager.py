@@ -29,7 +29,9 @@ from application.orchestrator import (
     run_pipeline,
     run_validate_only,
 )
+from application.ranking_bulk_check import bulk_check_rankings
 from config.settings import settings
+from domain.ranking.model import RankingCheckSummary
 from web.api.ws_reporter import WebSocketProgressReporter
 
 logger = logging.getLogger(__name__)
@@ -115,6 +117,10 @@ class JobManager:
 
     def submit_validate(self, params: dict[str, Any]) -> Job:
         return self._submit("validate", params)
+
+    def submit_ranking_bulk_check(self, params: dict[str, Any]) -> Job:
+        """일괄 SERP 측정 job 제출. params: {publication_ids?: [...]}."""
+        return self._submit("ranking_bulk_check", params)
 
     def _submit(self, job_type: str, params: dict[str, Any]) -> Job:
         job_id = uuid.uuid4().hex[:12]
@@ -217,7 +223,7 @@ class JobManager:
         self,
         job: Job,
         reporter: WebSocketProgressReporter,
-    ) -> PipelineResult | AnalyzeResult | GenerateResult | ValidateResult:
+    ) -> PipelineResult | AnalyzeResult | GenerateResult | ValidateResult | RankingCheckSummary:
         p = job.params
 
         if job.type == "pipeline":
@@ -247,6 +253,12 @@ class JobManager:
         if job.type == "validate":
             return run_validate_only(
                 content_path=Path(p["content_path"]),
+                reporter=reporter,
+            )
+
+        if job.type == "ranking_bulk_check":
+            return bulk_check_rankings(
+                publication_ids=p.get("publication_ids"),
                 reporter=reporter,
             )
 

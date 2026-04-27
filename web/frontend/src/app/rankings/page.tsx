@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import BulkCheckDialog from "@/components/BulkCheckDialog";
 import BulkRegisterDialog from "@/components/BulkRegisterDialog";
 import ExternalUrlForm from "@/components/ExternalUrlForm";
 import PublicationActionRow from "@/components/PublicationActionRow";
@@ -35,6 +36,7 @@ export default function OperationsHomePage() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkCheckOpen, setBulkCheckOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -74,13 +76,26 @@ export default function OperationsHomePage() {
           ← 대시보드
         </Link>
         <h1 className="text-lg font-bold text-gray-900">운영 홈</h1>
-        <Link
-          href="/rankings/calendar"
-          className="text-sm text-blue-700 hover:underline"
-        >
-          월별 캘린더 →
-        </Link>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setBulkCheckOpen(true)}
+            className="text-sm text-amber-700 hover:underline"
+          >
+            🔄 일괄 측정
+          </button>
+          <Link
+            href="/rankings/calendar"
+            className="text-sm text-blue-700 hover:underline"
+          >
+            월별 캘린더 →
+          </Link>
+        </div>
       </div>
+
+      {bulkCheckOpen && (
+        <BulkCheckDialog onClose={() => setBulkCheckOpen(false)} />
+      )}
 
       {summary && <SummaryCards summary={summary} />}
 
