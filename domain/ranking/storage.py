@@ -111,13 +111,67 @@ def delete_publication(publication_id: str) -> bool:
 def list_publications(
     keyword: str | None = None,
     limit: int = 50,
+    workflow_status: list[str] | None = None,
 ) -> list[Publication]:
+    """publications 목록. workflow_status 가 주어지면 IN 필터 적용."""
     client = get_client()
     query = client.table(_PUB_TABLE).select("*").order("created_at", desc=True).limit(limit)
     if keyword:
         query = query.eq("keyword", keyword)
+    if workflow_status:
+        query = query.in_("workflow_status", workflow_status)
     result = query.execute()
     return [_row_to_publication(cast("dict[str, Any]", r)) for r in (result.data or [])]
+
+
+def count_publications_by_workflow_status() -> dict[str, int]:
+    """workflow_status 별 publication 개수 — 운영 홈 요약 카드용."""
+    client = get_client()
+    result = client.table(_PUB_TABLE).select("workflow_status").execute()
+    counts: dict[str, int] = {}
+    for row in result.data or []:
+        status = (cast("dict[str, Any]", row)).get("workflow_status") or "unknown"
+        counts[status] = counts.get(status, 0) + 1
+    return counts
+
+
+def update_publication_workflow_state(
+    publication_id: str,
+    *,
+    workflow_status: str | None = None,
+    visibility_status: str | None = None,
+    held_until: datetime | None = None,
+    held_reason: str | None = None,
+    republishing_started_at: datetime | None = None,
+    clear_held: bool = False,
+) -> Publication | None:
+    """workflow/visibility 전이 전용 업데이트.
+
+    clear_held=True 면 held_until/held_reason 을 NULL 로 갱신 (보류 해제).
+    """
+    payload: dict[str, Any] = {}
+    if workflow_status is not None:
+        payload["workflow_status"] = workflow_status
+    if visibility_status is not None:
+        payload["visibility_status"] = visibility_status
+    if held_until is not None:
+        payload["held_until"] = held_until.isoformat()
+    if held_reason is not None:
+        payload["held_reason"] = held_reason
+    if republishing_started_at is not None:
+        payload["republishing_started_at"] = republishing_started_at.isoformat()
+    if clear_held:
+        payload["held_until"] = None
+        payload["held_reason"] = None
+    if not payload:
+        return get_publication(publication_id)
+
+    client = get_client()
+    result = client.table(_PUB_TABLE).update(payload).eq("id", publication_id).execute()
+    rows = result.data or []
+    if not rows:
+        return None
+    return _row_to_publication(cast("dict[str, Any]", rows[0]))
 
 
 def insert_top10_snapshots(items: list[Top10Snapshot]) -> int:

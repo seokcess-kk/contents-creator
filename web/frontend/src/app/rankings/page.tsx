@@ -3,81 +3,57 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import ExternalUrlForm from "@/components/ExternalUrlForm";
-import PublicationEditDialog from "@/components/PublicationEditDialog";
+import PublicationActionRow from "@/components/PublicationActionRow";
 import {
-  deletePublication,
-  listPublications,
-  getPublicationTimeline,
-  type Publication,
-  type RankingSnapshot,
+  getOperationsSummary,
+  getOperationsQueue,
+  type OperationsSummary,
+  type QueueItem,
+  type QueueTab,
 } from "@/lib/api";
 
-interface PublicationWithLatest extends Publication {
-  latest?: RankingSnapshot | null;
-  bestPosition?: number | null;
-}
+const TABS: { key: QueueTab; label: string }[] = [
+  { key: "action_required", label: "액션 필요" },
+  { key: "republishing", label: "재발행 중" },
+  { key: "held", label: "보류 중" },
+  { key: "active", label: "노출 중" },
+  { key: "dismissed", label: "제외" },
+  { key: "all", label: "전체" },
+];
 
 /**
- * 전체 순위 대시보드.
- * 모든 등록된 publication 의 최근 순위 한눈에.
- * SPEC-RANKING.md §6 [Web UI] /rankings.
+ * 운영 홈 — 키워드 포트폴리오 운영 OS 의 메인 진입점.
+ * 사용자가 매일 처리할 작업 큐 중심 UI.
+ * SPEC-RANKING.md Phase 1 운영 홈.
  */
-export default function RankingsDashboardPage() {
-  const [items, setItems] = useState<PublicationWithLatest[]>([]);
+export default function OperationsHomePage() {
+  const [summary, setSummary] = useState<OperationsSummary | null>(null);
+  const [tab, setTab] = useState<QueueTab>("action_required");
+  const [items, setItems] = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
-  const [editing, setEditing] = useState<Publication | null>(null);
-  const [deleting, setDeleting] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await listPublications(undefined, 200);
-      // 각 publication 의 timeline 을 병렬로 조회 (성능 위해 limit 작게)
-      const enriched = await Promise.all(
-        data.items.map(async (pub) => {
-          try {
-            const timeline = await getPublicationTimeline(pub.id);
-            const latest = timeline.snapshots[0] ?? null;
-            const positions = timeline.snapshots
-              .map((s) => s.position)
-              .filter((p): p is number => p !== null);
-            const bestPosition = positions.length > 0 ? Math.min(...positions) : null;
-            return { ...pub, latest, bestPosition };
-          } catch {
-            return { ...pub, latest: null, bestPosition: null };
-          }
-        }),
-      );
-      setItems(enriched);
+      const [s, q] = await Promise.all([
+        getOperationsSummary(),
+        getOperationsQueue(tab, 200),
+      ]);
+      setSummary(s);
+      setItems(q.items);
     } catch (err) {
       setError(err instanceof Error ? err.message : "조회 실패");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [tab]);
 
   useEffect(() => {
     void load();
   }, [load]);
-
-  async function handleDelete(p: Publication) {
-    const target = p.slug ? `${p.keyword} (${p.slug})` : `${p.keyword}\n${p.url}`;
-    if (!window.confirm(`삭제하시겠습니까?\n\n${target}\n\n순위 시계열도 함께 삭제됩니다.`)) {
-      return;
-    }
-    setDeleting(p.id);
-    try {
-      await deletePublication(p.id);
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "삭제 실패");
-    } finally {
-      setDeleting(null);
-    }
-  }
 
   const filterLower = filter.trim().toLowerCase();
   const filtered = filterLower
@@ -85,7 +61,7 @@ export default function RankingsDashboardPage() {
         (i) =>
           i.keyword.toLowerCase().includes(filterLower) ||
           (i.slug ?? "").toLowerCase().includes(filterLower) ||
-          i.url.toLowerCase().includes(filterLower),
+          (i.url ?? "").toLowerCase().includes(filterLower),
       )
     : items;
 
@@ -95,7 +71,7 @@ export default function RankingsDashboardPage() {
         <Link href="/" className="text-sm text-blue-700 hover:underline">
           ← 대시보드
         </Link>
-        <h1 className="text-lg font-bold text-gray-900">순위 대시보드</h1>
+        <h1 className="text-lg font-bold text-gray-900">운영 홈</h1>
         <Link
           href="/rankings/calendar"
           className="text-sm text-blue-700 hover:underline"
@@ -104,14 +80,44 @@ export default function RankingsDashboardPage() {
         </Link>
       </div>
 
+      {summary && <SummaryCards summary={summary} />}
+
       <ExternalUrlForm onRegistered={() => void load()} />
+
+      <div className="flex flex-wrap items-center gap-1 border-b border-gray-200">
+        {TABS.map((t) => {
+          const count = countForTab(t.key, summary);
+          const active = tab === t.key;
+          return (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setTab(t.key)}
+              className={`px-3 py-2 text-sm border-b-2 -mb-px transition-colors ${
+                active
+                  ? "border-blue-600 text-blue-700 font-medium"
+                  : "border-transparent text-gray-600 hover:text-gray-900"
+              }`}
+            >
+              {t.label}
+              {count !== null && (
+                <span
+                  className={`ml-1 text-xs ${active ? "text-blue-700" : "text-gray-400"}`}
+                >
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
 
       <div className="flex items-center gap-2">
         <input
           type="text"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          placeholder="키워드, slug, URL 검색"
+          placeholder="키워드 / slug / URL 검색"
           className="flex-1 px-3 py-1 border border-gray-300 rounded text-sm"
         />
         <span className="text-xs text-gray-500">{filtered.length}개</span>
@@ -120,131 +126,49 @@ export default function RankingsDashboardPage() {
       {loading && <div className="text-sm text-gray-500">로딩 중...</div>}
       {error && <div className="text-sm text-red-700">{error}</div>}
 
-      {!loading && filtered.length === 0 && (
-        <div className="text-sm text-gray-500">
-          등록된 항목이 없습니다. 위 폼으로 외부 URL 을 등록하거나, 결과 페이지에서 본 프로젝트
-          발행 URL 을 등록하세요.
+      {!loading && !error && filtered.length === 0 && (
+        <div className="text-sm text-gray-500 py-8 text-center">
+          이 탭에 표시할 항목이 없습니다.
         </div>
       )}
 
       {filtered.length > 0 && (
-        <table className="w-full text-sm border-collapse">
-          <thead className="text-gray-700 bg-gray-50">
-            <tr>
-              <th className="text-left p-2 border-b">키워드</th>
-              <th className="text-left p-2 border-b">URL / slug</th>
-              <th className="text-right p-2 border-b">현재 순위</th>
-              <th className="text-right p-2 border-b">최고 순위</th>
-              <th className="text-left p-2 border-b">최근 측정</th>
-              <th className="text-left p-2 border-b">액션</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((p) => (
-              <tr key={p.id} className="border-b border-gray-100 hover:bg-gray-50">
-                <td className="p-2 text-gray-900">{p.keyword}</td>
-                <td className="p-2 text-gray-700 truncate max-w-[260px]">
-                  {p.slug ? (
-                    <span>{p.slug}</span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1">
-                      <span className="px-1.5 py-0.5 text-[10px] rounded bg-emerald-100 text-emerald-800">
-                        외부
-                      </span>
-                      <a
-                        href={p.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-700 hover:underline truncate"
-                      >
-                        {p.url}
-                      </a>
-                    </span>
-                  )}
-                </td>
-                <td
-                  className={`p-2 text-right font-mono ${
-                    p.latest?.position === null || p.latest === null
-                      ? "text-gray-400"
-                      : (p.latest?.position ?? 999) <= 10
-                        ? "text-green-700 font-bold"
-                        : "text-gray-900"
-                  }`}
-                >
-                  {!p.latest ? (
-                    "-"
-                  ) : p.latest.position === null ? (
-                    "미노출"
-                  ) : (
-                    <span className="inline-flex items-center gap-1 justify-end">
-                      {p.latest.section && (
-                        <span className="px-1 py-0.5 text-[10px] rounded bg-blue-100 text-blue-800 font-normal">
-                          {p.latest.section}
-                        </span>
-                      )}
-                      <span>{p.latest.position}위</span>
-                    </span>
-                  )}
-                </td>
-                <td className="p-2 text-right font-mono text-gray-700">
-                  {p.bestPosition === null || p.bestPosition === undefined
-                    ? "-"
-                    : `${p.bestPosition}위`}
-                </td>
-                <td className="p-2 text-xs text-gray-500">
-                  {p.latest?.captured_at
-                    ? new Date(p.latest.captured_at).toLocaleString("ko-KR")
-                    : "-"}
-                </td>
-                <td className="p-2">
-                  <div className="flex items-center gap-2 text-xs">
-                    <Link
-                      href={`/rankings/${encodeURIComponent(p.id)}`}
-                      className="text-blue-700 hover:underline"
-                    >
-                      추이
-                    </Link>
-                    {p.slug && (
-                      <Link
-                        href={`/results/${encodeURIComponent(p.slug)}`}
-                        className="text-blue-700 hover:underline"
-                      >
-                        원고
-                      </Link>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setEditing(p)}
-                      className="text-gray-700 hover:text-gray-900 hover:underline"
-                    >
-                      편집
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleDelete(p)}
-                      disabled={deleting === p.id}
-                      className="text-red-700 hover:text-red-900 hover:underline disabled:opacity-50"
-                    >
-                      {deleting === p.id ? "삭제 중..." : "삭제"}
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-
-      {editing && (
-        <PublicationEditDialog
-          publication={editing}
-          onClose={() => setEditing(null)}
-          onUpdated={() => {
-            setEditing(null);
-            void load();
-          }}
-        />
+        <div className="space-y-2">
+          {filtered.map((p) => (
+            <PublicationActionRow
+              key={p.id}
+              item={p}
+              onChanged={() => void load()}
+            />
+          ))}
+        </div>
       )}
     </div>
   );
+}
+
+function SummaryCards({ summary }: { summary: OperationsSummary }) {
+  const cards: { label: string; value: number; color: string }[] = [
+    { label: "액션 필요", value: summary.action_required, color: "bg-red-50 text-red-800" },
+    { label: "재발행 중", value: summary.republishing, color: "bg-amber-50 text-amber-800" },
+    { label: "보류 중", value: summary.held, color: "bg-gray-50 text-gray-800" },
+    { label: "노출 중", value: summary.active, color: "bg-emerald-50 text-emerald-800" },
+    { label: "총 등록", value: summary.total, color: "bg-blue-50 text-blue-800" },
+  ];
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+      {cards.map((c) => (
+        <div key={c.label} className={`rounded p-3 ${c.color}`}>
+          <div className="text-xs">{c.label}</div>
+          <div className="text-2xl font-bold mt-1">{c.value}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function countForTab(tab: QueueTab, summary: OperationsSummary | null): number | null {
+  if (!summary) return null;
+  if (tab === "all") return summary.total;
+  return summary[tab] ?? 0;
 }

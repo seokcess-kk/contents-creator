@@ -1,17 +1,27 @@
 """순위 추적 API. SPEC-RANKING.md §3 [조회] 참조.
 
-엔드포인트:
+운영 OS 엔드포인트:
+- GET    /rankings/summary                      — 운영 홈 상단 요약 카운트
+- GET    /rankings/queue?tab=action_required    — 탭별 작업 큐 (enrich 포함)
+- POST   /rankings/publications/{id}/hold       — 보류 액션
+- POST   /rankings/publications/{id}/release    — 보류 해제
+- POST   /rankings/publications/{id}/dismiss    — 기각
+- POST   /rankings/publications/{id}/restore    — 기각 취소
+- POST   /rankings/publications/{id}/republish  — 재발행 트리거 (파이프라인 job 시작)
+- GET    /rankings/publications/{id}/actions    — 액션 히스토리
+
+기존 엔드포인트:
 - POST   /rankings/publications        — URL 등록
-- GET    /rankings/publications        — 등록 목록 (keyword 필터, limit)
+- GET    /rankings/publications        — 등록 목록
 - GET    /rankings/publications/{id}   — 단건 + timeline
-- PATCH  /rankings/publications/{id}   — keyword/URL/slug/published_at 부분 수정
-- DELETE /rankings/publications/{id}   — 삭제 (snapshots 동반 cascade)
-- GET    /rankings/publications/{id}/diagnoses  — 진단 시계열 조회
+- PATCH  /rankings/publications/{id}   — 부분 수정
+- DELETE /rankings/publications/{id}   — 삭제
+- GET    /rankings/publications/{id}/diagnoses  — 진단 시계열
 - POST   /rankings/publications/{id}/diagnose   — 진단 즉시 실행
-- POST   /rankings/diagnoses/{id}/action        — 사용자 액션 기록
-- GET    /rankings/calendar            — 월별 캘린더 매트릭스 (KST 기준)
+- POST   /rankings/diagnoses/{id}/action        — 진단 액션 (legacy)
+- GET    /rankings/calendar            — 월별 캘린더
 - POST   /rankings/check/{publication_id}  — 즉시 SERP 체크
-- GET    /rankings/{publication_id}    — RankingSnapshot 시계열
+- GET    /rankings/{publication_id}    — Snapshot 시계열
 """
 
 from __future__ import annotations
@@ -185,6 +195,138 @@ def record_diagnosis_action(diagnosis_id: str, req: DiagnosisActionRequest) -> d
     if updated is None:
         raise HTTPException(status_code=404, detail="diagnosis 미존재")
     return updated.model_dump(mode="json")
+
+
+@router.get("/summary")
+def get_operations_summary() -> dict[str, int]:
+    """운영 홈 상단 요약 카드 — workflow_status 별 카운트."""
+    from application.operations_home import get_summary
+
+    return get_summary()
+
+
+@router.get("/queue")
+def get_operations_queue(
+    tab: str = Query(default="action_required"),
+    limit: int = Query(default=200, ge=1, le=500),
+) -> dict[str, Any]:
+    """탭별 작업 큐. tab: action_required | republishing | held | active | dismissed | all."""
+    from application.operations_home import list_publications_for_tab
+
+    try:
+        items = list_publications_for_tab(tab, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"tab": tab, "count": len(items), "items": items}
+
+
+# ── 운영 액션 ──
+
+
+class HoldRequest(BaseModel):
+    days: int = Field(ge=1, le=90, description="보류 기간 (일)")
+    reason: str | None = Field(default=None, max_length=200)
+
+
+@router.post("/publications/{publication_id}/hold")
+def hold_publication(publication_id: str, req: HoldRequest) -> dict[str, Any]:
+    """publication 을 N일간 보류. held_until 자동 산출."""
+    from application.publication_actions_orchestrator import hold
+
+    pub = hold(publication_id, days=req.days, reason=req.reason)
+    if pub is None:
+        raise HTTPException(status_code=404, detail="publication 미존재")
+    return pub.model_dump(mode="json")
+
+
+@router.post("/publications/{publication_id}/release")
+def release_publication(publication_id: str) -> dict[str, Any]:
+    """보류 해제 → action_required 복귀."""
+    from application.publication_actions_orchestrator import release_hold
+
+    pub = release_hold(publication_id)
+    if pub is None:
+        raise HTTPException(status_code=404, detail="publication 미존재")
+    return pub.model_dump(mode="json")
+
+
+class DismissRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=200)
+
+
+@router.post("/publications/{publication_id}/dismiss")
+def dismiss_publication(publication_id: str, req: DismissRequest) -> dict[str, Any]:
+    """publication 기각 → workflow_status=dismissed."""
+    from application.publication_actions_orchestrator import dismiss
+
+    pub = dismiss(publication_id, reason=req.reason)
+    if pub is None:
+        raise HTTPException(status_code=404, detail="publication 미존재")
+    return pub.model_dump(mode="json")
+
+
+@router.post("/publications/{publication_id}/restore")
+def restore_publication(publication_id: str) -> dict[str, Any]:
+    """기각 취소 → action_required 복귀."""
+    from application.publication_actions_orchestrator import restore
+
+    pub = restore(publication_id)
+    if pub is None:
+        raise HTTPException(status_code=404, detail="publication 미존재")
+    return pub.model_dump(mode="json")
+
+
+@router.get("/publications/{publication_id}/actions")
+def list_publication_actions(
+    publication_id: str, limit: int = Query(default=50, ge=1, le=200)
+) -> dict[str, Any]:
+    """publication 액션 히스토리 (publication_actions, created_at desc)."""
+    from domain.ranking import publication_actions as actions_storage
+
+    items = actions_storage.list_actions_by_publication(publication_id, limit=limit)
+    return {
+        "publication_id": publication_id,
+        "count": len(items),
+        "items": [a.model_dump(mode="json") for a in items],
+    }
+
+
+# ── 재발행 ──
+
+
+class RepublishRequest(BaseModel):
+    strategy: str = Field(default="full_rewrite")
+    diagnosis_id: str | None = None
+
+    @field_validator("strategy")
+    @classmethod
+    def validate_strategy(cls, v: str) -> str:
+        if v not in ("full_rewrite", "light", "cluster"):
+            raise ValueError(f"strategy 는 full_rewrite/light/cluster 중 하나: {v!r}")
+        return v
+
+
+@router.post("/publications/{publication_id}/republish")
+def trigger_republish(publication_id: str, req: RepublishRequest) -> dict[str, Any]:
+    """재발행 트리거 — draft publication 자동 생성 + 파이프라인 job 시작.
+
+    - 동일 source 에 active(queued/running) job 있으면 409 (DB partial unique 제약)
+    - 부모 publication.workflow_status = republishing
+    """
+    from application.republish_orchestrator import start_republish
+
+    try:
+        result = start_republish(
+            publication_id,
+            strategy=req.strategy,
+            diagnosis_id=req.diagnosis_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        # active job 충돌
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return result
 
 
 @router.get("/calendar")

@@ -82,9 +82,7 @@ class TestRegisterPublication:
 
     def test_draft_publication_when_url_none(self, storage_mock: MagicMock) -> None:
         """url=None 은 draft publication 생성 (재발행 임시 등)."""
-        storage_mock.insert_publication.return_value = _publication(
-            url=None, slug=None
-        )
+        storage_mock.insert_publication.return_value = _publication(url=None, slug=None)
         ranking_orchestrator.register_publication(keyword="kw", url=None)
         passed = storage_mock.insert_publication.call_args.args[0]
         assert passed.url is None

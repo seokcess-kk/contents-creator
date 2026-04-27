@@ -209,6 +209,114 @@ export function getMonthlyCalendar(month: string): Promise<RankingCalendar> {
   return fetchJson(`/rankings/calendar?month=${encodeURIComponent(month)}`);
 }
 
+// ── 운영 홈 (SPEC-RANKING.md Phase 1 운영 OS) ──
+
+export interface OperationsSummary {
+  action_required: number;
+  republishing: number;
+  held: number;
+  active: number;
+  dismissed: number;
+  draft: number;
+  total: number;
+}
+
+export type QueueTab =
+  | "action_required"
+  | "republishing"
+  | "held"
+  | "active"
+  | "dismissed"
+  | "all";
+
+export interface QueueItem extends Publication {
+  visibility_status: string;
+  workflow_status: string;
+  held_until: string | null;
+  held_reason: string | null;
+  parent_publication_id: string | null;
+  priority_score: number | null;
+  republishing_started_at: string | null;
+  latest_snapshot: {
+    captured_at: string | null;
+    section: string | null;
+    position: number | null;
+  } | null;
+  latest_diagnosis: {
+    id: string;
+    reason: string;
+    confidence: number;
+    diagnosed_at: string | null;
+    recommended_action: string | null;
+  } | null;
+}
+
+export function getOperationsSummary(): Promise<OperationsSummary> {
+  return fetchJson("/rankings/summary");
+}
+
+export function getOperationsQueue(
+  tab: QueueTab,
+  limit = 200,
+): Promise<{ tab: QueueTab; count: number; items: QueueItem[] }> {
+  return fetchJson(`/rankings/queue?tab=${tab}&limit=${limit}`);
+}
+
+export function holdPublication(
+  publicationId: string,
+  days: number,
+  reason?: string,
+): Promise<Publication> {
+  return fetchJson(`/rankings/publications/${encodeURIComponent(publicationId)}/hold`, {
+    method: "POST",
+    body: JSON.stringify({ days, reason: reason ?? null }),
+  });
+}
+
+export function releasePublicationHold(publicationId: string): Promise<Publication> {
+  return fetchJson(`/rankings/publications/${encodeURIComponent(publicationId)}/release`, {
+    method: "POST",
+  });
+}
+
+export function dismissPublication(
+  publicationId: string,
+  reason?: string,
+): Promise<Publication> {
+  return fetchJson(`/rankings/publications/${encodeURIComponent(publicationId)}/dismiss`, {
+    method: "POST",
+    body: JSON.stringify({ reason: reason ?? null }),
+  });
+}
+
+export function restorePublication(publicationId: string): Promise<Publication> {
+  return fetchJson(`/rankings/publications/${encodeURIComponent(publicationId)}/restore`, {
+    method: "POST",
+  });
+}
+
+export type RepublishStrategy = "full_rewrite" | "light" | "cluster";
+
+export function triggerRepublish(
+  publicationId: string,
+  strategy: RepublishStrategy,
+  diagnosisId?: string,
+): Promise<{
+  source_publication_id: string;
+  new_publication_id: string;
+  pipeline_job_id: string;
+  strategy: string;
+  started_at: string;
+}> {
+  return fetchJson(`/rankings/publications/${encodeURIComponent(publicationId)}/republish`, {
+    method: "POST",
+    body: JSON.stringify({
+      strategy,
+      diagnosis_id: diagnosisId ?? null,
+    }),
+  });
+}
+
 // ── 진단 (SPEC-RANKING.md Phase 1 미노출 사유 진단) ──
 
 export interface Diagnosis {

@@ -8,8 +8,8 @@ from domain.ranking.model import Publication, RankingSnapshot
 from domain.ranking.state_calculator import (
     OFF_RADAR_NULL_STREAK,
     PERSISTENT_OFF_NULL_STREAK,
-    REPUBLISHING_JOB_STUCK_DAYS,
     REPUBLISH_URL_PENDING_DAYS,
+    REPUBLISHING_JOB_STUCK_DAYS,
     calculate_visibility_status,
     calculate_workflow_status,
 )

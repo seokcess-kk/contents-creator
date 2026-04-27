@@ -69,11 +69,7 @@ def calculate_workflow_status(
     current = publication.workflow_status
 
     # held_until 만료 자동 해제
-    if (
-        current == "held"
-        and publication.held_until is not None
-        and publication.held_until <= now
-    ):
+    if current == "held" and publication.held_until is not None and publication.held_until <= now:
         return "action_required", "hold_expired"
 
     # republishing 타임아웃 룰
