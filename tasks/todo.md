@@ -484,7 +484,30 @@
 
 ---
 
-## 📝 SPEC 정합성 메모
+# UI 세로 스크롤 압축 (PC 우선) — 2026-04-27 착수
+
+> 목표: PC 1920×1080 화면에서 모든 페이지의 세로 스크롤 최소화. 캘린더 키워드 증가 대응 핵심.
+> 사용자 결정: C안(행/열 전치) 제외. 순차 진행.
+
+## Phase U0: 공통 레이아웃 + 캘린더 sticky/내부스크롤 (P0) ✅ 완료 (2026-04-27)
+- [x] U0.1 `layout.tsx` — `max-w-5xl` → `max-w-[1440px]`, `py-6` → `py-3`, header `py-3` → `py-2`
+- [x] U0.2 캘린더 — 뒤로가기 + h1 + 월컨트롤 + 검색 1줄 통합, `space-y-4` → `space-y-2`
+- [x] U0.3 캘린더 테이블 컨테이너 `max-h-[calc(100vh-160px)] overflow-auto`, `<thead> th` `sticky top-0`
+- [x] U0.4 캘린더 헤더 교차 모서리 `z-30`, 일자 헤더 `z-20`, 키워드 데이터 셀 `z-10`
+- [x] U0.5 typecheck 통과 (`npx tsc --noEmit` 무에러). lint 스크립트 없음
+
+## Phase U1: 캘린더 컴팩트 + 운영홈 행 압축 (P1) ✅ 완료 (2026-04-27)
+- [x] U1.1 캘린더 셀 `28×28` ↔ `22×20`, 키워드열 `180px` ↔ `160px` 동적
+- [x] U1.2 컴팩트 토글 버튼 (기본 ON `압축`, 클릭 시 `확장`)
+- [x] U1.3 `PublicationActionRow.tsx` 1줄 압축 — 4행 → 1행 (`flex flex-wrap`), 패딩 `p-3` → `px-3 py-1.5`
+- [x] U1.4 진단 권장 액션은 인라인 + `title` 툴팁 (URL 도 `↗` 아이콘 + tooltip)
+
+## Phase U2: 캘린더 그룹핑 / 결과·작업·사용량 2-pane (P2) ✅ 완료 (2026-04-27)
+- [x] U2.1 캘린더 키워드 그룹핑 — `그룹 ON/OFF` 토글 + 펼치기/접기, group 헤더에 키워드(N) + 최고N위 요약
+- [x] U2.2 `results/[slug]/page.tsx` 2-pane — `grid grid-cols-12 lg:col-span-4 + lg:col-span-8` + 좌측 sticky
+- [x] U2.3 `ProgressTracker.tsx` 컴팩트 — `p-6 mb-6` → `p-3 mb-3`, 아이콘 `8×8` → `6×6`, currentDetail 인라인
+- [x] U2.4 `UsageDashboard.tsx` — 기간선택+요약카드 1줄, 일별/작업별 `grid lg:grid-cols-12 (7+5)` 병렬 + sticky thead
+- [x] U2.5 캘린더 헬퍼 컴포넌트를 `components/CalendarTable.tsx` 로 분리 (300줄 한계 준수)
 
 - 본 ranking 트랙은 SPEC-SEO-TEXT.md / SPEC-BRAND-CARD.md 어느 쪽에도 정의 없음. **별도 SPEC-RANKING.md 신규 작성 필요 여부는 사용자 결정 사항** — Phase R1 착수 전 확인. 미작성 시 `tasks/todo.md` 본 섹션이 사실상 SPEC 역할
 - SPEC v2 범위 변경 ❌ — 기존 8단계 파이프라인은 손대지 않음

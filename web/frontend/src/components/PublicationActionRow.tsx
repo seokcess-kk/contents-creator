@@ -60,79 +60,74 @@ export default function PublicationActionRow({ item, onChanged }: PublicationAct
     }
   }
 
+  const latestText = latest
+    ? latest.position === null
+      ? "미노출"
+      : `${latest.section ?? "?"} ${latest.position}위`
+    : "측정 이력 없음";
+  const latestDate =
+    latest?.captured_at &&
+    new Date(latest.captured_at).toLocaleDateString("ko-KR", {
+      month: "numeric",
+      day: "numeric",
+    });
+  const diagTooltip = diagnosis?.recommended_action
+    ? `→ ${diagnosis.recommended_action}`
+    : undefined;
+
   return (
-    <div className="border border-gray-200 rounded p-3 space-y-2 bg-white">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Link
-              href={`/rankings/${encodeURIComponent(item.id)}`}
-              className="text-sm font-semibold text-gray-900 hover:underline truncate max-w-[260px]"
-            >
-              {item.keyword}
-            </Link>
-            <WorkflowBadge status={wf} />
-            <VisibilityBadge status={vis} />
-            {item.held_until && wf === "held" && (
-              <span className="text-xs text-gray-500">
-                {new Date(item.held_until).toLocaleDateString("ko-KR")} 까지 보류
-              </span>
+    <div className="border border-gray-200 rounded px-3 py-1.5 bg-white">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Link
+          href={`/rankings/${encodeURIComponent(item.id)}`}
+          className="text-sm font-semibold text-gray-900 hover:underline truncate max-w-[260px]"
+          title={item.keyword}
+        >
+          {item.keyword}
+        </Link>
+        <WorkflowBadge status={wf} />
+        <VisibilityBadge status={vis} />
+        {item.held_until && wf === "held" && (
+          <span className="text-[10px] text-gray-500">
+            ~{new Date(item.held_until).toLocaleDateString("ko-KR")}
+          </span>
+        )}
+        {item.url && (
+          <a
+            href={item.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={item.url}
+            className="text-xs text-blue-700 hover:underline shrink-0"
+          >
+            ↗
+          </a>
+        )}
+        <span
+          className={`text-xs ${latest ? "text-gray-700" : "text-gray-400"} shrink-0`}
+        >
+          {latestText}
+          {latestDate && <span className="text-gray-400 ml-1">· {latestDate}</span>}
+        </span>
+        {diagnosis && (
+          <span
+            title={diagTooltip}
+            className="text-[11px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-medium truncate max-w-[260px]"
+          >
+            {REASON_LABELS[diagnosis.reason] ?? diagnosis.reason} (
+            {Math.round(diagnosis.confidence * 100)}%)
+            {diagnosis.recommended_action && (
+              <span className="text-blue-800 ml-1">→ {diagnosis.recommended_action}</span>
             )}
-          </div>
-
-          {item.url && (
-            <a
-              href={item.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-blue-700 hover:underline truncate block mt-1"
-            >
-              {item.url}
-            </a>
-          )}
-
-          <div className="text-xs text-gray-600 mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
-            {latest ? (
-              <>
-                <span>
-                  최신:
-                  {latest.position === null
-                    ? " 미노출"
-                    : ` ${latest.section ?? "?"} ${latest.position}위`}
-                </span>
-                {latest.captured_at && (
-                  <span className="text-gray-400">
-                    {new Date(latest.captured_at).toLocaleDateString("ko-KR")}
-                  </span>
-                )}
-              </>
-            ) : (
-              <span className="text-gray-400">측정 이력 없음</span>
-            )}
-          </div>
-
-          {diagnosis && (
-            <div className="text-xs text-gray-700 mt-1.5 inline-flex items-center gap-1.5 flex-wrap">
-              <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-medium">
-                진단: {REASON_LABELS[diagnosis.reason] ?? diagnosis.reason}
-              </span>
-              <span className="text-gray-500">
-                ({Math.round(diagnosis.confidence * 100)}%)
-              </span>
-              {diagnosis.recommended_action && (
-                <span className="text-blue-800">→ {diagnosis.recommended_action}</span>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="shrink-0 flex flex-col gap-1">
+          </span>
+        )}
+        <div className="ml-auto flex items-center gap-1 shrink-0">
           {wf !== "republishing" && wf !== "dismissed" && wf !== "draft" && (
             <button
               type="button"
               disabled={busy}
               onClick={() => setRepublishOpen(true)}
-              className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+              className="px-2.5 py-0.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
             >
               재발행
             </button>
@@ -142,7 +137,7 @@ export default function PublicationActionRow({ item, onChanged }: PublicationAct
               type="button"
               disabled={busy}
               onClick={() => setHoldOpen(true)}
-              className="px-3 py-1 text-xs border border-gray-300 rounded hover:bg-gray-50"
+              className="px-2.5 py-0.5 text-xs border border-gray-300 rounded hover:bg-gray-50"
             >
               보류
             </button>
@@ -151,10 +146,8 @@ export default function PublicationActionRow({ item, onChanged }: PublicationAct
             <button
               type="button"
               disabled={busy}
-              onClick={() =>
-                handleAction(() => releasePublicationHold(item.id))
-              }
-              className="px-3 py-1 text-xs border border-gray-300 rounded hover:bg-gray-50"
+              onClick={() => handleAction(() => releasePublicationHold(item.id))}
+              className="px-2.5 py-0.5 text-xs border border-gray-300 rounded hover:bg-gray-50"
             >
               해제
             </button>
@@ -163,10 +156,8 @@ export default function PublicationActionRow({ item, onChanged }: PublicationAct
             <button
               type="button"
               disabled={busy}
-              onClick={() =>
-                handleAction(() => dismissPublication(item.id))
-              }
-              className="px-3 py-1 text-xs text-red-700 border border-red-200 rounded hover:bg-red-50"
+              onClick={() => handleAction(() => dismissPublication(item.id))}
+              className="px-2.5 py-0.5 text-xs text-red-700 border border-red-200 rounded hover:bg-red-50"
             >
               제외
             </button>
@@ -176,7 +167,7 @@ export default function PublicationActionRow({ item, onChanged }: PublicationAct
               type="button"
               disabled={busy}
               onClick={() => handleAction(() => restorePublication(item.id))}
-              className="px-3 py-1 text-xs border border-gray-300 rounded hover:bg-gray-50"
+              className="px-2.5 py-0.5 text-xs border border-gray-300 rounded hover:bg-gray-50"
             >
               복원
             </button>
@@ -190,7 +181,7 @@ export default function PublicationActionRow({ item, onChanged }: PublicationAct
                   await deletePublication(item.id);
                 })
               }
-              className="px-3 py-1 text-xs text-gray-600 hover:text-gray-900"
+              className="px-2.5 py-0.5 text-xs text-gray-600 hover:text-gray-900"
             >
               삭제
             </button>
@@ -198,7 +189,7 @@ export default function PublicationActionRow({ item, onChanged }: PublicationAct
         </div>
       </div>
 
-      {error && <div className="text-xs text-red-700">{error}</div>}
+      {error && <div className="text-xs text-red-700 mt-1">{error}</div>}
 
       {holdOpen && (
         <HoldDialog

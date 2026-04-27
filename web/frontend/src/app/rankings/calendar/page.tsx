@@ -3,6 +3,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { getMonthlyCalendar, type RankingCalendar } from "@/lib/api";
+import {
+  CalendarRow,
+  CellLegend,
+  GroupBlock,
+  bestPosition,
+  type CalendarRowData,
+} from "@/components/CalendarTable";
 
 /**
  * 월별 캘린더 — 키워드(행) × 일자(열) 매트릭스.
@@ -17,6 +24,13 @@ export default function RankingCalendarPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
+  const [compact, setCompact] = useState(true);
+  const [grouped, setGrouped] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const cellW = compact ? "w-[22px]" : "w-[28px]";
+  const cellH = compact ? "h-[20px]" : "h-[28px]";
+  const keyColW = compact ? "min-w-[160px]" : "min-w-[180px]";
 
   const monthStr = useMemo(
     () => `${year}-${String(month).padStart(2, "0")}`,
@@ -66,51 +80,114 @@ export default function RankingCalendarPage() {
       (r.publication.slug ?? "").toLowerCase().includes(filterLower),
   );
 
+  const groups = useMemo(() => {
+    if (!grouped) return null;
+    const map = new Map<string, CalendarRowData[]>();
+    for (const r of rows) {
+      const key = r.publication.keyword;
+      const list = map.get(key);
+      if (list) list.push(r);
+      else map.set(key, [r]);
+    }
+    return Array.from(map.entries()).sort((a, b) =>
+      a[0].localeCompare(b[0], "ko"),
+    );
+  }, [rows, grouped]);
+
+  function toggleGroup(key: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function expandAll(open: boolean) {
+    if (!groups) return;
+    setExpanded(open ? new Set(groups.map(([k]) => k)) : new Set());
+  }
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Link href="/rankings" className="text-sm text-blue-700 hover:underline">
           ← 순위 대시보드
         </Link>
-        <h1 className="text-lg font-bold text-gray-900">월별 캘린더</h1>
-        <span className="w-24" />
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
+        <h1 className="text-base font-bold text-gray-900 ml-2">월별 캘린더</h1>
+        <div className="flex items-center gap-1 ml-4">
+          <button
+            type="button"
+            onClick={() => shiftMonth(-1)}
+            className="px-2 py-0.5 text-sm border border-gray-300 rounded hover:bg-gray-50"
+          >
+            ◀
+          </button>
+          <span className="text-sm font-mono text-gray-900 min-w-[80px] text-center">
+            {monthStr}
+          </span>
+          <button
+            type="button"
+            onClick={() => shiftMonth(1)}
+            className="px-2 py-0.5 text-sm border border-gray-300 rounded hover:bg-gray-50"
+          >
+            ▶
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const t = new Date();
+              setYear(t.getFullYear());
+              setMonth(t.getMonth() + 1);
+            }}
+            className="px-2 py-0.5 text-xs text-gray-700 hover:underline"
+          >
+            이번 달
+          </button>
+        </div>
         <button
           type="button"
-          onClick={() => shiftMonth(-1)}
-          className="px-2 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50"
+          onClick={() => setCompact((v) => !v)}
+          className="px-2 py-0.5 text-xs border border-gray-300 rounded hover:bg-gray-50"
+          title="셀 크기 토글"
         >
-          ◀
-        </button>
-        <span className="text-sm font-mono text-gray-900 min-w-[88px] text-center">
-          {monthStr}
-        </span>
-        <button
-          type="button"
-          onClick={() => shiftMonth(1)}
-          className="px-2 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50"
-        >
-          ▶
+          {compact ? "확장" : "압축"}
         </button>
         <button
           type="button"
           onClick={() => {
-            const t = new Date();
-            setYear(t.getFullYear());
-            setMonth(t.getMonth() + 1);
+            setGrouped((v) => !v);
+            setExpanded(new Set());
           }}
-          className="px-2 py-1 text-xs text-gray-700 hover:underline"
+          className={`px-2 py-0.5 text-xs border rounded ${grouped ? "bg-blue-50 border-blue-300 text-blue-800" : "border-gray-300 hover:bg-gray-50"}`}
+          title="키워드별 묶기"
         >
-          이번 달
+          {grouped ? "그룹 ON" : "그룹 OFF"}
         </button>
+        {grouped && (
+          <>
+            <button
+              type="button"
+              onClick={() => expandAll(true)}
+              className="px-2 py-0.5 text-xs text-gray-700 hover:underline"
+            >
+              모두 펼치기
+            </button>
+            <button
+              type="button"
+              onClick={() => expandAll(false)}
+              className="px-2 py-0.5 text-xs text-gray-700 hover:underline"
+            >
+              모두 접기
+            </button>
+          </>
+        )}
         <input
           type="text"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder="키워드/URL 검색"
-          className="ml-auto px-3 py-1 border border-gray-300 rounded text-sm w-[220px]"
+          className="ml-auto px-3 py-0.5 border border-gray-300 rounded text-sm w-[220px]"
         />
         <span className="text-xs text-gray-500">{rows.length}개</span>
       </div>
@@ -127,11 +204,13 @@ export default function RankingCalendarPage() {
       )}
 
       {rows.length > 0 && (
-        <div className="overflow-x-auto border border-gray-200 rounded">
+        <div className="overflow-auto border border-gray-200 rounded max-h-[calc(100vh-160px)]">
           <table className="text-xs border-collapse">
-            <thead className="bg-gray-50 text-gray-700">
+            <thead className="text-gray-700">
               <tr>
-                <th className="sticky left-0 bg-gray-50 text-left p-2 border-r border-gray-200 min-w-[180px] z-10">
+                <th
+                  className={`sticky top-0 left-0 bg-gray-50 text-left p-2 border-r border-b border-gray-200 ${keyColW} z-30`}
+                >
                   키워드 / URL
                 </th>
                 {dayList.map((d) => {
@@ -140,7 +219,7 @@ export default function RankingCalendarPage() {
                   return (
                     <th
                       key={d}
-                      className={`p-1 text-center font-mono w-[28px] ${
+                      className={`sticky top-0 bg-gray-50 p-0.5 text-center font-mono ${cellW} border-b border-gray-200 z-20 text-[10px] ${
                         dow === 0
                           ? "text-red-600"
                           : dow === 6
@@ -155,59 +234,35 @@ export default function RankingCalendarPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
-                <tr key={row.publication.id} className="border-t border-gray-100">
-                  <td className="sticky left-0 bg-white p-2 border-r border-gray-200 z-10">
-                    <Link
-                      href={`/rankings/${encodeURIComponent(row.publication.id)}`}
-                      className="block min-w-0"
-                    >
-                      <div className="text-gray-900 font-medium truncate">
-                        {row.publication.keyword}
-                      </div>
-                      <div className="text-[10px] text-gray-500 truncate">
-                        {row.publication.slug ? (
-                          row.publication.slug
-                        ) : (
-                          <span className="px-1 py-px rounded bg-emerald-100 text-emerald-800">
-                            외부
-                          </span>
-                        )}
-                      </div>
-                    </Link>
-                  </td>
-                  {dayList.map((d) => {
-                    const dayKey = `${monthStr}-${String(d).padStart(2, "0")}`;
-                    const cell = row.days[dayKey];
-                    if (!cell) {
-                      return (
-                        <td
-                          key={d}
-                          className="p-0 text-center text-gray-300 font-mono w-[28px] h-[28px]"
-                        >
-                          ·
-                        </td>
-                      );
-                    }
-                    const pos = cell.position;
-                    const tooltip =
-                      pos === null
-                        ? "미노출"
-                        : cell.section
-                          ? `${cell.section} ${pos}위`
-                          : `${pos}위`;
+              {grouped && groups
+                ? groups.map(([key, gRows]) => {
+                    const isOpen = expanded.has(key);
+                    const best = bestPosition(gRows, dayList, monthStr);
                     return (
-                      <td
-                        key={d}
-                        title={tooltip}
-                        className={`p-0 text-center font-mono w-[28px] h-[28px] ${cellClass(pos)}`}
-                      >
-                        {pos === null ? "—" : pos}
-                      </td>
+                      <GroupBlock
+                        key={key}
+                        keyword={key}
+                        count={gRows.length}
+                        best={best}
+                        isOpen={isOpen}
+                        onToggle={() => toggleGroup(key)}
+                        colSpan={daysInMonth + 1}
+                        rows={gRows}
+                        dayList={dayList}
+                        monthStr={monthStr}
+                        compact={compact}
+                      />
                     );
-                  })}
-                </tr>
-              ))}
+                  })
+                : rows.map((row) => (
+                    <CalendarRow
+                      key={row.publication.id}
+                      row={row}
+                      dayList={dayList}
+                      monthStr={monthStr}
+                      compact={compact}
+                    />
+                  ))}
             </tbody>
           </table>
         </div>
@@ -216,34 +271,3 @@ export default function RankingCalendarPage() {
   );
 }
 
-function cellClass(pos: number | null): string {
-  if (pos === null) return "bg-gray-100 text-gray-500";
-  if (pos <= 3) return "bg-emerald-600 text-white font-bold";
-  if (pos <= 10) return "bg-emerald-200 text-emerald-900";
-  if (pos <= 30) return "bg-amber-100 text-amber-900";
-  if (pos <= 50) return "bg-orange-100 text-orange-900";
-  return "bg-red-100 text-red-900";
-}
-
-function CellLegend() {
-  return (
-    <div className="flex flex-wrap items-center gap-2 text-[11px]">
-      <Swatch className="bg-emerald-600 text-white" label="1~3위" />
-      <Swatch className="bg-emerald-200 text-emerald-900" label="4~10위" />
-      <Swatch className="bg-amber-100 text-amber-900" label="11~30위" />
-      <Swatch className="bg-orange-100 text-orange-900" label="31~50위" />
-      <Swatch className="bg-red-100 text-red-900" label="51~100위" />
-      <Swatch className="bg-gray-100 text-gray-500" label="100위 밖 (—)" />
-      <span className="text-gray-500">· 미측정</span>
-    </div>
-  );
-}
-
-function Swatch({ className, label }: { className: string; label: string }) {
-  return (
-    <span className="inline-flex items-center gap-1">
-      <span className={`inline-block w-5 h-4 rounded ${className}`} />
-      {label}
-    </span>
-  );
-}

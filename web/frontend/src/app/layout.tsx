@@ -28,9 +28,9 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-gray-50 text-gray-900">
-        <header className="sticky top-0 z-30 bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between shadow-sm">
+        <header className="sticky top-0 z-30 bg-white border-b border-gray-200 px-6 py-2 flex items-center justify-between shadow-sm">
           <div className="flex items-baseline">
-            <a href="/" className="text-lg font-bold text-gray-900 hover:text-blue-700">
+            <a href="/" className="text-base font-bold text-gray-900 hover:text-blue-700">
               Contents Creator
             </a>
             <span className="ml-2 text-xs text-gray-500">SEO 원고 생성 엔진</span>
@@ -41,7 +41,7 @@ export default function RootLayout({
             <a href="/usage" className="text-gray-700 hover:text-blue-700">API 사용량</a>
           </nav>
         </header>
-        <main className="max-w-5xl mx-auto px-4 py-6">{children}</main>
+        <main className="max-w-[1440px] mx-auto px-4 py-3">{children}</main>
       </body>
     </html>
   );

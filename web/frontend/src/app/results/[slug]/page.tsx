@@ -31,12 +31,12 @@ export default function ResultDetailPage({
   const inferredKeyword = publication?.keyword ?? slug.replace(/-/g, " ");
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div className="flex items-center justify-between">
         <Link href="/" className="text-sm text-blue-700 hover:underline">
           ← 대시보드
         </Link>
-        <h1 className="text-lg font-bold text-gray-900 truncate max-w-[60%]" title={slug}>
+        <h1 className="text-base font-bold text-gray-900 truncate max-w-[60%]" title={slug}>
           {slug}
         </h1>
         <Link href="/rankings" className="text-sm text-blue-700 hover:underline">
@@ -44,23 +44,25 @@ export default function ResultDetailPage({
         </Link>
       </div>
 
-      {/* 발행 URL 등록 + 순위 추이 */}
-      <section className="space-y-2">
-        <PublicationForm
-          keyword={inferredKeyword}
-          slug={slug}
-          existingPublication={publication}
-          onRegistered={(p) => {
-            setPublication(p);
-            setRefreshKey((k) => k + 1);
-          }}
-        />
-        {publication && (
-          <RankingTimeline publicationId={publication.id} refreshKey={refreshKey} />
-        )}
-      </section>
-
-      <ResultViewer slug={slug} imagesGenerated={0} />
+      <div className="grid grid-cols-12 gap-3">
+        <aside className="col-span-12 lg:col-span-4 space-y-2 lg:sticky lg:top-14 lg:self-start lg:max-h-[calc(100vh-80px)] lg:overflow-auto">
+          <PublicationForm
+            keyword={inferredKeyword}
+            slug={slug}
+            existingPublication={publication}
+            onRegistered={(p) => {
+              setPublication(p);
+              setRefreshKey((k) => k + 1);
+            }}
+          />
+          {publication && (
+            <RankingTimeline publicationId={publication.id} refreshKey={refreshKey} />
+          )}
+        </aside>
+        <main className="col-span-12 lg:col-span-8">
+          <ResultViewer slug={slug} imagesGenerated={0} />
+        </main>
+      </div>
     </div>
   );
 }
