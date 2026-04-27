@@ -23,8 +23,11 @@ from pydantic import BaseModel, Field
 # ── URL 분류·정규화 ──────────────────────────────────────────
 
 _CONTENT_URL_PATTERNS = (
-    re.compile(r"^https?://(?:m\.)?blog\.naver\.com/[a-zA-Z0-9_-]+/\d{9,}/?$"),
-    re.compile(r"^https?://(?:m\.)?cafe\.naver\.com/[a-zA-Z0-9_-]+/\d+/?$"),
+    # 블로그 포스트 — userid + postid(9자리 이상). 트레일링 슬래시·쿼리 허용
+    re.compile(r"^https?://(?:m\.)?blog\.naver\.com/[a-zA-Z0-9_-]+/\d{9,}(?:[/?#].*)?$"),
+    # 카페 글 — 구형(/cafe/postid)·신형(/ca-fe/cafes/{id}/articles/{id})·.nhn 모두 허용.
+    # 쿼리스트링(?art=...) 이 붙은 형태도 매칭 (네이버가 일부 카페글에 사용)
+    re.compile(r"^https?://(?:m\.)?cafe\.naver\.com/[a-zA-Z0-9_-]+/\d+(?:[/?#].*)?$"),
     re.compile(r"^https?://(?:m\.)?cafe\.naver\.com/ca-fe/cafes/\d+/articles/\d+"),
     re.compile(r"^https?://(?:m\.)?cafe\.naver\.com/(?:ArticleRead|MyCafeIntro)\.nhn"),
     re.compile(r"^https?://in\.naver\.com/[a-zA-Z0-9_-]+/contents(?:/|$)"),
@@ -91,11 +94,17 @@ _AREA_NAME_MAP: dict[str, str] = {
     "rrB_hdR": "인플루언서",
     "rrB_bdR": "VIEW",
     "ugB_bsR": "인기글",
+    "ugB_b1R": "인플루언서",  # ugc_default — 보통 in.naver.com 인플루언서 콘텐츠
+    "ugB_ctR": "카페",  # ugc_popular_cafe — 화면에서 카페 단독 섹션으로 보임
+    "ugB_qpR": "인기글",  # ugc_popular_article — 화면의 "인기글" UI 섹션
     "nws_all": "뉴스",
     "kwX_ndT": "연관 키워드",
+    "web_gen": "웹사이트",
 }
 
+# 광고성 area — adR 은 powercontents(광고형 UGC), 그 외 광고 컨테이너 prefix.
 _EXCLUDED_AREA_PREFIXES = ("plB_", "adB_", "shB_", "pwB_")
+_EXCLUDED_AREAS_EXACT = ("ugB_adR",)  # ugc_powercontents (파워컨텐츠 광고)
 
 _NOISE_CLASSES = (
     "fds-ugc-after-article-list",
@@ -108,7 +117,7 @@ _NOISE_CLASSES = (
 def _classify_block_id(block_id: str) -> str | None:
     """data-block-id → 섹션명 (area 매핑 폴백). None 은 제외 신호 (광고·플레이스)."""
     bid = block_id.lower()
-    if any(t in bid for t in ("pcad", "place", "shop", "powerlink")):
+    if any(t in bid for t in ("pcad", "place", "shop", "powerlink", "powercontents")):
         return None
     if "review_ugc_single_intention" in bid or "review_top_view" in bid:
         return "인기글"
@@ -118,6 +127,12 @@ def _classify_block_id(block_id: str) -> str | None:
         return "카페"
     if "review_influencer" in bid:
         return "인플루언서"
+    if "ugc_popular_article" in bid:
+        return "인기글"
+    if "ugc_popular_cafe" in bid:
+        return "카페"
+    if "ugc_default" in bid:
+        return "블로그"
     if bid.startswith("web/") or "web_basic" in bid:
         return "웹사이트"
     if bid.startswith("news/") or "news_" in bid:
@@ -147,6 +162,8 @@ def _section_label(area: str, sample_block_ids: list[str]) -> str:
 
 
 def _is_excluded_area(area: str) -> bool:
+    if area in _EXCLUDED_AREAS_EXACT:
+        return True
     return any(area.startswith(p) for p in _EXCLUDED_AREA_PREFIXES)
 
 
@@ -194,16 +211,40 @@ class SectionMatch(BaseModel):
 def parse_integrated_serp(html: str) -> SerpParseResult:
     """통합검색 HTML → 섹션 리스트.
 
-    `data-meta-area` 를 그룹핑 키로 사용. 같은 area 가 연속되면 한 섹션으로 묶고,
-    바뀌면 새 섹션을 시작한다. 작성자 dedupe 는 fender-root 내부 한정 (수성구
-    인기글처럼 한 template 안에 carousel 형태로 나열된 경우만 압축).
+    1차 그룹핑은 `data-meta-area` (네이버 논리적 섹션 ID).
+    2차로 같은 라벨(예: "인기글") 의 연속 섹션은 화면 표시처럼 하나로 머지한다.
+    작성자 dedupe 는 fender-root 내부 한정 (수성구 인기글처럼 한 template 안에
+    carousel 형태로 나열된 경우만 압축).
     """
     soup = BeautifulSoup(html, "lxml")
     main = soup.select_one("#main_pack") or soup
     builder = _SectionBuilder()
     for root in main.select('[data-fender-root="true"]'):
         builder.consume(root)
-    return builder.finalize()
+    raw = builder.finalize()
+    return SerpParseResult(
+        sections=_merge_consecutive_same_label(raw.sections),
+        excluded_areas=raw.excluded_areas,
+    )
+
+
+def _merge_consecutive_same_label(sections: list[SerpSection]) -> list[SerpSection]:
+    """라벨이 같은 연속 섹션을 합쳐서 화면 UI 의 단일 섹션과 일치시킨다.
+
+    예: ugB_qpR → "인기글", ugB_ctR → "인기글" 두 영역이 DOM 상 인접하면
+    한 "인기글" 섹션으로 머지. 머지 후에도 URL 중복은 자연스럽게 제거.
+    """
+    merged: list[SerpSection] = []
+    for sec in sections:
+        if merged and merged[-1].name == sec.name:
+            seen = set(merged[-1].urls)
+            for u in sec.urls:
+                if u not in seen:
+                    merged[-1].urls.append(u)
+                    seen.add(u)
+        else:
+            merged.append(SerpSection(name=sec.name, urls=list(sec.urls)))
+    return merged
 
 
 def find_section_position(
