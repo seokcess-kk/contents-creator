@@ -138,7 +138,7 @@ export default function RankingCalendarPage() {
       )}
 
       {rows.length > 0 && (
-        <div className="overflow-auto border border-gray-200 rounded max-h-[calc(100vh-160px)]">
+        <div className="inline-block max-w-full overflow-auto border border-gray-200 rounded max-h-[calc(100vh-160px)] align-top">
           <table className="text-xs border-collapse">
             <thead className="text-gray-700">
               <tr>
