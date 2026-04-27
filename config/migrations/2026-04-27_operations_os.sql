@@ -209,6 +209,37 @@ create index if not exists idx_publication_actions_action
     on publication_actions (action, created_at desc);
 
 
+-- ── 배치 조회 RPC (운영 홈 N+1 제거) ─────────────────────────
+-- /rankings/queue 가 publication 마다 latest snapshot/diagnosis 를 개별 조회하면
+-- 100 pubs × 2 = 200 번 라운드트립 → 6~15초. RPC 로 일괄 1건/pub 만 받아와
+-- 200 query → 2 query 로 압축.
+--
+-- DISTINCT ON 은 PostgreSQL 문법으로 group-by 의 first-row 와 동등.
+-- ============================================================
+
+create or replace function latest_ranking_snapshots(pub_ids uuid[])
+returns setof ranking_snapshots
+language sql
+stable
+as $$
+    select distinct on (publication_id) *
+    from ranking_snapshots
+    where publication_id = any(pub_ids)
+    order by publication_id, captured_at desc;
+$$;
+
+create or replace function latest_visibility_diagnoses(pub_ids uuid[])
+returns setof visibility_diagnoses
+language sql
+stable
+as $$
+    select distinct on (publication_id) *
+    from visibility_diagnoses
+    where publication_id = any(pub_ids)
+    order by publication_id, diagnosed_at desc;
+$$;
+
+
 -- ============================================================
 -- 검증 쿼리 (실행 후 한번씩 돌려서 확인)
 -- ============================================================

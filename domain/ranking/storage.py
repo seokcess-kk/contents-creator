@@ -227,6 +227,23 @@ def list_snapshots(publication_id: str, limit: int = 90) -> list[RankingSnapshot
     return [_row_to_snapshot(cast("dict[str, Any]", r)) for r in (result.data or [])]
 
 
+def list_latest_snapshots_batch(pub_ids: list[str]) -> dict[str, RankingSnapshot]:
+    """publication 별 최신 snapshot 1건씩 일괄 조회 (RPC 사용).
+
+    운영 홈 N+1 제거용. 100 pubs 도 단일 쿼리.
+    빈 리스트면 즉시 빈 dict 반환.
+    """
+    if not pub_ids:
+        return {}
+    client = get_client()
+    result = client.rpc("latest_ranking_snapshots", {"pub_ids": pub_ids}).execute()
+    out: dict[str, RankingSnapshot] = {}
+    for row in result.data or []:
+        snap = _row_to_snapshot(cast("dict[str, Any]", row))
+        out[snap.publication_id] = snap
+    return out
+
+
 def list_snapshots_in_range(
     start_utc: datetime,
     end_utc: datetime,

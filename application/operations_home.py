@@ -50,6 +50,9 @@ def list_publications_for_tab(
 ) -> list[dict[str, Any]]:
     """탭별 publication 목록 + 최신 snapshot + 최신 진단 enrichment.
 
+    🔴 N+1 제거: storage RPC 로 publication 별 최신 1건씩 일괄 조회 → 2 쿼리만 사용.
+    100 pubs 도 단일 라운드트립.
+
     tab: action_required | republishing | held | active | dismissed | all
     """
     if tab not in TAB_FILTERS:
@@ -59,35 +62,50 @@ def list_publications_for_tab(
         limit=limit,
         workflow_status=statuses or None,
     )
-    return [_enrich_publication(p) for p in publications]
+
+    pub_ids = [p.id for p in publications if p.id is not None]
+    snapshots_by_pub = _safe_batch(ranking_storage.list_latest_snapshots_batch, pub_ids, "snapshot")
+    diagnoses_by_pub = _safe_batch(
+        diagnosis_storage.list_latest_diagnoses_batch, pub_ids, "diagnosis"
+    )
+
+    return [_enrich_publication(p, snapshots_by_pub, diagnoses_by_pub) for p in publications]
 
 
-def _enrich_publication(pub: Publication) -> dict[str, Any]:
-    """publication 1건에 최신 snapshot + 최신 진단 메타 결합."""
+def _safe_batch(fn: Any, pub_ids: list[str], label: str) -> dict[str, Any]:
+    """RPC 실패 시 빈 dict 로 폴백 — 단순 조회는 내려도 큐 자체는 출력."""
+    try:
+        return fn(pub_ids)
+    except Exception:
+        logger.warning("enrich.batch_failed kind=%s", label, exc_info=True)
+        return {}
+
+
+def _enrich_publication(
+    pub: Publication,
+    snapshots_by_pub: dict[str, Any],
+    diagnoses_by_pub: dict[str, Any],
+) -> dict[str, Any]:
+    """publication 1건에 미리 fetch 된 최신 snapshot + 진단 메타 결합."""
     payload = pub.model_dump(mode="json")
     if pub.id is None:
         payload["latest_snapshot"] = None
         payload["latest_diagnosis"] = None
         return payload
 
-    snapshots = ranking_storage.list_snapshots(pub.id, limit=1)
-    payload["latest_snapshot"] = _snapshot_summary(snapshots[0]) if snapshots else None
+    snap = snapshots_by_pub.get(pub.id)
+    payload["latest_snapshot"] = _snapshot_summary(snap) if snap else None
 
-    try:
-        diagnoses = diagnosis_storage.list_diagnoses_by_publication(pub.id, limit=1)
-        if diagnoses:
-            d = diagnoses[0]
-            payload["latest_diagnosis"] = {
-                "id": d.id,
-                "reason": d.reason,
-                "confidence": float(d.confidence),
-                "diagnosed_at": d.diagnosed_at.isoformat() if d.diagnosed_at else None,
-                "recommended_action": d.recommended_action,
-            }
-        else:
-            payload["latest_diagnosis"] = None
-    except Exception:
-        logger.warning("enrich.diagnosis_failed publication_id=%s", pub.id, exc_info=True)
+    diag = diagnoses_by_pub.get(pub.id)
+    if diag is not None:
+        payload["latest_diagnosis"] = {
+            "id": diag.id,
+            "reason": diag.reason,
+            "confidence": float(diag.confidence),
+            "diagnosed_at": diag.diagnosed_at.isoformat() if diag.diagnosed_at else None,
+            "recommended_action": diag.recommended_action,
+        }
+    else:
         payload["latest_diagnosis"] = None
 
     return payload

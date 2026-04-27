@@ -24,6 +24,22 @@ def insert_diagnosis(diagnosis: Diagnosis) -> Diagnosis:
     return _from_row(cast("dict[str, Any]", rows[0]))
 
 
+def list_latest_diagnoses_batch(pub_ids: list[str]) -> dict[str, Diagnosis]:
+    """publication 별 최신 진단 1건씩 일괄 조회 (RPC 사용).
+
+    운영 홈 N+1 제거용. 빈 리스트면 즉시 빈 dict 반환.
+    """
+    if not pub_ids:
+        return {}
+    client = get_client()
+    result = client.rpc("latest_visibility_diagnoses", {"pub_ids": pub_ids}).execute()
+    out: dict[str, Diagnosis] = {}
+    for row in result.data or []:
+        d = _from_row(cast("dict[str, Any]", row))
+        out[d.publication_id] = d
+    return out
+
+
 def list_diagnoses_by_publication(
     publication_id: str,
     limit: int = 30,
