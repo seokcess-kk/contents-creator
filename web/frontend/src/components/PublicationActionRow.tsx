@@ -46,6 +46,19 @@ export default function PublicationActionRow({ item, onChanged }: PublicationAct
   const vis = item.visibility_status;
   const latest = item.latest_snapshot;
   const diagnosis = item.latest_diagnosis;
+  const noPosition = !latest || latest.position === null;
+
+  const latestText = latest
+    ? latest.position === null
+      ? "미노출"
+      : `${latest.section ?? "?"} ${latest.position}위`
+    : "측정 이력 없음";
+  const latestDate =
+    latest?.captured_at &&
+    new Date(latest.captured_at).toLocaleDateString("ko-KR", {
+      month: "numeric",
+      day: "numeric",
+    });
 
   async function handleAction(fn: () => Promise<unknown>) {
     setBusy(true);
@@ -60,20 +73,15 @@ export default function PublicationActionRow({ item, onChanged }: PublicationAct
     }
   }
 
-  const latestText = latest
-    ? latest.position === null
-      ? "미노출"
-      : `${latest.section ?? "?"} ${latest.position}위`
-    : "측정 이력 없음";
-  const latestDate =
-    latest?.captured_at &&
-    new Date(latest.captured_at).toLocaleDateString("ko-KR", {
-      month: "numeric",
-      day: "numeric",
-    });
 
   return (
-    <div className="border border-gray-200 rounded px-3 py-1.5 bg-white">
+    <div
+      className={`border rounded px-3 py-1.5 border-l-4 ${
+        noPosition
+          ? "border-gray-200 border-l-gray-400 border-l-dashed bg-gray-50"
+          : "border-gray-200 border-l-emerald-400 bg-white"
+      }`}
+    >
       <div className="flex items-center gap-2 flex-wrap">
         <Link
           href={`/rankings/${encodeURIComponent(item.id)}`}
@@ -107,8 +115,13 @@ export default function PublicationActionRow({ item, onChanged }: PublicationAct
           </a>
         )}
         <span
-          className={`text-xs ${latest ? "text-gray-700" : "text-gray-400"} shrink-0`}
+          className={`text-xs shrink-0 ${
+            noPosition ? "text-gray-400 italic" : "text-gray-700"
+          }`}
         >
+          {noPosition && (
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-gray-300 mr-1 align-middle" />
+          )}
           {latestText}
           {latestDate && <span className="text-gray-400 ml-1">· {latestDate}</span>}
         </span>
