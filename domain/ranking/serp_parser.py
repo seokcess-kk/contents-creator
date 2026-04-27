@@ -71,7 +71,7 @@ def _normalize_url(raw: str) -> str:
     return f"https://{host}{path}"
 
 
-def _author_key(url: str) -> str:
+def author_key(url: str) -> str:
     """URL 의 작성자 식별자 — fender-root 내부 dedupe 키."""
     parsed = urlparse(url.strip())
     host = parsed.netloc.lower()
@@ -302,7 +302,7 @@ class _SectionBuilder:
                 norm = _normalize_url(val)
                 if norm in seen_urls or norm in self._cur_seen_urls:
                     continue
-                author = _author_key(val)
+                author = author_key(val)
                 if author in seen_authors:
                     continue
                 seen_urls.add(norm)

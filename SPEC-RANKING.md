@@ -305,8 +305,64 @@ python scripts/check_rankings.py --all
 
 ---
 
+## Phase 1 — 미노출 사유 진단 (evidence-based)
+
+### 목적
+"왜 안 뜨는가" 를 직접 알 수는 없으나 관측 데이터로 **추정 진단**을 제공하고, 진단별 결과를 누적해 추후 통계화한다. 핵심 원칙은 "확정 단언이 아니라 근거 동반 추정".
+
+### 5개 룰 (P1)
+
+| reason | confidence | 근거 |
+|---|---|---|
+| `no_publication` | 1.0 | publications.url 비어있음 (결정적) |
+| `no_measurement` | 1.0 | snapshot 0건 (결정적) |
+| `lost_visibility` | 0.6~0.9 | 과거 노출 + 최근 N일 연속 null. streak 길이에 비례 |
+| `never_indexed` | 0.5~0.85 | 발행 D+3 이상 + 한 번도 미발견. 경과일에 비례 |
+| `cannibalization` | 0.9 | Top10 안에 같은 author 의 다른 URL 노출 (URL 매칭 강신호) |
+
+### 데이터 모델
+
+```sql
+-- 매 측정마다 SERP Top10 전체 보존 (카니발 감지·SOV 분석 기반)
+serp_top10_snapshots (id, keyword, captured_at, rank, url, section, blog_id, is_ours)
+
+-- 진단 결과 + 결과 추적 + 사용자 액션
+diagnoses (
+  id, publication_id, diagnosed_at,
+  reason, confidence, evidence (jsonb), metrics (jsonb), recommended_action,
+  outcome_checked_at, re_exposed, re_exposed_at, re_exposed_section, re_exposed_position,
+  republished, republished_at, republish_publication_id,
+  user_action, user_action_at
+)
+```
+
+### 동작 흐름
+1. 매일 09:00 KST `check_all_active_rankings` 가 publication 측정
+2. 측정 후 `_build_top10_from_html` 이 SERP HTML 의 Top10 을 `serp_top10_snapshots` 에 보관
+3. `diagnose_publication` 자동 호출 → 5개 룰 평가 → 진단 저장 (실패해도 측정 자체는 유지)
+4. 사용자는 `/rankings/{id}` 에서 진단 카드 확인 → 액션 버튼(재발행/보류/기각/경쟁 인정) 선택
+5. 다음 측정 사이클이 outcome 컬럼을 갱신해 진단 정확도 자체 검증
+
+### 후속 추적 (장기 데이터 누적)
+- 진단별 재노출률 / 평균 회복 일수
+- 사용자 액션 vs 시스템 진단 일치율
+- 재발행 후 D+7 노출 성공률 vs 자연 노출률 (control group 비교)
+
+이 통계가 누적되면 "진단의 신뢰도" 자체를 데이터로 입증 가능. 6개월~1년 운영 후 분석 대시보드 별도 설계.
+
+### API
+- `GET /rankings/publications/{id}/diagnoses` — 진단 시계열
+- `POST /rankings/publications/{id}/diagnose` — 즉시 실행
+- `POST /rankings/diagnoses/{id}/action` — 사용자 액션 기록
+
+### 도메인 격리
+- `domain/diagnosis/` 는 `domain.ranking` Pydantic 모델만 입력으로 받음
+- SERP fetch / storage 호출 없음 — 룰 함수는 순수 계산
+- 작성자 식별 헬퍼는 `domain/ranking/url_match.author_key` 와 의도적 복제 (격리 유지)
+
 ## 변경 이력
 
 - `2026-04-24`: v1 초안. R1~R7 작업 plan 동기화. 단일 인스턴스 전제, DI 도메인 격리, append-only 스냅샷, 매일 09:00 KST 자동 수집.
 - `2026-04-24`: `publications.slug` nullable 화. 외부 URL(직접 발행 안 한 글) 도 같은 등록·체크·시계열 흐름으로 추적 가능. `/rankings` 대시보드에 외부 URL 등록 폼 추가.
 - `2026-04-27`: **섹션 기반 측정으로 전환**. 통합검색 메인 페이지(`?where=nexearch`) 를 받아 섹션별(인플루언서·VIEW·인기글·뉴스 등)로 분리해 매칭. `RankingSnapshot.section` 컬럼 추가, `register_publication` URL 검증 완화(카페·외부 사이트 허용). 실측 14건 기반 regression 테스트 추가.
+- `2026-04-27`: **Phase 1 미노출 사유 진단** 추가. 5개 룰(`no_publication` / `no_measurement` / `lost_visibility` / `never_indexed` / `cannibalization`)로 evidence-based 진단. `serp_top10_snapshots` · `diagnoses` 신규 테이블. 측정 사이클이 자동 트리거. `/rankings/{id}` 에 진단 카드 + 사용자 액션 버튼.

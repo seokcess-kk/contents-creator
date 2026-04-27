@@ -27,6 +27,11 @@ from domain.ranking.model import (
     RankingMatchError,
     RankingSnapshot,
     RankingTimeline,
+    Top10Snapshot,
+)
+from domain.ranking.serp_parser import (
+    author_key,  # Top10 저장 시 blog_id 채움용
+    parse_integrated_serp,
 )
 from domain.ranking.url_match import normalize_any_url
 
@@ -111,7 +116,11 @@ def delete_publication(publication_id: str) -> bool:
 
 
 def check_rankings_for_publication(publication_id: str) -> RankingSnapshot:
-    """단일 publication 의 현재 SERP 위치 측정 + snapshot 저장.
+    """단일 publication 의 현재 SERP 위치 측정 + snapshot/Top10 저장 + 진단 자동 실행.
+
+    측정 결과 저장 후 동일 SERP HTML 의 Top10 도 함께 보관해 카니발라이제이션·
+    SOV 분석에 활용한다. Top10 저장과 진단은 best-effort — 실패해도 측정 자체는
+    유지된다.
 
     Raises:
         ValueError: publication 미존재.
@@ -126,16 +135,60 @@ def check_rankings_for_publication(publication_id: str) -> RankingSnapshot:
         zone=require("bright_data_web_unlocker_zone"),
     )
     try:
-        snapshot = tracker.find_position(
-            keyword=publication.keyword,
-            target_url=publication.url,
-            publication_id=publication_id,
-            serp_url_builder=build_main_search_url,
-            serp_fetcher=client.fetch,
-        )
+        html = client.fetch(build_main_search_url(publication.keyword))
     finally:
         client.close()
-    return storage.insert_snapshot(snapshot)
+
+    snapshot = _parse_and_match(html, publication, publication_id)
+    saved = storage.insert_snapshot(snapshot)
+
+    # 부가 작업: Top10 저장 + 진단 (실패해도 측정 결과는 유지)
+    try:
+        top10 = _build_top10_from_html(html, publication)
+        if top10:
+            storage.insert_top10_snapshots(top10)
+    except Exception:
+        logger.warning("top10.save_failed publication_id=%s", publication_id, exc_info=True)
+
+    try:
+        from application.diagnosis_orchestrator import diagnose_publication
+
+        diagnose_publication(publication_id)
+    except Exception:
+        logger.warning("diagnosis.run_failed publication_id=%s", publication_id, exc_info=True)
+
+    return saved
+
+
+def _parse_and_match(html: str, publication: Publication, publication_id: str) -> RankingSnapshot:
+    """SERP HTML 을 파싱해 publication.url 매칭 결과를 RankingSnapshot 으로."""
+    return tracker.find_position(
+        keyword=publication.keyword,
+        target_url=publication.url,
+        publication_id=publication_id,
+        serp_url_builder=build_main_search_url,
+        serp_fetcher=lambda _: html,
+    )
+
+
+def _build_top10_from_html(html: str, publication: Publication) -> list[Top10Snapshot]:
+    """SERP HTML 을 파싱해 Top10Snapshot 리스트로 변환."""
+    parsed = parse_integrated_serp(html)
+    target_norm = publication.url.lower().rstrip("/")
+    out: list[Top10Snapshot] = []
+    for section in parsed.sections:
+        for rank, url in enumerate(section.urls, start=1):
+            out.append(
+                Top10Snapshot(
+                    keyword=publication.keyword,
+                    rank=rank,
+                    url=url,
+                    section=section.name,
+                    blog_id=author_key(url),
+                    is_ours=(url.lower().rstrip("/") == target_norm),
+                )
+            )
+    return out
 
 
 def check_all_active_rankings() -> RankingCheckSummary:

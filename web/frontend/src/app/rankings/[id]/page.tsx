@@ -2,6 +2,7 @@
 
 import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import DiagnosisCard from "@/components/DiagnosisCard";
 import PublicationEditDialog from "@/components/PublicationEditDialog";
 import RankingTimeline from "@/components/RankingTimeline";
 import {
@@ -137,6 +138,8 @@ export default function PublicationDetailPage({
           </div>
         </div>
       )}
+
+      <DiagnosisCard publicationId={id} />
 
       <RankingTimeline publicationId={id} refreshKey={refreshKey} />
 

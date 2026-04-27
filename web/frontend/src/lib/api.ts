@@ -209,6 +209,59 @@ export function getMonthlyCalendar(month: string): Promise<RankingCalendar> {
   return fetchJson(`/rankings/calendar?month=${encodeURIComponent(month)}`);
 }
 
+// ── 진단 (SPEC-RANKING.md Phase 1 미노출 사유 진단) ──
+
+export interface Diagnosis {
+  id: string;
+  publication_id: string;
+  diagnosed_at: string | null;
+  reason: string;
+  confidence: number;
+  evidence: string[];
+  metrics: Record<string, unknown>;
+  recommended_action: string | null;
+  re_exposed: boolean;
+  re_exposed_at: string | null;
+  republished: boolean;
+  republished_at: string | null;
+  user_action: string | null;
+  user_action_at: string | null;
+}
+
+export type DiagnosisAction =
+  | "republished"
+  | "held"
+  | "dismissed"
+  | "marked_competitor_strong";
+
+export function listDiagnoses(
+  publicationId: string,
+  limit = 30,
+): Promise<{ count: number; items: Diagnosis[] }> {
+  return fetchJson(
+    `/rankings/publications/${encodeURIComponent(publicationId)}/diagnoses?limit=${limit}`,
+  );
+}
+
+export function triggerDiagnose(
+  publicationId: string,
+): Promise<{ count: number; items: Diagnosis[] }> {
+  return fetchJson(
+    `/rankings/publications/${encodeURIComponent(publicationId)}/diagnose`,
+    { method: "POST" },
+  );
+}
+
+export function recordDiagnosisAction(
+  diagnosisId: string,
+  userAction: DiagnosisAction,
+): Promise<Diagnosis> {
+  return fetchJson(`/rankings/diagnoses/${encodeURIComponent(diagnosisId)}/action`, {
+    method: "POST",
+    body: JSON.stringify({ user_action: userAction }),
+  });
+}
+
 export async function deletePublication(publicationId: string): Promise<void> {
   // 204 응답은 본문이 비어 있어 fetchJson 의 res.json() 이 실패한다.
   // cancelJob 과 동일 패턴으로 직접 처리.

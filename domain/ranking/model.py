@@ -95,3 +95,21 @@ class RankingDuplicateUrlError(Exception):
 
 class RankingMatchError(Exception):
     """SERP fetch/parse 실패 또는 매칭 자체 실패 (URL 정규식 미스)."""
+
+
+class Top10Snapshot(BaseModel):
+    """매 SERP 측정마다 추출되는 Top10 콘텐츠 1건.
+
+    카니발라이제이션 감지·SOV 측정·경쟁 변화 분석의 기반 데이터.
+    rank 는 1-based, section 은 serp_parser 가 분류한 섹션명.
+    blog_id 는 작성자 식별자 (url_match._author_key 결과).
+    """
+
+    id: str | None = None
+    keyword: str
+    captured_at: datetime | None = None
+    rank: int = Field(ge=1)
+    url: str
+    section: str | None = None
+    blog_id: str | None = None
+    is_ours: bool = False

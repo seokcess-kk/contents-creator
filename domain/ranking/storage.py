@@ -16,12 +16,14 @@ from domain.ranking.model import (
     Publication,
     RankingDuplicateUrlError,
     RankingSnapshot,
+    Top10Snapshot,
 )
 
 logger = logging.getLogger(__name__)
 
 _PUB_TABLE = "publications"
 _SNAP_TABLE = "ranking_snapshots"
+_TOP10_TABLE = "serp_top10_snapshots"
 
 
 def insert_publication(publication: Publication) -> Publication:
@@ -116,6 +118,34 @@ def list_publications(
         query = query.eq("keyword", keyword)
     result = query.execute()
     return [_row_to_publication(cast("dict[str, Any]", r)) for r in (result.data or [])]
+
+
+def insert_top10_snapshots(items: list[Top10Snapshot]) -> int:
+    """SERP Top10 일괄 insert. 빈 리스트면 0 반환."""
+    if not items:
+        return 0
+    client = get_client()
+    payloads = [_top10_to_payload(it) for it in items]
+    result = client.table(_TOP10_TABLE).insert(payloads).execute()
+    return len(result.data or [])
+
+
+def list_top10_snapshots(
+    keyword: str,
+    limit: int = 30,
+) -> list[Top10Snapshot]:
+    """키워드의 최근 Top10 측정 시계열 (captured_at desc, rank asc)."""
+    client = get_client()
+    result = (
+        client.table(_TOP10_TABLE)
+        .select("*")
+        .eq("keyword", keyword)
+        .order("captured_at", desc=True)
+        .order("rank", desc=False)
+        .limit(limit)
+        .execute()
+    )
+    return [_row_to_top10(cast("dict[str, Any]", r)) for r in (result.data or [])]
 
 
 def insert_snapshot(snapshot: RankingSnapshot) -> RankingSnapshot:
@@ -214,6 +244,33 @@ def _row_to_snapshot(row: dict[str, Any]) -> RankingSnapshot:
         total_results=row.get("total_results"),
         captured_at=row.get("captured_at"),
         serp_html_path=row.get("serp_html_path"),
+    )
+
+
+def _top10_to_payload(t: Top10Snapshot) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "keyword": t.keyword,
+        "rank": t.rank,
+        "url": t.url,
+        "is_ours": t.is_ours,
+    }
+    if t.section is not None:
+        payload["section"] = t.section
+    if t.blog_id is not None:
+        payload["blog_id"] = t.blog_id
+    return payload
+
+
+def _row_to_top10(row: dict[str, Any]) -> Top10Snapshot:
+    return Top10Snapshot(
+        id=row.get("id"),
+        keyword=row["keyword"],
+        captured_at=row.get("captured_at"),
+        rank=row["rank"],
+        url=row["url"],
+        section=row.get("section"),
+        blog_id=row.get("blog_id"),
+        is_ours=row.get("is_ours") or False,
     )
 
 

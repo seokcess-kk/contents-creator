@@ -226,7 +226,81 @@ create index if not exists idx_ranking_snapshots_publication
 
 
 -- ============================================================
+-- serp_top10_snapshots — 매 측정마다 SERP Top10 전체 기록
+-- 카니발라이제이션 감지·경쟁 변화 분석·SOV 측정의 기반.
+-- 매일 측정 시 우리 publication 의 SERP HTML 에서 추출되는 모든 콘텐츠 URL 을
+-- 섹션·rank 와 함께 저장. blog_id 는 url_match._author_key 결과.
+--
+-- 기존 DB 마이그레이션:
+--   (신규 테이블, 기존 행 영향 없음)
+-- ============================================================
+create table if not exists serp_top10_snapshots (
+    id uuid primary key default gen_random_uuid(),
+    keyword text not null,
+    captured_at timestamptz default now(),
+    rank int not null,
+    url text not null,
+    section text,
+    blog_id text,
+    is_ours boolean default false
+);
+
+create index if not exists idx_serp_top10_keyword_time
+    on serp_top10_snapshots (keyword, captured_at desc);
+
+create index if not exists idx_serp_top10_blog
+    on serp_top10_snapshots (blog_id, captured_at desc);
+
+
+-- ============================================================
+-- diagnoses — 미노출 사유 진단 결과 (evidence 기반)
+-- 발행 누락·측정 누락·검색결과 미발견·노출 후 이탈·카니발라이제이션 등
+-- 룰 기반으로 산출되는 진단을 evidence/metrics 와 함께 저장한다.
+--
+-- outcome 추적 컬럼: 진단 후 재노출·재발행 여부를 자동·수동 갱신해 추후
+-- 진단별 신뢰도/재노출률 통계의 데이터 토대가 된다.
+--
+-- user_action: republished | held | dismissed | marked_competitor_strong
+--
+-- 기존 DB 마이그레이션:
+--   (신규 테이블, 기존 행 영향 없음)
+-- ============================================================
+create table if not exists diagnoses (
+    id uuid primary key default gen_random_uuid(),
+    publication_id uuid not null references publications(id) on delete cascade,
+    diagnosed_at timestamptz default now(),
+    reason text not null,
+    confidence numeric(3,2) not null,
+    evidence jsonb not null default '[]'::jsonb,
+    metrics jsonb default '{}'::jsonb,
+    recommended_action text,
+
+    -- 자동 후속 추적
+    outcome_checked_at timestamptz,
+    re_exposed boolean default false,
+    re_exposed_at timestamptz,
+    re_exposed_section text,
+    re_exposed_position int,
+    republished boolean default false,
+    republished_at timestamptz,
+    republish_publication_id uuid references publications(id) on delete set null,
+
+    -- 사용자 액션 로그
+    user_action text,
+    user_action_at timestamptz
+);
+
+create index if not exists idx_diagnoses_publication
+    on diagnoses (publication_id, diagnosed_at desc);
+
+create index if not exists idx_diagnoses_reason
+    on diagnoses (reason, diagnosed_at desc);
+
+
+-- ============================================================
 -- 롤백 (배포 실패 시)
+--   drop table if exists diagnoses;
+--   drop table if exists serp_top10_snapshots;
 --   drop table if exists ranking_snapshots;
 --   drop table if exists publications;
 -- ============================================================

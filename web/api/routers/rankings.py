@@ -6,6 +6,9 @@
 - GET    /rankings/publications/{id}   — 단건 + timeline
 - PATCH  /rankings/publications/{id}   — keyword/URL/slug/published_at 부분 수정
 - DELETE /rankings/publications/{id}   — 삭제 (snapshots 동반 cascade)
+- GET    /rankings/publications/{id}/diagnoses  — 진단 시계열 조회
+- POST   /rankings/publications/{id}/diagnose   — 진단 즉시 실행
+- POST   /rankings/diagnoses/{id}/action        — 사용자 액션 기록
 - GET    /rankings/calendar            — 월별 캘린더 매트릭스 (KST 기준)
 - POST   /rankings/check/{publication_id}  — 즉시 SERP 체크
 - GET    /rankings/{publication_id}    — RankingSnapshot 시계열
@@ -123,6 +126,55 @@ def delete_publication(publication_id: str) -> Response:
     if not deleted:
         raise HTTPException(status_code=404, detail="publication 미존재")
     return Response(status_code=204)
+
+
+class DiagnosisActionRequest(BaseModel):
+    user_action: str = Field(min_length=1, max_length=50)
+
+
+@router.get("/publications/{publication_id}/diagnoses")
+def list_diagnoses(
+    publication_id: str, limit: int = Query(default=30, ge=1, le=200)
+) -> dict[str, Any]:
+    """publication 의 진단 시계열 (diagnosed_at desc)."""
+    from domain.diagnosis import storage as diagnosis_storage
+
+    items = diagnosis_storage.list_diagnoses_by_publication(publication_id, limit=limit)
+    return {
+        "publication_id": publication_id,
+        "count": len(items),
+        "items": [d.model_dump(mode="json") for d in items],
+    }
+
+
+@router.post("/publications/{publication_id}/diagnose")
+def trigger_diagnose(publication_id: str) -> dict[str, Any]:
+    """publication 진단 즉시 실행 (수동 트리거). 룰 평가 후 저장된 진단 반환."""
+    from application.diagnosis_orchestrator import diagnose_publication
+
+    diagnoses = diagnose_publication(publication_id)
+    return {
+        "publication_id": publication_id,
+        "count": len(diagnoses),
+        "items": [d.model_dump(mode="json") for d in diagnoses],
+    }
+
+
+@router.post("/diagnoses/{diagnosis_id}/action")
+def record_diagnosis_action(diagnosis_id: str, req: DiagnosisActionRequest) -> dict[str, Any]:
+    """사용자 액션 기록 (republished | held | dismissed | marked_competitor_strong)."""
+    from datetime import UTC, datetime
+
+    from domain.diagnosis import storage as diagnosis_storage
+
+    updated = diagnosis_storage.update_user_action(
+        diagnosis_id,
+        user_action=req.user_action,
+        user_action_at=datetime.now(tz=UTC).isoformat(),
+    )
+    if updated is None:
+        raise HTTPException(status_code=404, detail="diagnosis 미존재")
+    return updated.model_dump(mode="json")
 
 
 @router.get("/calendar")
