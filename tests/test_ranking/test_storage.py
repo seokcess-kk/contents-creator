@@ -78,6 +78,18 @@ class TestInsertPublication:
         with pytest.raises(RankingDuplicateUrlError):
             storage.insert_publication(p)
 
+    def test_payload_omits_slug_when_none(self, mock_client: MagicMock) -> None:
+        """slug=None 이면 payload 에서 제외 (DB NULL 기본값 활용)."""
+        row = _publication_row()
+        row["slug"] = None
+        table = _make_mock_table([row])
+        mock_client.table.return_value = table
+        p = Publication(keyword="kw", url="https://m.blog.naver.com/u/123456789")
+        result = storage.insert_publication(p)
+        assert result.slug is None
+        called_payload = table.insert.call_args.args[0]
+        assert "slug" not in called_payload
+
 
 class TestGetPublication:
     def test_returns_none_when_missing(self, mock_client: MagicMock) -> None:

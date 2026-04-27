@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import ExternalUrlForm from "@/components/ExternalUrlForm";
 import {
   listPublications,
   getPublicationTimeline,
@@ -25,43 +26,46 @@ export default function RankingsDashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
 
-  useEffect(() => {
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const data = await listPublications(undefined, 200);
-        // 각 publication 의 timeline 을 병렬로 조회 (성능 위해 limit 작게)
-        const enriched = await Promise.all(
-          data.items.map(async (pub) => {
-            try {
-              const timeline = await getPublicationTimeline(pub.id);
-              const latest = timeline.snapshots[0] ?? null;
-              const positions = timeline.snapshots
-                .map((s) => s.position)
-                .filter((p): p is number => p !== null);
-              const bestPosition = positions.length > 0 ? Math.min(...positions) : null;
-              return { ...pub, latest, bestPosition };
-            } catch {
-              return { ...pub, latest: null, bestPosition: null };
-            }
-          }),
-        );
-        setItems(enriched);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "조회 실패");
-      } finally {
-        setLoading(false);
-      }
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await listPublications(undefined, 200);
+      // 각 publication 의 timeline 을 병렬로 조회 (성능 위해 limit 작게)
+      const enriched = await Promise.all(
+        data.items.map(async (pub) => {
+          try {
+            const timeline = await getPublicationTimeline(pub.id);
+            const latest = timeline.snapshots[0] ?? null;
+            const positions = timeline.snapshots
+              .map((s) => s.position)
+              .filter((p): p is number => p !== null);
+            const bestPosition = positions.length > 0 ? Math.min(...positions) : null;
+            return { ...pub, latest, bestPosition };
+          } catch {
+            return { ...pub, latest: null, bestPosition: null };
+          }
+        }),
+      );
+      setItems(enriched);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "조회 실패");
+    } finally {
+      setLoading(false);
     }
-    load();
   }, []);
 
-  const filtered = filter.trim()
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const filterLower = filter.trim().toLowerCase();
+  const filtered = filterLower
     ? items.filter(
         (i) =>
-          i.keyword.toLowerCase().includes(filter.toLowerCase()) ||
-          i.slug.toLowerCase().includes(filter.toLowerCase()),
+          i.keyword.toLowerCase().includes(filterLower) ||
+          (i.slug ?? "").toLowerCase().includes(filterLower) ||
+          i.url.toLowerCase().includes(filterLower),
       )
     : items;
 
@@ -75,12 +79,14 @@ export default function RankingsDashboardPage() {
         <span className="w-16" />
       </div>
 
+      <ExternalUrlForm onRegistered={() => void load()} />
+
       <div className="flex items-center gap-2">
         <input
           type="text"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          placeholder="키워드 또는 slug 검색"
+          placeholder="키워드, slug, URL 검색"
           className="flex-1 px-3 py-1 border border-gray-300 rounded text-sm"
         />
         <span className="text-xs text-gray-500">{filtered.length}개</span>
@@ -91,7 +97,8 @@ export default function RankingsDashboardPage() {
 
       {!loading && filtered.length === 0 && (
         <div className="text-sm text-gray-500">
-          등록된 publication 이 없습니다. 결과 페이지에서 발행 URL 을 등록하세요.
+          등록된 항목이 없습니다. 위 폼으로 외부 URL 을 등록하거나, 결과 페이지에서 본 프로젝트
+          발행 URL 을 등록하세요.
         </div>
       )}
 
@@ -100,7 +107,7 @@ export default function RankingsDashboardPage() {
           <thead className="text-gray-700 bg-gray-50">
             <tr>
               <th className="text-left p-2 border-b">키워드</th>
-              <th className="text-left p-2 border-b">slug</th>
+              <th className="text-left p-2 border-b">URL / slug</th>
               <th className="text-right p-2 border-b">현재 순위</th>
               <th className="text-right p-2 border-b">최고 순위</th>
               <th className="text-left p-2 border-b">최근 측정</th>
@@ -111,7 +118,25 @@ export default function RankingsDashboardPage() {
             {filtered.map((p) => (
               <tr key={p.id} className="border-b border-gray-100 hover:bg-gray-50">
                 <td className="p-2 text-gray-900">{p.keyword}</td>
-                <td className="p-2 text-gray-700 truncate max-w-[200px]">{p.slug}</td>
+                <td className="p-2 text-gray-700 truncate max-w-[260px]">
+                  {p.slug ? (
+                    <span>{p.slug}</span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1">
+                      <span className="px-1.5 py-0.5 text-[10px] rounded bg-emerald-100 text-emerald-800">
+                        외부
+                      </span>
+                      <a
+                        href={p.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-700 hover:underline truncate"
+                      >
+                        {p.url}
+                      </a>
+                    </span>
+                  )}
+                </td>
                 <td
                   className={`p-2 text-right font-mono ${
                     p.latest?.position === null || p.latest === null
@@ -138,12 +163,16 @@ export default function RankingsDashboardPage() {
                     : "-"}
                 </td>
                 <td className="p-2">
-                  <Link
-                    href={`/results/${encodeURIComponent(p.slug)}`}
-                    className="text-blue-700 hover:underline text-xs"
-                  >
-                    보기 →
-                  </Link>
+                  {p.slug ? (
+                    <Link
+                      href={`/results/${encodeURIComponent(p.slug)}`}
+                      className="text-blue-700 hover:underline text-xs"
+                    >
+                      보기 →
+                    </Link>
+                  ) : (
+                    <span className="text-xs text-gray-400">-</span>
+                  )}
                 </td>
               </tr>
             ))}

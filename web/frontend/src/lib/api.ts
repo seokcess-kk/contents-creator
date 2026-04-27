@@ -121,7 +121,7 @@ export interface Publication {
   id: string;
   job_id: string | null;
   keyword: string;
-  slug: string;
+  slug: string | null;
   url: string;
   published_at: string | null;
   created_at: string;
@@ -152,8 +152,8 @@ export function listPublications(
 
 export function createPublication(params: {
   keyword: string;
-  slug: string;
   url: string;
+  slug?: string | null;
   job_id?: string | null;
   published_at?: string | null;
 }): Promise<Publication> {

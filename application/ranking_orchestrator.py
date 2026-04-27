@@ -38,12 +38,17 @@ logger = logging.getLogger(__name__)
 def register_publication(
     *,
     keyword: str,
-    slug: str,
     url: str,
+    slug: str | None = None,
     job_id: str | None = None,
     published_at: datetime | None = None,
 ) -> Publication:
-    """발행 URL 등록. 동일 url 재호출은 기존 row 반환 (멱등).
+    """URL 등록. 동일 url 재호출은 기존 row 반환 (멱등).
+
+    slug 가 None 이면 외부 URL 추적 (본 프로젝트로 발행하지 않은 글).
+    같은 URL 이 본 프로젝트로 나중에 발행되면 slug 를 채워 다시 등록할 수 있다 —
+    그 경우 멱등 분기에서 기존 row 가 반환되므로 별도 update API 가 필요하면
+    추후 도입한다.
 
     Raises:
         ValueError: url 형식이 네이버 블로그 포스트가 아님.

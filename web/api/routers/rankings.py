@@ -35,8 +35,8 @@ router = APIRouter(
 
 class PublicationCreateRequest(BaseModel):
     keyword: str = Field(min_length=1)
-    slug: str = Field(min_length=1)
     url: str = Field(min_length=1)
+    slug: str | None = Field(default=None, min_length=1)
     job_id: str | None = None
     published_at: datetime | None = None
 

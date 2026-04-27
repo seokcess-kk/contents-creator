@@ -87,6 +87,16 @@ class TestRegisterPublication:
         passed = storage_mock.insert_publication.call_args.args[0]
         assert passed.url == "https://m.blog.naver.com/u/123456789"
 
+    def test_external_url_without_slug(self, storage_mock: MagicMock) -> None:
+        """slug 생략 시 외부 URL 등록 — Publication.slug=None 으로 저장."""
+        storage_mock.insert_publication.return_value = _publication(slug=None)
+        result = ranking_orchestrator.register_publication(
+            keyword="kw", url="https://blog.naver.com/u/123456789"
+        )
+        passed = storage_mock.insert_publication.call_args.args[0]
+        assert passed.slug is None
+        assert result.slug is None
+
 
 class TestCheckRankingsForPublication:
     def test_publication_missing(self, storage_mock: MagicMock) -> None:

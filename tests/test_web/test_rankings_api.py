@@ -71,6 +71,28 @@ class TestPostPublications:
         )
         assert resp.status_code == 400
 
+    def test_creates_external_url_without_slug(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """slug 미제공 — 외부 URL 등록 경로."""
+        captured: dict[str, Any] = {}
+
+        def _capture(**kwargs: Any) -> Publication:
+            captured.update(kwargs)
+            return _publication(slug=None)
+
+        monkeypatch.setattr(ranking_orchestrator, "register_publication", _capture)
+        resp = client.post(
+            "/api/rankings/publications",
+            json={
+                "keyword": "다이어트 한의원",
+                "url": "https://blog.naver.com/u/123456789",
+            },
+        )
+        assert resp.status_code == 200
+        assert captured.get("slug") is None
+        assert resp.json()["slug"] is None
+
 
 class TestListPublications:
     def test_returns_items(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:

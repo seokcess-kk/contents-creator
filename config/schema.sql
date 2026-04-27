@@ -177,14 +177,19 @@ create index if not exists idx_api_usage_provider
 
 
 -- ============================================================
--- publications — 사용자가 네이버 블로그에 발행한 URL 등록 (순위 추적 입력)
+-- publications — 네이버 블로그 URL 순위 추적 입력
 -- SPEC-RANKING.md §4 참조
+--
+-- slug 는 nullable: 본 프로젝트로 발행한 글이면 output/{slug}/ 매칭용으로 채우고,
+-- 외부 URL(직접 발행 안 한 글) 만 추적할 때는 NULL.
+-- 기존 DB 마이그레이션:
+--   alter table publications alter column slug drop not null;
 -- ============================================================
 create table if not exists publications (
     id uuid primary key default gen_random_uuid(),
     job_id text,
     keyword text not null,
-    slug text not null,
+    slug text,
     url text not null unique,
     published_at timestamptz,
     created_at timestamptz default now()

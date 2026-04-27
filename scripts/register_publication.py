@@ -1,14 +1,19 @@
-"""발행 URL 등록 CLI.
+"""URL 등록 CLI.
 
 얇은 argparse 래퍼 — 실제 로직은 `application.ranking_orchestrator.register_publication`.
 SPEC-RANKING.md §7 참조.
 
-예:
+예 (본 프로젝트로 발행한 글):
     python scripts/register_publication.py \\
         --keyword "신사 다이어트 한의원" \\
         --slug "신사다이어트한의원" \\
         --url "https://blog.naver.com/myblog/123456789" \\
         --published-at "2026-04-24"
+
+예 (외부 URL 추적):
+    python scripts/register_publication.py \\
+        --keyword "신사 다이어트 한의원" \\
+        --url "https://blog.naver.com/competitor/987654321"
 """
 
 from __future__ import annotations
@@ -43,10 +48,13 @@ def main() -> int:
         description="네이버 블로그 발행 URL 등록 (SPEC-RANKING.md §3 [등록])",
     )
     parser.add_argument("--keyword", type=_non_empty, required=True, help="추적 검색어")
-    parser.add_argument(
-        "--slug", type=_non_empty, required=True, help="output 디렉터리 매칭용 slug"
-    )
     parser.add_argument("--url", type=_non_empty, required=True, help="네이버 블로그 포스트 URL")
+    parser.add_argument(
+        "--slug",
+        type=_non_empty,
+        default=None,
+        help="output 디렉터리 매칭용 slug (선택, 외부 URL 추적이면 생략)",
+    )
     parser.add_argument("--job-id", type=str, default=None, help="원본 job_id (선택)")
     parser.add_argument(
         "--published-at",

@@ -96,9 +96,10 @@ def list_snapshots(publication_id: str, limit: int = 90) -> list[RankingSnapshot
 def _publication_to_payload(p: Publication) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "keyword": p.keyword,
-        "slug": p.slug,
         "url": p.url,
     }
+    if p.slug is not None:
+        payload["slug"] = p.slug
     if p.job_id is not None:
         payload["job_id"] = p.job_id
     if p.published_at is not None:
@@ -122,7 +123,7 @@ def _row_to_publication(row: dict[str, Any]) -> Publication:
         id=row.get("id"),
         job_id=row.get("job_id"),
         keyword=row["keyword"],
-        slug=row["slug"],
+        slug=row.get("slug"),
         url=row["url"],
         published_at=row.get("published_at"),
         created_at=row.get("created_at"),
