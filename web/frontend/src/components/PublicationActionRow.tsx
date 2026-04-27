@@ -85,8 +85,14 @@ export default function PublicationActionRow({ item, onChanged }: PublicationAct
         <WorkflowBadge status={wf} />
         <VisibilityBadge status={vis} />
         {item.held_until && wf === "held" && (
-          <span className="text-[10px] text-gray-500">
-            ~{new Date(item.held_until).toLocaleDateString("ko-KR")}
+          <span
+            className="text-[10px] text-gray-600 truncate max-w-[200px]"
+            title={item.held_reason ?? undefined}
+          >
+            {formatHeldUntil(item.held_until)}
+            {item.held_reason && (
+              <span className="text-gray-400 ml-1">· {item.held_reason}</span>
+            )}
           </span>
         )}
         {item.url && (
@@ -202,6 +208,27 @@ export default function PublicationActionRow({ item, onChanged }: PublicationAct
       )}
     </div>
   );
+}
+
+function formatHeldUntil(heldUntil: string): string {
+  const target = new Date(heldUntil);
+  const now = new Date();
+  const dayMs = 24 * 60 * 60 * 1000;
+  const targetDay = new Date(
+    target.getFullYear(),
+    target.getMonth(),
+    target.getDate(),
+  ).getTime();
+  const todayDay = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+  ).getTime();
+  const diffDays = Math.round((targetDay - todayDay) / dayMs);
+  if (diffDays < 0) return "만료됨 — 큐 복귀 대기";
+  if (diffDays === 0) return "오늘 만료";
+  if (diffDays === 1) return "내일 큐 복귀";
+  return `${diffDays}일 후 재확인`;
 }
 
 type DiagnosisLike = NonNullable<QueueItem["latest_diagnosis"]>;

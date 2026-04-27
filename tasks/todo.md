@@ -523,11 +523,11 @@
 - [x] Q1.3 `DiagnosisBadge` 컴포넌트 — `group-hover` 로 popover 표시. 진단 헤더+신뢰도 / metrics 자연어 / evidence 리스트 / recommended_action 4섹션
 - [x] Q1.4 lib/api.ts `latest_diagnosis` 타입에 `evidence: string[]`, `metrics: Record<string, unknown>` 추가
 
-### Q3: 보류 사유 + 재확인일 옵션 (예상 4~5h)
-- [ ] Q3.1 `HoldDialog` 에 사유 select 추가 — `발행 직후 대기` / `경쟁 강도 높음` / `클라이언트 확인 필요` / `재발행 불필요` / `기타`
-- [ ] Q3.2 재확인일 빠른 버튼 — `3일 후` / `7일 후` / `14일 후` / `직접 지정` (date picker)
-- [ ] Q3.3 backend `held_reason` 컬럼 이미 존재 → API 요청에 포함, 응답에서 받아 표시
-- [ ] Q3.4 보류 중 탭의 행에 `N일 후 재확인` 자연어 표시 (예: "3일 후 재확인", "내일 큐 복귀")
+### Q3: 보류 사유 + 재확인일 옵션 ✅ 완료 (2026-04-27)
+- [x] Q3.1 `HoldDialog` 사유 5종 — 이미 구현되어 있음
+- [x] Q3.2 재확인일 3/7/14/직접 지정 — 이미 구현되어 있음
+- [x] Q3.3 backend `held_reason` 저장·반환 — `Publication.model_dump` 가 이미 포함
+- [x] Q3.4 `PublicationActionRow` 보류 표시를 자연어로 — `오늘 만료` / `내일 큐 복귀` / `N일 후 재확인` / `만료됨 — 큐 복귀 대기` + 사유 인라인
 
 ### Q2: 재발행 진행 중 잠금 (예상 4~5h)
 - [ ] Q2.1 publication ↔ 진행 중 job 매핑 — `publications.republishing_started_at` 또는 jobs 테이블 조회
