@@ -171,11 +171,20 @@ export default function RankingsDashboardPage() {
                         : "text-gray-900"
                   }`}
                 >
-                  {p.latest === null
-                    ? "-"
-                    : p.latest?.position === null
-                      ? "100위 밖"
-                      : `${p.latest?.position}위`}
+                  {!p.latest ? (
+                    "-"
+                  ) : p.latest.position === null ? (
+                    "미노출"
+                  ) : (
+                    <span className="inline-flex items-center gap-1 justify-end">
+                      {p.latest.section && (
+                        <span className="px-1 py-0.5 text-[10px] rounded bg-blue-100 text-blue-800 font-normal">
+                          {p.latest.section}
+                        </span>
+                      )}
+                      <span>{p.latest.position}위</span>
+                    </span>
+                  )}
                 </td>
                 <td className="p-2 text-right font-mono text-gray-700">
                   {p.bestPosition === null || p.bestPosition === undefined

@@ -50,8 +50,11 @@ class TestRankingSnapshot:
     def test_position_out_of_range_rejected(self) -> None:
         with pytest.raises(ValidationError):
             RankingSnapshot(publication_id="abc", position=0)
-        with pytest.raises(ValidationError):
-            RankingSnapshot(publication_id="abc", position=101)
+
+    def test_section_field_optional(self) -> None:
+        s = RankingSnapshot(publication_id="abc", section="인플루언서", position=3)
+        assert s.section == "인플루언서"
+        assert s.position == 3
 
 
 class TestRankingTimeline:

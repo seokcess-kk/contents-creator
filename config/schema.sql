@@ -204,11 +204,17 @@ create index if not exists idx_publications_slug
 
 -- ============================================================
 -- ranking_snapshots — 네이버 SERP 순위 시계열 (append-only)
--- position NULL = 100위 밖. captured_at desc 인덱스로 timeline 조회 최적화
+-- position NULL = 미노출 (어느 섹션에서도 발견 안 됨)
+-- section: 매칭된 섹션명 (인플루언서/VIEW/인기글/뉴스 등). NULL 이면 미노출
+-- captured_at desc 인덱스로 timeline 조회 최적화
+--
+-- 기존 DB 마이그레이션:
+--   alter table ranking_snapshots add column if not exists section text;
 -- ============================================================
 create table if not exists ranking_snapshots (
     id uuid primary key default gen_random_uuid(),
     publication_id uuid not null references publications(id) on delete cascade,
+    section text,
     position int,
     total_results int,
     captured_at timestamptz default now(),

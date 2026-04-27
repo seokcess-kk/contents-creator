@@ -72,11 +72,18 @@ class TestRegisterPublication:
         )
         assert result.id == "pub-existing"
 
+    def test_external_url_accepted(self, storage_mock: MagicMock) -> None:
+        """카페·인플루언서·외부 사이트 URL 도 등록 가능 (검증 완화)."""
+        storage_mock.insert_publication.return_value = _publication(url="https://tistory.com/foo")
+        ranking_orchestrator.register_publication(
+            keyword="kw", slug="s", url="https://tistory.com/foo"
+        )
+        storage_mock.insert_publication.assert_called_once()
+
     def test_invalid_url_rejected(self, storage_mock: MagicMock) -> None:
-        with pytest.raises(ValueError, match="네이버 블로그"):
-            ranking_orchestrator.register_publication(
-                keyword="kw", slug="s", url="https://tistory.com/foo"
-            )
+        """host 추출 불가한 형식은 여전히 거절."""
+        with pytest.raises(ValueError, match="URL 형식"):
+            ranking_orchestrator.register_publication(keyword="kw", slug="s", url="")
         storage_mock.insert_publication.assert_not_called()
 
     def test_normalizes_to_mobile(self, storage_mock: MagicMock) -> None:
@@ -117,8 +124,8 @@ class TestUpdatePublication:
         )
 
     def test_invalid_url_rejected(self, storage_mock: MagicMock) -> None:
-        with pytest.raises(ValueError, match="네이버 블로그"):
-            ranking_orchestrator.update_publication("pub-1", url="https://tistory.com/x")
+        with pytest.raises(ValueError, match="URL 형식"):
+            ranking_orchestrator.update_publication("pub-1", url="")
         storage_mock.update_publication.assert_not_called()
 
 
@@ -139,16 +146,19 @@ class TestGetMonthlyCalendar:
         # 동일 KST 일에 두 측정 — 마지막 측정(10시) 이 채택
         s1 = RankingSnapshot(
             publication_id="pub-1",
+            section="VIEW",
             position=15,
             captured_at=datetime(2026, 4, 10, 0, 0, tzinfo=kst),
         )
         s2 = RankingSnapshot(
             publication_id="pub-1",
+            section="인플루언서",
             position=8,
             captured_at=datetime(2026, 4, 10, 10, 0, tzinfo=kst),
         )
         s3 = RankingSnapshot(
             publication_id="pub-2",
+            section=None,
             position=None,
             captured_at=datetime(2026, 4, 11, 9, 0, tzinfo=kst),
         )
@@ -162,9 +172,13 @@ class TestGetMonthlyCalendar:
         assert cal.month == "2026-04"
         assert len(cal.rows) == 2
         row1 = next(r for r in cal.rows if r.publication.id == "pub-1")
-        assert row1.days == {"2026-04-10": 8}
+        cell = row1.days["2026-04-10"]
+        assert cell.position == 8  # 마지막 측정값
+        assert cell.section == "인플루언서"
         row2 = next(r for r in cal.rows if r.publication.id == "pub-2")
-        assert row2.days == {"2026-04-11": None}
+        cell2 = row2.days["2026-04-11"]
+        assert cell2.position is None  # 미노출
+        assert cell2.section is None
 
     def test_invalid_month_raises(self, storage_mock: MagicMock) -> None:
         with pytest.raises(ValueError, match="월은 1~12"):
@@ -289,32 +303,6 @@ class TestCheckAllActiveRankings:
         assert summary.checked_count == 1
         assert summary.found_count == 1
         assert summary.errors_count == 1
-
-
-class TestParseSerpForRanking:
-    def test_extracts_blog_post_urls(self) -> None:
-        html = """
-        <html><body>
-          <a href="https://blog.naver.com/userA/100000001">A</a>
-          <a href="https://m.blog.naver.com/userB/100000002">B</a>
-          <a href="https://tistory.com/foo">other</a>
-          <div data-url="https://blog.naver.com/userC/100000003"></div>
-        </body></html>
-        """
-        items = ranking_orchestrator._parse_serp_for_ranking(html)
-        assert len(items) == 3
-        assert items[0].rank == 1
-        assert items[2].rank == 3
-
-    def test_dedupes_repeated_urls(self) -> None:
-        html = """
-        <html><body>
-          <a href="https://blog.naver.com/userA/100000001">A</a>
-          <a href="https://blog.naver.com/userA/100000001">A again</a>
-        </body></html>
-        """
-        items = ranking_orchestrator._parse_serp_for_ranking(html)
-        assert len(items) == 1
 
 
 class TestGetPublicationTimeline:

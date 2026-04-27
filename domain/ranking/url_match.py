@@ -55,3 +55,35 @@ def urls_match(a: str, b: str) -> bool:
     if na is None or nb is None:
         return False
     return na == nb
+
+
+def normalize_any_url(raw: str) -> str | None:
+    """범용 URL 정규화 — 카페·인플루언서·외부 사이트도 허용.
+
+    네이버 블로그면 모바일 도메인으로 통일하고, 그 외에는 host lowercase +
+    path 트레일링 슬래시 제거 + 쿼리·프래그먼트 제거 후 https:// 형태로 반환.
+    형식 위반(scheme/host 추출 실패) 시 None.
+    """
+    if not raw:
+        return None
+    blog = normalize_blog_url(raw)
+    if blog is not None:
+        return blog
+    candidate = raw.strip()
+    if not candidate.startswith(("http://", "https://")):
+        candidate = "https://" + candidate
+    parsed = urlparse(candidate)
+    host = parsed.netloc.lower()
+    if not host:
+        return None
+    path = parsed.path.rstrip("/")
+    return f"https://{host}{path}"
+
+
+def urls_match_any(a: str, b: str) -> bool:
+    """두 URL 이 같은 콘텐츠를 가리키는가 (네이버 블로그 외 일반 URL 도 허용)."""
+    na = normalize_any_url(a)
+    nb = normalize_any_url(b)
+    if na is None or nb is None:
+        return False
+    return na == nb

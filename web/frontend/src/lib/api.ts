@@ -130,6 +130,7 @@ export interface Publication {
 export interface RankingSnapshot {
   id: string;
   publication_id: string;
+  section: string | null;
   position: number | null;
   total_results: number | null;
   captured_at: string;
@@ -188,9 +189,14 @@ export function updatePublication(
   });
 }
 
+export interface CalendarCell {
+  section: string | null;
+  position: number | null;
+}
+
 export interface CalendarRow {
   publication: Publication;
-  days: Record<string, number | null>; // "YYYY-MM-DD" → position (null = 100위 밖)
+  days: Record<string, CalendarCell>; // "YYYY-MM-DD" → cell. 미측정 키 미존재.
 }
 
 export interface RankingCalendar {

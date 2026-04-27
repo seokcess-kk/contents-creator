@@ -57,6 +57,19 @@ def build_integrated_serp_url(keyword: str) -> str:
     return f"https://search.naver.com/search.naver?query={quote(keyword)}&where=blog"
 
 
+def build_main_search_url(keyword: str) -> str:
+    """통합검색 메인 페이지 URL (`where=nexearch`).
+
+    Ranking 추적 전용. 사용자가 보는 통합검색 화면(인플루언서/VIEW/뉴스 등 다양한
+    섹션이 섞여 노출)을 그대로 받아오기 위한 URL.
+    SEO 분석용 `build_integrated_serp_url`(블로그 탭) 과 구분된다.
+    """
+    return (
+        "https://search.naver.com/search.naver"
+        f"?where=nexearch&sm=top_hty&fbm=0&ie=utf8&query={quote(keyword)}"
+    )
+
+
 def build_blog_tab_serp_url(keyword: str, start: int = 1) -> str:
     """블로그 전용 탭 URL (`ssc=tab.blog.all`).
 

@@ -12,18 +12,13 @@ import calendar as _calendar
 import logging
 import time
 from datetime import UTC, datetime, timedelta, timezone
-from typing import Any
-
-from bs4 import BeautifulSoup
 
 from config.settings import require, settings
 from domain.crawler.brightdata_client import BrightDataClient
-from domain.crawler.serp_collector import (
-    BLOG_POST_URL_RE,
-    build_integrated_serp_url,
-)
+from domain.crawler.serp_collector import build_main_search_url
 from domain.ranking import storage, tracker
 from domain.ranking.model import (
+    CalendarCell,
     CalendarRow,
     Publication,
     RankingCalendar,
@@ -33,7 +28,7 @@ from domain.ranking.model import (
     RankingSnapshot,
     RankingTimeline,
 )
-from domain.ranking.url_match import normalize_blog_url
+from domain.ranking.url_match import normalize_any_url
 
 KST = timezone(timedelta(hours=9))
 
@@ -56,11 +51,11 @@ def register_publication(
     추후 도입한다.
 
     Raises:
-        ValueError: url 형식이 네이버 블로그 포스트가 아님.
+        ValueError: url 형식이 유효하지 않음 (host 추출 불가 등).
     """
-    normalized = normalize_blog_url(url)
+    normalized = normalize_any_url(url)
     if normalized is None:
-        raise ValueError(f"네이버 블로그 포스트 URL 형식이 아닙니다: {url!r}")
+        raise ValueError(f"URL 형식이 유효하지 않습니다: {url!r}")
 
     publication = Publication(
         job_id=job_id,
@@ -97,9 +92,9 @@ def update_publication(
     """
     normalized_url: str | None = None
     if url is not None:
-        normalized_url = normalize_blog_url(url)
+        normalized_url = normalize_any_url(url)
         if normalized_url is None:
-            raise ValueError(f"네이버 블로그 포스트 URL 형식이 아닙니다: {url!r}")
+            raise ValueError(f"URL 형식이 유효하지 않습니다: {url!r}")
 
     return storage.update_publication(
         publication_id,
@@ -135,9 +130,8 @@ def check_rankings_for_publication(publication_id: str) -> RankingSnapshot:
             keyword=publication.keyword,
             target_url=publication.url,
             publication_id=publication_id,
-            serp_url_builder=build_integrated_serp_url,
+            serp_url_builder=build_main_search_url,
             serp_fetcher=client.fetch,
-            serp_parser=_parse_serp_for_ranking,
         )
     finally:
         client.close()
@@ -223,17 +217,21 @@ def _kst_month_bounds(year: int, month: int) -> tuple[datetime, datetime]:
     return start_kst.astimezone(UTC), end_kst.astimezone(UTC)
 
 
-def _group_by_pub_day(snapshots: list[RankingSnapshot]) -> dict[str, dict[str, int | None]]:
-    """snapshot 리스트 → {publication_id: {YYYY-MM-DD(KST): position}}.
+def _group_by_pub_day(
+    snapshots: list[RankingSnapshot],
+) -> dict[str, dict[str, CalendarCell]]:
+    """snapshot 리스트 → {publication_id: {YYYY-MM-DD(KST): CalendarCell}}.
 
-    같은 일 다회 측정 시 마지막 captured_at 값을 사용 (storage 가 asc 로 반환).
+    같은 일 다회 측정 시 마지막 captured_at 의 (section, position) 사용.
     """
-    out: dict[str, dict[str, int | None]] = {}
+    out: dict[str, dict[str, CalendarCell]] = {}
     for s in snapshots:
         if s.captured_at is None:
             continue
         day_key = s.captured_at.astimezone(KST).strftime("%Y-%m-%d")
-        out.setdefault(s.publication_id, {})[day_key] = s.position
+        out.setdefault(s.publication_id, {})[day_key] = CalendarCell(
+            section=s.section, position=s.position
+        )
     return out
 
 
@@ -246,44 +244,5 @@ def get_publication_timeline(publication_id: str, limit: int = 90) -> RankingTim
     return RankingTimeline(publication=publication, snapshots=snapshots)
 
 
-# ── 내부: SERP 파서 (ranking 전용 경량 버전) ──
-
-
-class _SerpItem:
-    """tracker.ParsedSerpItem Protocol 호환. crawler.SerpResult 를 직접 사용 안 함."""
-
-    def __init__(self, rank: int, url: str, title: str = "") -> None:
-        self.rank = rank
-        self.url = url
-        self.title = title
-
-
-def _parse_serp_for_ranking(html: str) -> list[Any]:
-    """SERP HTML → ranking 매칭용 항목 리스트.
-
-    crawler.serp_collector 의 풀 파서 (스니펫 추출, 광고 필터 등) 가 필요하지
-    않다. 매칭에 필요한 rank + url 만 추출. 통합검색 + 블로그 탭 모두 동일
-    `BLOG_POST_URL_RE` 패턴으로 필터.
-    """
-    soup = BeautifulSoup(html, "lxml")
-    seen: set[str] = set()
-    items: list[Any] = []
-    rank = 0
-
-    candidates: list[str] = []
-    for tag in soup.find_all(True):
-        for attr in ("href", "data-url"):
-            val = tag.get(attr)
-            if isinstance(val, str):
-                candidates.append(val)
-
-    for url in candidates:
-        if url in seen:
-            continue
-        if not BLOG_POST_URL_RE.match(url):
-            continue
-        seen.add(url)
-        rank += 1
-        items.append(_SerpItem(rank=rank, url=url))
-
-    return items
+# SERP 파서는 domain.ranking.serp_parser 로 이전 (섹션 기반 매칭).
+# 통합검색 메인 페이지의 블록 구조 파싱이 복잡해 별도 모듈로 분리.

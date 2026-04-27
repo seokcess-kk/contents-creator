@@ -178,11 +178,8 @@ export default function RankingCalendarPage() {
                   </td>
                   {dayList.map((d) => {
                     const dayKey = `${monthStr}-${String(d).padStart(2, "0")}`;
-                    const hasKey = Object.prototype.hasOwnProperty.call(
-                      row.days,
-                      dayKey,
-                    );
-                    if (!hasKey) {
+                    const cell = row.days[dayKey];
+                    if (!cell) {
                       return (
                         <td
                           key={d}
@@ -192,11 +189,17 @@ export default function RankingCalendarPage() {
                         </td>
                       );
                     }
-                    const pos = row.days[dayKey];
+                    const pos = cell.position;
+                    const tooltip =
+                      pos === null
+                        ? "미노출"
+                        : cell.section
+                          ? `${cell.section} ${pos}위`
+                          : `${pos}위`;
                     return (
                       <td
                         key={d}
-                        title={pos === null ? "100위 밖" : `${pos}위`}
+                        title={tooltip}
                         className={`p-0 text-center font-mono w-[28px] h-[28px] ${cellClass(pos)}`}
                       >
                         {pos === null ? "—" : pos}

@@ -109,6 +109,7 @@ export default function RankingTimeline({
             <tr className="border-b border-gray-200">
               <th className="text-left py-1">측정 시각</th>
               <th className="text-right py-1">N일차</th>
+              <th className="text-left py-1">섹션</th>
               <th className="text-right py-1">순위</th>
               <th className="text-right py-1">SERP 결과 수</th>
             </tr>
@@ -124,6 +125,15 @@ export default function RankingTimeline({
                   <td className="text-right font-mono text-gray-700">
                     {d === null ? "-" : `${d}일차`}
                   </td>
+                  <td className="py-1">
+                    {s.section ? (
+                      <span className="px-1.5 py-0.5 text-[10px] rounded bg-blue-100 text-blue-800">
+                        {s.section}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400">-</span>
+                    )}
+                  </td>
                   <td
                     className={`text-right font-mono ${
                       s.position === null
@@ -133,7 +143,7 @@ export default function RankingTimeline({
                           : "text-gray-900"
                     }`}
                   >
-                    {s.position === null ? "100위 밖" : `${s.position}위`}
+                    {s.position === null ? "미노출" : `${s.position}위`}
                   </td>
                   <td className="text-right text-gray-500">{s.total_results ?? "-"}</td>
                 </tr>

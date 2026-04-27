@@ -174,12 +174,15 @@ class TestDeletePublication:
 
 class TestGetCalendar:
     def test_returns_calendar(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-        from domain.ranking.model import CalendarRow, RankingCalendar
+        from domain.ranking.model import CalendarCell, CalendarRow, RankingCalendar
 
         cal = RankingCalendar(
             month="2026-04",
             rows=[
-                CalendarRow(publication=_publication(), days={"2026-04-10": 5}),
+                CalendarRow(
+                    publication=_publication(),
+                    days={"2026-04-10": CalendarCell(section="인플루언서", position=5)},
+                ),
             ],
         )
         monkeypatch.setattr(ranking_orchestrator, "get_monthly_calendar", lambda *_: cal)
@@ -187,7 +190,9 @@ class TestGetCalendar:
         assert resp.status_code == 200
         body = resp.json()
         assert body["month"] == "2026-04"
-        assert body["rows"][0]["days"]["2026-04-10"] == 5
+        cell = body["rows"][0]["days"]["2026-04-10"]
+        assert cell["position"] == 5
+        assert cell["section"] == "인플루언서"
 
     def test_400_on_invalid_format(self, client: TestClient) -> None:
         resp = client.get("/api/rankings/calendar?month=2026-4")

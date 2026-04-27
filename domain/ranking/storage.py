@@ -182,6 +182,8 @@ def _publication_to_payload(p: Publication) -> dict[str, Any]:
 
 def _snapshot_to_payload(s: RankingSnapshot) -> dict[str, Any]:
     payload: dict[str, Any] = {"publication_id": s.publication_id}
+    if s.section is not None:
+        payload["section"] = s.section
     if s.position is not None:
         payload["position"] = s.position
     if s.total_results is not None:
@@ -207,6 +209,7 @@ def _row_to_snapshot(row: dict[str, Any]) -> RankingSnapshot:
     return RankingSnapshot(
         id=row.get("id"),
         publication_id=row["publication_id"],
+        section=row.get("section"),
         position=row.get("position"),
         total_results=row.get("total_results"),
         captured_at=row.get("captured_at"),

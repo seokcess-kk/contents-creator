@@ -28,14 +28,17 @@ class Publication(BaseModel):
 
 
 class RankingSnapshot(BaseModel):
-    """SERP 측정 시점 1건. position=None 이면 100위 밖 (미발견).
+    """SERP 측정 시점 1건. position=None 이면 미노출 (어느 섹션에서도 미발견).
 
+    section: 매칭된 섹션명 (인플루언서/VIEW/인기글/뉴스/카페 등).
+    position: 그 섹션 내 순위 (1부터). NULL = 미노출.
     append-only. update/delete 정책 없음.
     """
 
     id: str | None = None
     publication_id: str
-    position: int | None = Field(default=None, ge=1, le=100)
+    section: str | None = None
+    position: int | None = Field(default=None, ge=1)
     total_results: int | None = Field(default=None, ge=0)
     captured_at: datetime | None = None
     serp_html_path: str | None = None
@@ -57,15 +60,22 @@ class RankingCheckSummary(BaseModel):
     duration_seconds: float = Field(ge=0)
 
 
-class CalendarRow(BaseModel):
-    """월별 캘린더 1행 — publication 1건의 KST 일자별 최신 순위.
+class CalendarCell(BaseModel):
+    """캘린더 1셀 — 한 publication 의 한 KST 일자 측정 결과."""
 
-    days 키는 `YYYY-MM-DD` (KST), 값은 position (1~100, 100위 밖이면 None).
+    section: str | None = None
+    position: int | None = None
+
+
+class CalendarRow(BaseModel):
+    """월별 캘린더 1행 — publication 1건의 KST 일자별 최신 순위·섹션.
+
+    days 키는 `YYYY-MM-DD` (KST), 값은 CalendarCell.
     측정 없는 날짜는 키 미존재.
     """
 
     publication: Publication
-    days: dict[str, int | None] = Field(default_factory=dict)
+    days: dict[str, CalendarCell] = Field(default_factory=dict)
 
 
 class RankingCalendar(BaseModel):
