@@ -1,15 +1,28 @@
 @import "tailwindcss";
 
+/* Pretendard Variable — 한글 가독성 우선 본문 폰트 (jsdelivr CDN). */
+@font-face {
+  font-family: "Pretendard Variable";
+  font-weight: 45 920;
+  font-style: normal;
+  font-display: swap;
+  src: url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/woff2/PretendardVariable.woff2")
+    format("woff2-variations");
+}
+
 :root {
   --background: #f9fafb;
   --foreground: #111827;
+  --font-pretendard: "Pretendard Variable", "Pretendard", -apple-system,
+    BlinkMacSystemFont, system-ui, "Apple SD Gothic Neo", "Malgun Gothic",
+    "Noto Sans KR", "Helvetica Neue", Arial, sans-serif;
   color-scheme: light;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-pretendard);
   --font-mono: var(--font-geist-mono);
 }
 
@@ -17,8 +30,10 @@ html,
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, "Apple SD Gothic Neo",
-    "Noto Sans KR", sans-serif;
+  font-family: var(--font-pretendard);
+  font-feature-settings: "ss03", "tnum"; /* 등폭 숫자 + 한글 자형 보정 */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* 폼 요소의 가독성 — 일부 브라우저에서 기본 글자색이 연해지는 문제 방지 */
@@ -27,6 +42,7 @@ textarea,
 select,
 button {
   color: inherit;
+  font-family: inherit;
 }
 
 input::placeholder,
