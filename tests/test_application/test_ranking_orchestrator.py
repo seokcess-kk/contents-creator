@@ -108,6 +108,46 @@ class TestRegisterPublication:
         assert result.slug is None
 
 
+class TestBulkRegisterPublications:
+    def test_creates_skips_and_fails(self, storage_mock: MagicMock) -> None:
+        # 1번째: 신규 등록 / 2번째: 중복 / 3번째: URL 형식 위반 / 4번째: 키워드 누락
+        # storage.get_publication_by_url 사용해 사전 중복 체크
+        existing = _publication(id="existing-pub", url="https://m.blog.naver.com/u/200000002")
+
+        def fake_get_by_url(url: str) -> Publication | None:
+            return existing if "200000002" in url else None
+
+        storage_mock.get_publication_by_url.side_effect = fake_get_by_url
+        storage_mock.insert_publication.side_effect = lambda p: _publication(
+            id="new-pub", url=p.url, keyword=p.keyword
+        )
+
+        items = [
+            {"keyword": "kw1", "url": "https://blog.naver.com/u/100000001"},
+            {"keyword": "kw2", "url": "https://blog.naver.com/u/200000002"},  # 중복
+            {"keyword": "kw3", "url": "https://tistory.com/x"},  # 형식 위반
+            {"keyword": "", "url": "https://blog.naver.com/u/300000003"},  # 키워드 누락
+        ]
+
+        result = ranking_orchestrator.bulk_register_publications(items)
+
+        assert len(result["created"]) == 1
+        assert result["created"][0]["index"] == 0
+        assert len(result["skipped"]) == 1
+        assert result["skipped"][0]["index"] == 1
+        assert result["skipped"][0]["existing_publication_id"] == "existing-pub"
+        assert len(result["failed"]) == 2
+        assert result["failed"][0]["index"] == 2
+        assert "네이버 블로그" in result["failed"][0]["reason"]
+        assert result["failed"][1]["index"] == 3
+        assert "키워드 누락" in result["failed"][1]["reason"]
+
+    def test_empty_items(self, storage_mock: MagicMock) -> None:
+        result = ranking_orchestrator.bulk_register_publications([])
+        assert result == {"created": [], "skipped": [], "failed": []}
+        storage_mock.insert_publication.assert_not_called()
+
+
 class TestUpdatePublication:
     def test_partial_update(self, storage_mock: MagicMock) -> None:
         storage_mock.update_publication.return_value = _publication(keyword="new")

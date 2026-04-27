@@ -12,6 +12,7 @@ import calendar as _calendar
 import logging
 import time
 from datetime import UTC, datetime, timedelta, timezone
+from typing import Any
 
 from config.settings import require, settings
 from domain.crawler.brightdata_client import BrightDataClient
@@ -94,6 +95,105 @@ def register_publication(
             "publication.duplicate keyword=%r url=%s — returning existing", keyword, normalized
         )
         return existing
+
+
+def bulk_register_publications(
+    items: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    """대량 외부 URL 등록.
+
+    각 item: {keyword, url, slug?, published_at?, job_id?}
+    중복 URL 은 등록 전에 미리 조회해 skipped 로 명확히 분리한다.
+
+    반환:
+      {
+        "created": [{"index", "publication_id", "keyword", "url"}, ...],
+        "skipped": [{"index", "reason", "existing_publication_id", "url"}, ...],
+        "failed":  [{"index", "reason", "input"}, ...],
+      }
+    """
+    created: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    failed: list[dict[str, Any]] = []
+
+    for idx, raw in enumerate(items):
+        keyword = (raw.get("keyword") or "").strip()
+        url = (raw.get("url") or "").strip() or None
+        if not keyword:
+            failed.append({"index": idx, "reason": "키워드 누락", "input": raw})
+            continue
+
+        # URL 이 있으면 정규화 → 사전 중복 체크 → skipped 분기
+        normalized: str | None = None
+        if url is not None:
+            normalized = normalize_blog_url(url)
+            if normalized is None:
+                failed.append(
+                    {
+                        "index": idx,
+                        "reason": "네이버 블로그 포스트 URL 형식이 아님",
+                        "input": raw,
+                    }
+                )
+                continue
+            existing = storage.get_publication_by_url(normalized)
+            if existing is not None:
+                skipped.append(
+                    {
+                        "index": idx,
+                        "reason": "이미 등록된 URL",
+                        "existing_publication_id": existing.id,
+                        "url": normalized,
+                    }
+                )
+                continue
+
+        try:
+            pub = register_publication(
+                keyword=keyword,
+                url=url,
+                slug=raw.get("slug"),
+                job_id=raw.get("job_id"),
+                published_at=_parse_iso(raw.get("published_at")),
+            )
+        except ValueError as exc:
+            failed.append({"index": idx, "reason": str(exc), "input": raw})
+            continue
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("bulk_register.unexpected idx=%d", idx, exc_info=True)
+            failed.append({"index": idx, "reason": f"내부 오류: {exc}", "input": raw})
+            continue
+
+        created.append(
+            {
+                "index": idx,
+                "publication_id": pub.id,
+                "keyword": pub.keyword,
+                "url": pub.url,
+            }
+        )
+
+    logger.info(
+        "bulk_register summary total=%d created=%d skipped=%d failed=%d",
+        len(items),
+        len(created),
+        len(skipped),
+        len(failed),
+    )
+    return {"created": created, "skipped": skipped, "failed": failed}
+
+
+def _parse_iso(value: Any) -> datetime | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
+    return None
 
 
 def update_publication(

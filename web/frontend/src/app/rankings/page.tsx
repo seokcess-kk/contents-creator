@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import BulkRegisterDialog from "@/components/BulkRegisterDialog";
 import ExternalUrlForm from "@/components/ExternalUrlForm";
 import PublicationActionRow from "@/components/PublicationActionRow";
 import {
@@ -33,6 +34,7 @@ export default function OperationsHomePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -82,7 +84,29 @@ export default function OperationsHomePage() {
 
       {summary && <SummaryCards summary={summary} />}
 
-      <ExternalUrlForm onRegistered={() => void load()} />
+      <div className="flex items-stretch gap-2">
+        <div className="flex-1">
+          <ExternalUrlForm onRegistered={() => void load()} />
+        </div>
+        <button
+          type="button"
+          onClick={() => setBulkOpen(true)}
+          className="shrink-0 px-3 py-2 text-xs border border-emerald-300 text-emerald-800 rounded hover:bg-emerald-50"
+          title="외부 URL 대량 등록 (CSV/TSV 붙여넣기)"
+        >
+          📋 대량 등록
+        </button>
+      </div>
+
+      {bulkOpen && (
+        <BulkRegisterDialog
+          onClose={() => setBulkOpen(false)}
+          onCompleted={() => {
+            setBulkOpen(false);
+            void load();
+          }}
+        />
+      )}
 
       <div className="flex flex-wrap items-center gap-1 border-b border-gray-200">
         {TABS.map((t) => {

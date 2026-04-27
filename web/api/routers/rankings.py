@@ -95,6 +95,35 @@ def create_publication(req: PublicationCreateRequest) -> dict[str, Any]:
     return publication.model_dump(mode="json")
 
 
+class BulkPublicationItem(BaseModel):
+    keyword: str = Field(min_length=1)
+    url: str | None = None
+    slug: str | None = Field(default=None, min_length=1)
+    published_at: datetime | None = None
+
+
+class BulkPublicationsRequest(BaseModel):
+    items: list[BulkPublicationItem] = Field(min_length=1, max_length=500)
+
+
+@router.post("/publications/bulk")
+def bulk_create_publications(req: BulkPublicationsRequest) -> dict[str, Any]:
+    """대량 외부 URL 등록.
+
+    중복은 사전 조회로 skipped, 형식 오류는 failed 로 분리.
+    한 번에 최대 500개 — 그 이상은 클라이언트에서 분할 호출 권장.
+    """
+    items_payload = [it.model_dump(mode="python") for it in req.items]
+    result = ranking_orchestrator.bulk_register_publications(items_payload)
+    return {
+        "total": len(req.items),
+        "created_count": len(result["created"]),
+        "skipped_count": len(result["skipped"]),
+        "failed_count": len(result["failed"]),
+        **result,
+    }
+
+
 @router.get("/publications")
 def list_publications(
     keyword: str | None = Query(default=None),

@@ -164,6 +164,34 @@ export function createPublication(params: {
   });
 }
 
+// ── 대량 등록 ──
+
+export interface BulkPublicationInput {
+  keyword: string;
+  url?: string | null;
+  slug?: string | null;
+  published_at?: string | null;
+}
+
+export interface BulkRegisterResponse {
+  total: number;
+  created_count: number;
+  skipped_count: number;
+  failed_count: number;
+  created: { index: number; publication_id: string; keyword: string; url: string | null }[];
+  skipped: { index: number; reason: string; existing_publication_id: string; url: string }[];
+  failed: { index: number; reason: string; input: Record<string, unknown> }[];
+}
+
+export function bulkRegisterPublications(
+  items: BulkPublicationInput[],
+): Promise<BulkRegisterResponse> {
+  return fetchJson("/rankings/publications/bulk", {
+    method: "POST",
+    body: JSON.stringify({ items }),
+  });
+}
+
 export function getPublicationTimeline(publicationId: string): Promise<RankingTimeline> {
   return fetchJson(`/rankings/publications/${encodeURIComponent(publicationId)}`);
 }
