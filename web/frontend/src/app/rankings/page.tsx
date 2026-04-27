@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import ExternalUrlForm from "@/components/ExternalUrlForm";
+import PublicationEditDialog from "@/components/PublicationEditDialog";
 import {
+  deletePublication,
   listPublications,
   getPublicationTimeline,
   type Publication,
@@ -25,6 +27,8 @@ export default function RankingsDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
+  const [editing, setEditing] = useState<Publication | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -58,6 +62,22 @@ export default function RankingsDashboardPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function handleDelete(p: Publication) {
+    const target = p.slug ? `${p.keyword} (${p.slug})` : `${p.keyword}\n${p.url}`;
+    if (!window.confirm(`삭제하시겠습니까?\n\n${target}\n\n순위 시계열도 함께 삭제됩니다.`)) {
+      return;
+    }
+    setDeleting(p.id);
+    try {
+      await deletePublication(p.id);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "삭제 실패");
+    } finally {
+      setDeleting(null);
+    }
+  }
 
   const filterLower = filter.trim().toLowerCase();
   const filtered = filterLower
@@ -111,7 +131,7 @@ export default function RankingsDashboardPage() {
               <th className="text-right p-2 border-b">현재 순위</th>
               <th className="text-right p-2 border-b">최고 순위</th>
               <th className="text-left p-2 border-b">최근 측정</th>
-              <th className="text-left p-2 border-b">상세</th>
+              <th className="text-left p-2 border-b">액션</th>
             </tr>
           </thead>
           <tbody>
@@ -163,21 +183,53 @@ export default function RankingsDashboardPage() {
                     : "-"}
                 </td>
                 <td className="p-2">
-                  {p.slug ? (
+                  <div className="flex items-center gap-2 text-xs">
                     <Link
-                      href={`/results/${encodeURIComponent(p.slug)}`}
-                      className="text-blue-700 hover:underline text-xs"
+                      href={`/rankings/${encodeURIComponent(p.id)}`}
+                      className="text-blue-700 hover:underline"
                     >
-                      보기 →
+                      추이
                     </Link>
-                  ) : (
-                    <span className="text-xs text-gray-400">-</span>
-                  )}
+                    {p.slug && (
+                      <Link
+                        href={`/results/${encodeURIComponent(p.slug)}`}
+                        className="text-blue-700 hover:underline"
+                      >
+                        원고
+                      </Link>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setEditing(p)}
+                      className="text-gray-700 hover:text-gray-900 hover:underline"
+                    >
+                      편집
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleDelete(p)}
+                      disabled={deleting === p.id}
+                      className="text-red-700 hover:text-red-900 hover:underline disabled:opacity-50"
+                    >
+                      {deleting === p.id ? "삭제 중..." : "삭제"}
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+      )}
+
+      {editing && (
+        <PublicationEditDialog
+          publication={editing}
+          onClose={() => setEditing(null)}
+          onUpdated={() => {
+            setEditing(null);
+            void load();
+          }}
+        />
       )}
     </div>
   );

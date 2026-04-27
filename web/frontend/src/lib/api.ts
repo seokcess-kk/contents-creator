@@ -173,6 +173,34 @@ export function triggerRankingCheck(publicationId: string): Promise<RankingSnaps
   });
 }
 
+export function updatePublication(
+  publicationId: string,
+  patch: {
+    keyword?: string;
+    url?: string;
+    slug?: string | null;
+    published_at?: string | null;
+  },
+): Promise<Publication> {
+  return fetchJson(`/rankings/publications/${encodeURIComponent(publicationId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+export async function deletePublication(publicationId: string): Promise<void> {
+  // 204 응답은 본문이 비어 있어 fetchJson 의 res.json() 이 실패한다.
+  // cancelJob 과 동일 패턴으로 직접 처리.
+  const res = await fetch(
+    `${API_BASE}/rankings/publications/${encodeURIComponent(publicationId)}`,
+    { method: "DELETE", headers: buildHeaders() },
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`API ${res.status}: ${text}`);
+  }
+}
+
 export function listRankingSnapshots(
   publicationId: string,
   limit = 90,

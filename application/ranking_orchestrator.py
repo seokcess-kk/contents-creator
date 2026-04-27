@@ -77,6 +77,39 @@ def register_publication(
         return existing
 
 
+def update_publication(
+    publication_id: str,
+    *,
+    keyword: str | None = None,
+    url: str | None = None,
+    slug: str | None = None,
+    published_at: datetime | None = None,
+) -> Publication | None:
+    """publication 부분 수정. 전달된 필드만 갱신.
+
+    URL 이 제공되면 normalize 후 저장. 정규화 실패 시 ValueError.
+    멱등 처리는 storage 레이어가 담당 (UNIQUE 충돌은 RankingDuplicateUrlError).
+    """
+    normalized_url: str | None = None
+    if url is not None:
+        normalized_url = normalize_blog_url(url)
+        if normalized_url is None:
+            raise ValueError(f"네이버 블로그 포스트 URL 형식이 아닙니다: {url!r}")
+
+    return storage.update_publication(
+        publication_id,
+        keyword=keyword,
+        url=normalized_url,
+        slug=slug,
+        published_at=published_at,
+    )
+
+
+def delete_publication(publication_id: str) -> bool:
+    """publication 삭제. snapshots 은 cascade 로 같이 사라진다."""
+    return storage.delete_publication(publication_id)
+
+
 def check_rankings_for_publication(publication_id: str) -> RankingSnapshot:
     """단일 publication 의 현재 SERP 위치 측정 + snapshot 저장.
 

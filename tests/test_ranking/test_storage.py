@@ -123,6 +123,56 @@ class TestListPublications:
         assert len(result) == 1
 
 
+class TestUpdatePublication:
+    def test_partial_update(self, mock_client: MagicMock) -> None:
+        row = _publication_row()
+        row["keyword"] = "new"
+        table = MagicMock()
+        table.update.return_value.eq.return_value.execute.return_value = MagicMock(data=[row])
+        mock_client.table.return_value = table
+        result = storage.update_publication("pub-1", keyword="new")
+        assert result is not None
+        assert result.keyword == "new"
+        called_payload = table.update.call_args.args[0]
+        assert called_payload == {"keyword": "new"}
+
+    def test_returns_none_when_missing(self, mock_client: MagicMock) -> None:
+        table = MagicMock()
+        table.update.return_value.eq.return_value.execute.return_value = MagicMock(data=[])
+        mock_client.table.return_value = table
+        assert storage.update_publication("pub-x", keyword="x") is None
+
+    def test_no_changes_returns_existing(self, mock_client: MagicMock) -> None:
+        """모든 필드 None 이면 update 안 하고 기존 row 반환."""
+        # get_publication 경로를 타도록 mock_client 가 select 결과 반환
+        table = MagicMock()
+        table.select.return_value.eq.return_value.limit.return_value.execute.return_value = (
+            MagicMock(data=[_publication_row()])
+        )
+        mock_client.table.return_value = table
+        result = storage.update_publication("pub-1")
+        assert result is not None
+        assert result.id == "pub-1"
+        # update 호출 안 됨
+        table.update.assert_not_called()
+
+
+class TestDeletePublication:
+    def test_returns_true_on_success(self, mock_client: MagicMock) -> None:
+        table = MagicMock()
+        table.delete.return_value.eq.return_value.execute.return_value = MagicMock(
+            data=[{"id": "pub-1"}]
+        )
+        mock_client.table.return_value = table
+        assert storage.delete_publication("pub-1") is True
+
+    def test_returns_false_when_missing(self, mock_client: MagicMock) -> None:
+        table = MagicMock()
+        table.delete.return_value.eq.return_value.execute.return_value = MagicMock(data=[])
+        mock_client.table.return_value = table
+        assert storage.delete_publication("pub-x") is False
+
+
 class TestInsertSnapshot:
     def test_inserts_and_returns(self, mock_client: MagicMock) -> None:
         mock_client.table.return_value = _make_mock_table([_snapshot_row()])

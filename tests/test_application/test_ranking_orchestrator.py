@@ -98,6 +98,37 @@ class TestRegisterPublication:
         assert result.slug is None
 
 
+class TestUpdatePublication:
+    def test_partial_update(self, storage_mock: MagicMock) -> None:
+        storage_mock.update_publication.return_value = _publication(keyword="new")
+        result = ranking_orchestrator.update_publication("pub-1", keyword="new")
+        assert result is not None
+        assert result.keyword == "new"
+        storage_mock.update_publication.assert_called_once_with(
+            "pub-1", keyword="new", url=None, slug=None, published_at=None
+        )
+
+    def test_url_normalized_before_update(self, storage_mock: MagicMock) -> None:
+        storage_mock.update_publication.return_value = _publication()
+        ranking_orchestrator.update_publication("pub-1", url="https://blog.naver.com/u/123456789")
+        assert (
+            storage_mock.update_publication.call_args.kwargs["url"]
+            == "https://m.blog.naver.com/u/123456789"
+        )
+
+    def test_invalid_url_rejected(self, storage_mock: MagicMock) -> None:
+        with pytest.raises(ValueError, match="네이버 블로그"):
+            ranking_orchestrator.update_publication("pub-1", url="https://tistory.com/x")
+        storage_mock.update_publication.assert_not_called()
+
+
+class TestDeletePublication:
+    def test_returns_storage_result(self, storage_mock: MagicMock) -> None:
+        storage_mock.delete_publication.return_value = True
+        assert ranking_orchestrator.delete_publication("pub-1") is True
+        storage_mock.delete_publication.assert_called_once_with("pub-1")
+
+
 class TestCheckRankingsForPublication:
     def test_publication_missing(self, storage_mock: MagicMock) -> None:
         storage_mock.get_publication.return_value = None

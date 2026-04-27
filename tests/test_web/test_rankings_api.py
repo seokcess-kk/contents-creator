@@ -132,6 +132,46 @@ class TestGetPublicationWithTimeline:
         assert len(body["snapshots"]) == 2
 
 
+class TestPatchPublication:
+    def test_updates_keyword(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(
+            ranking_orchestrator,
+            "update_publication",
+            lambda _id, **_: _publication(keyword="updated"),
+        )
+        resp = client.patch(
+            "/api/rankings/publications/pub-1",
+            json={"keyword": "updated"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["keyword"] == "updated"
+
+    def test_404_when_missing(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(ranking_orchestrator, "update_publication", lambda *_, **__: None)
+        resp = client.patch("/api/rankings/publications/pub-x", json={"keyword": "x"})
+        assert resp.status_code == 404
+
+    def test_400_on_invalid_url(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        def _raise(*_: Any, **__: Any) -> None:
+            raise ValueError("네이버 블로그 포스트 URL 형식이 아닙니다")
+
+        monkeypatch.setattr(ranking_orchestrator, "update_publication", _raise)
+        resp = client.patch("/api/rankings/publications/pub-1", json={"url": "bad"})
+        assert resp.status_code == 400
+
+
+class TestDeletePublication:
+    def test_204_on_success(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(ranking_orchestrator, "delete_publication", lambda _id: True)
+        resp = client.delete("/api/rankings/publications/pub-1")
+        assert resp.status_code == 204
+
+    def test_404_when_missing(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(ranking_orchestrator, "delete_publication", lambda _id: False)
+        resp = client.delete("/api/rankings/publications/pub-x")
+        assert resp.status_code == 404
+
+
 class TestTriggerCheck:
     def test_404_when_missing(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
         def _raise(_: str) -> RankingSnapshot:

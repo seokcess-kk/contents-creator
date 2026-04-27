@@ -1,9 +1,11 @@
 """순위 추적 API. SPEC-RANKING.md §3 [조회] 참조.
 
-엔드포인트 5개:
-- POST   /rankings/publications        — 발행 URL 등록
+엔드포인트:
+- POST   /rankings/publications        — URL 등록
 - GET    /rankings/publications        — 등록 목록 (keyword 필터, limit)
 - GET    /rankings/publications/{id}   — 단건 + timeline
+- PATCH  /rankings/publications/{id}   — keyword/URL/slug/published_at 부분 수정
+- DELETE /rankings/publications/{id}   — 삭제 (snapshots 동반 cascade)
 - POST   /rankings/check/{publication_id}  — 즉시 SERP 체크
 - GET    /rankings/{publication_id}    — RankingSnapshot 시계열
 """
@@ -14,11 +16,11 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
 from application import ranking_orchestrator
-from domain.ranking.model import RankingMatchError
+from domain.ranking.model import RankingDuplicateUrlError, RankingMatchError
 from web.api.auth import require_api_key
 
 logger = logging.getLogger(__name__)
@@ -38,6 +40,15 @@ class PublicationCreateRequest(BaseModel):
     url: str = Field(min_length=1)
     slug: str | None = Field(default=None, min_length=1)
     job_id: str | None = None
+    published_at: datetime | None = None
+
+
+class PublicationUpdateRequest(BaseModel):
+    """부분 수정. 전달된 필드만 적용."""
+
+    keyword: str | None = Field(default=None, min_length=1)
+    url: str | None = Field(default=None, min_length=1)
+    slug: str | None = Field(default=None, min_length=1)
     published_at: datetime | None = None
 
 
@@ -82,6 +93,35 @@ def get_publication_with_timeline(publication_id: str) -> dict[str, Any]:
     if timeline is None:
         raise HTTPException(status_code=404, detail="publication 미존재")
     return timeline.model_dump(mode="json")
+
+
+@router.patch("/publications/{publication_id}")
+def update_publication(publication_id: str, req: PublicationUpdateRequest) -> dict[str, Any]:
+    """publication 부분 수정. 전달된 필드만 갱신."""
+    try:
+        updated = ranking_orchestrator.update_publication(
+            publication_id,
+            keyword=req.keyword,
+            url=req.url,
+            slug=req.slug,
+            published_at=req.published_at,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RankingDuplicateUrlError as exc:
+        raise HTTPException(status_code=409, detail=f"이미 등록된 URL 입니다: {exc}") from exc
+    if updated is None:
+        raise HTTPException(status_code=404, detail="publication 미존재")
+    return updated.model_dump(mode="json")
+
+
+@router.delete("/publications/{publication_id}", status_code=204)
+def delete_publication(publication_id: str) -> Response:
+    """publication 삭제. snapshots 도 cascade 로 함께 삭제."""
+    deleted = ranking_orchestrator.delete_publication(publication_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="publication 미존재")
+    return Response(status_code=204)
 
 
 @router.post("/check/{publication_id}")

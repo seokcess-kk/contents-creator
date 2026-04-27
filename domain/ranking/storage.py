@@ -8,6 +8,7 @@ config/.env 가 없는 환경에서는 get_client() 가 RuntimeError 를 raise �
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any, cast
 
 from config.supabase import get_client
@@ -54,6 +55,55 @@ def get_publication_by_url(url: str) -> Publication | None:
     result = client.table(_PUB_TABLE).select("*").eq("url", url).limit(1).execute()
     rows = result.data or []
     return _row_to_publication(cast("dict[str, Any]", rows[0])) if rows else None
+
+
+def update_publication(
+    publication_id: str,
+    *,
+    keyword: str | None = None,
+    url: str | None = None,
+    slug: str | None = None,
+    published_at: datetime | None = None,
+) -> Publication | None:
+    """publications row partial update. 명시적으로 전달된 키만 갱신.
+
+    URL 변경 시 UNIQUE(url) 충돌 가능 → RankingDuplicateUrlError.
+    행 미존재 시 None.
+    """
+    payload: dict[str, Any] = {}
+    if keyword is not None:
+        payload["keyword"] = keyword
+    if url is not None:
+        payload["url"] = url
+    if slug is not None:
+        payload["slug"] = slug
+    if published_at is not None:
+        payload["published_at"] = published_at.isoformat()
+    if not payload:
+        # 변경 없음 — 기존 row 반환
+        return get_publication(publication_id)
+
+    client = get_client()
+    try:
+        result = client.table(_PUB_TABLE).update(payload).eq("id", publication_id).execute()
+    except Exception as exc:
+        if _is_unique_violation(exc):
+            raise RankingDuplicateUrlError(url or "") from exc
+        raise
+    rows = result.data or []
+    if not rows:
+        return None
+    return _row_to_publication(cast("dict[str, Any]", rows[0]))
+
+
+def delete_publication(publication_id: str) -> bool:
+    """publications row 삭제. ranking_snapshots 는 ON DELETE CASCADE 로 동반 삭제.
+
+    삭제된 행이 1건 이상이면 True, 미존재면 False.
+    """
+    client = get_client()
+    result = client.table(_PUB_TABLE).delete().eq("id", publication_id).execute()
+    return bool(result.data)
 
 
 def list_publications(
