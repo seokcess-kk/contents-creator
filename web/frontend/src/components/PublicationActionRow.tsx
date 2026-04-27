@@ -114,6 +114,26 @@ export default function PublicationActionRow({ item, onChanged }: PublicationAct
         </span>
         {diagnosis && <DiagnosisBadge diagnosis={diagnosis} />}
         <div className="ml-auto flex items-center gap-1 shrink-0">
+          {wf === "republishing" && (
+            <button
+              type="button"
+              disabled
+              title={
+                item.republishing_started_at
+                  ? `${new Date(item.republishing_started_at).toLocaleString("ko-KR")} 시작 (${formatRelativeTime(item.republishing_started_at)})`
+                  : "재발행 진행 중"
+              }
+              className="px-2.5 py-0.5 text-xs bg-amber-100 text-amber-900 border border-amber-300 rounded cursor-not-allowed inline-flex items-center gap-1"
+            >
+              <span className="w-1.5 h-1.5 bg-amber-600 rounded-full animate-pulse" />
+              재발행 진행 중
+              {item.republishing_started_at && (
+                <span className="text-[10px] text-amber-700 ml-1">
+                  · {formatRelativeTime(item.republishing_started_at)}
+                </span>
+              )}
+            </button>
+          )}
           {wf !== "republishing" && wf !== "dismissed" && wf !== "draft" && (
             <button
               type="button"
@@ -208,6 +228,17 @@ export default function PublicationActionRow({ item, onChanged }: PublicationAct
       )}
     </div>
   );
+}
+
+function formatRelativeTime(iso: string): string {
+  const sec = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
+  if (sec < 60) return `${sec}초 전`;
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min}분 전`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}시간 전`;
+  const day = Math.round(hr / 24);
+  return `${day}일 전`;
 }
 
 function formatHeldUntil(heldUntil: string): string {

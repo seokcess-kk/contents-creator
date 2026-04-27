@@ -529,11 +529,11 @@
 - [x] Q3.3 backend `held_reason` 저장·반환 — `Publication.model_dump` 가 이미 포함
 - [x] Q3.4 `PublicationActionRow` 보류 표시를 자연어로 — `오늘 만료` / `내일 큐 복귀` / `N일 후 재확인` / `만료됨 — 큐 복귀 대기` + 사유 인라인
 
-### Q2: 재발행 진행 중 잠금 (예상 4~5h)
-- [ ] Q2.1 publication ↔ 진행 중 job 매핑 — `publications.republishing_started_at` 또는 jobs 테이블 조회
-- [ ] Q2.2 `QueueItem` 에 `republishing_active: bool` + `republishing_job_id` + `republishing_started_at` 노출
-- [ ] Q2.3 `PublicationActionRow` 재발행 버튼 → 진행 중이면 `재발행 진행 중` 비활성, started_at 표시
-- [ ] Q2.4 `RepublishDialog` 에 "추천 방식으로 재발행" 기본 + 옵션 3종 (전체 재작성 / 가벼운 리라이트 / 클러스터 보강)
+### Q2: 재발행 진행 중 잠금 ✅ 완료 (2026-04-27)
+- [x] Q2.1 backend: `republishing_started_at` 컬럼 + `republish_orchestrator` 가 트리거 시 기록 — 이미 구현됨
+- [x] Q2.2 `Publication.model_dump` 가 `republishing_started_at` 노출 — 이미 구현됨 (QueueItem 타입에도 존재)
+- [x] Q2.3 `PublicationActionRow` 재발행 버튼 — wf="republishing" 시 비활성 `재발행 진행 중 · N분 전` + 펄스 인디케이터, title 에 정확한 시각
+- [x] Q2.4 `RepublishDialog` 3종 전략 + 추천 표시 — 이미 구현됨 (full_rewrite / light / cluster, RECOMMENDED_BY_REASON 기반 자동 추천)
 
 ### Q4: 통합 타임라인 (예상 1일)
 - [ ] Q4.1 `GET /publications/{id}/events` 신규 — diagnoses + republish + hold/release + ranking_snapshots 통합 시간순
