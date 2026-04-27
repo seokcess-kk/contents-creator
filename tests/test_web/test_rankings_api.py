@@ -172,6 +172,38 @@ class TestDeletePublication:
         assert resp.status_code == 404
 
 
+class TestGetCalendar:
+    def test_returns_calendar(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        from domain.ranking.model import CalendarRow, RankingCalendar
+
+        cal = RankingCalendar(
+            month="2026-04",
+            rows=[
+                CalendarRow(publication=_publication(), days={"2026-04-10": 5}),
+            ],
+        )
+        monkeypatch.setattr(ranking_orchestrator, "get_monthly_calendar", lambda *_: cal)
+        resp = client.get("/api/rankings/calendar?month=2026-04")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["month"] == "2026-04"
+        assert body["rows"][0]["days"]["2026-04-10"] == 5
+
+    def test_400_on_invalid_format(self, client: TestClient) -> None:
+        resp = client.get("/api/rankings/calendar?month=2026-4")
+        assert resp.status_code == 422  # FastAPI Query pattern 검증
+
+    def test_400_on_invalid_value(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def _raise(*_: Any, **__: Any) -> None:
+            raise ValueError("월은 1~12 범위: 13")
+
+        monkeypatch.setattr(ranking_orchestrator, "get_monthly_calendar", _raise)
+        resp = client.get("/api/rankings/calendar?month=2026-13")
+        assert resp.status_code == 400
+
+
 class TestTriggerCheck:
     def test_404_when_missing(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
         def _raise(_: str) -> RankingSnapshot:

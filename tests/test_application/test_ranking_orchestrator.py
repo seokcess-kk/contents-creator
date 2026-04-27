@@ -129,6 +129,61 @@ class TestDeletePublication:
         storage_mock.delete_publication.assert_called_once_with("pub-1")
 
 
+class TestGetMonthlyCalendar:
+    def test_aggregates_by_pub_and_kst_day(self, storage_mock: MagicMock) -> None:
+        from datetime import datetime, timedelta, timezone
+
+        from domain.ranking.model import RankingSnapshot
+
+        kst = timezone(timedelta(hours=9))
+        # 동일 KST 일에 두 측정 — 마지막 측정(10시) 이 채택
+        s1 = RankingSnapshot(
+            publication_id="pub-1",
+            position=15,
+            captured_at=datetime(2026, 4, 10, 0, 0, tzinfo=kst),
+        )
+        s2 = RankingSnapshot(
+            publication_id="pub-1",
+            position=8,
+            captured_at=datetime(2026, 4, 10, 10, 0, tzinfo=kst),
+        )
+        s3 = RankingSnapshot(
+            publication_id="pub-2",
+            position=None,
+            captured_at=datetime(2026, 4, 11, 9, 0, tzinfo=kst),
+        )
+        storage_mock.list_snapshots_in_range.return_value = [s1, s2, s3]
+        storage_mock.list_publications.return_value = [
+            _publication(id="pub-1"),
+            _publication(id="pub-2", slug=None),
+        ]
+
+        cal = ranking_orchestrator.get_monthly_calendar(2026, 4)
+        assert cal.month == "2026-04"
+        assert len(cal.rows) == 2
+        row1 = next(r for r in cal.rows if r.publication.id == "pub-1")
+        assert row1.days == {"2026-04-10": 8}
+        row2 = next(r for r in cal.rows if r.publication.id == "pub-2")
+        assert row2.days == {"2026-04-11": None}
+
+    def test_invalid_month_raises(self, storage_mock: MagicMock) -> None:
+        with pytest.raises(ValueError, match="월은 1~12"):
+            ranking_orchestrator.get_monthly_calendar(2026, 13)
+        storage_mock.list_snapshots_in_range.assert_not_called()
+
+    def test_kst_boundary_to_utc(self, storage_mock: MagicMock) -> None:
+        """KST 월 경계 — UTC 환산값을 storage 에 전달."""
+        storage_mock.list_snapshots_in_range.return_value = []
+        storage_mock.list_publications.return_value = []
+        ranking_orchestrator.get_monthly_calendar(2026, 4)
+        call = storage_mock.list_snapshots_in_range.call_args
+        start_utc, end_utc = call.args[0], call.args[1]
+        # 2026-04-01 00:00 KST == 2026-03-31 15:00 UTC
+        assert start_utc.isoformat().startswith("2026-03-31T15:00")
+        # 2026-05-01 00:00 KST == 2026-04-30 15:00 UTC
+        assert end_utc.isoformat().startswith("2026-04-30T15:00")
+
+
 class TestCheckRankingsForPublication:
     def test_publication_missing(self, storage_mock: MagicMock) -> None:
         storage_mock.get_publication.return_value = None

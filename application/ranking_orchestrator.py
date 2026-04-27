@@ -8,9 +8,10 @@ SPEC-RANKING.md §3 참조.
 
 from __future__ import annotations
 
+import calendar as _calendar
 import logging
 import time
-from datetime import datetime
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
 from bs4 import BeautifulSoup
@@ -23,7 +24,9 @@ from domain.crawler.serp_collector import (
 )
 from domain.ranking import storage, tracker
 from domain.ranking.model import (
+    CalendarRow,
     Publication,
+    RankingCalendar,
     RankingCheckSummary,
     RankingDuplicateUrlError,
     RankingMatchError,
@@ -31,6 +34,8 @@ from domain.ranking.model import (
     RankingTimeline,
 )
 from domain.ranking.url_match import normalize_blog_url
+
+KST = timezone(timedelta(hours=9))
 
 logger = logging.getLogger(__name__)
 
@@ -184,6 +189,52 @@ def check_all_active_rankings() -> RankingCheckSummary:
         duration,
     )
     return summary
+
+
+def get_monthly_calendar(year: int, month: int) -> RankingCalendar:
+    """KST 기준 해당 월의 publication × 일자 캘린더 매트릭스.
+
+    같은 KST 일에 여러 측정이 있으면 가장 늦은 captured_at 의 position 을 사용한다
+    (일말 상태). 미측정 날짜는 키 미존재 (프론트가 "-" 로 표시).
+    """
+    if not 1 <= month <= 12:
+        raise ValueError(f"월은 1~12 범위: {month}")
+
+    start_utc, end_utc = _kst_month_bounds(year, month)
+    snapshots = storage.list_snapshots_in_range(start_utc, end_utc)
+    publications = storage.list_publications(limit=10_000)
+
+    rows: list[CalendarRow] = []
+    by_pub_day = _group_by_pub_day(snapshots)
+    for pub in publications:
+        if pub.id is None:
+            continue
+        days_for_pub = by_pub_day.get(pub.id, {})
+        rows.append(CalendarRow(publication=pub, days=days_for_pub))
+
+    return RankingCalendar(month=f"{year:04d}-{month:02d}", rows=rows)
+
+
+def _kst_month_bounds(year: int, month: int) -> tuple[datetime, datetime]:
+    """KST 월 경계 [00:00, 다음달 00:00) 를 UTC datetime 으로 반환."""
+    last_day = _calendar.monthrange(year, month)[1]
+    start_kst = datetime(year, month, 1, tzinfo=KST)
+    end_kst = datetime(year, month, last_day, tzinfo=KST) + timedelta(days=1)
+    return start_kst.astimezone(UTC), end_kst.astimezone(UTC)
+
+
+def _group_by_pub_day(snapshots: list[RankingSnapshot]) -> dict[str, dict[str, int | None]]:
+    """snapshot 리스트 → {publication_id: {YYYY-MM-DD(KST): position}}.
+
+    같은 일 다회 측정 시 마지막 captured_at 값을 사용 (storage 가 asc 로 반환).
+    """
+    out: dict[str, dict[str, int | None]] = {}
+    for s in snapshots:
+        if s.captured_at is None:
+            continue
+        day_key = s.captured_at.astimezone(KST).strftime("%Y-%m-%d")
+        out.setdefault(s.publication_id, {})[day_key] = s.position
+    return out
 
 
 def get_publication_timeline(publication_id: str, limit: int = 90) -> RankingTimeline | None:

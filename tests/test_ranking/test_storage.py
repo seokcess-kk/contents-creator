@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -196,6 +197,27 @@ class TestListSnapshots:
         mock_client.table.return_value = _make_mock_table(rows)
         result = storage.list_snapshots("pub-1", limit=10)
         assert len(result) == 2
+
+
+class TestListSnapshotsInRange:
+    def test_passes_iso_bounds(self, mock_client: MagicMock) -> None:
+        from datetime import datetime
+
+        table = MagicMock()
+        table.select.return_value.gte.return_value.lt.return_value.order.return_value.limit.return_value.execute.return_value = MagicMock(
+            data=[_snapshot_row()]
+        )
+        mock_client.table.return_value = table
+
+        start = datetime(2026, 3, 31, 15, 0, tzinfo=UTC)
+        end = datetime(2026, 4, 30, 15, 0, tzinfo=UTC)
+        result = storage.list_snapshots_in_range(start, end)
+        assert len(result) == 1
+        # gte/lt 호출 인자 검증 — ISO 문자열로 전달돼야
+        gte_arg = table.select.return_value.gte.call_args.args[1]
+        lt_arg = table.select.return_value.gte.return_value.lt.call_args.args[1]
+        assert gte_arg.startswith("2026-03-31T15:00")
+        assert lt_arg.startswith("2026-04-30T15:00")
 
 
 class TestUniqueViolationDetection:

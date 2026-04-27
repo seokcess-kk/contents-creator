@@ -143,6 +143,29 @@ def list_snapshots(publication_id: str, limit: int = 90) -> list[RankingSnapshot
     return [_row_to_snapshot(cast("dict[str, Any]", r)) for r in (result.data or [])]
 
 
+def list_snapshots_in_range(
+    start_utc: datetime,
+    end_utc: datetime,
+    limit: int = 10_000,
+) -> list[RankingSnapshot]:
+    """captured_at 이 [start_utc, end_utc) 인 모든 snapshot.
+
+    캘린더 뷰 집계용. publication_id 무관하게 한 번에 가져온 뒤 application
+    레이어에서 group-by 한다 (월 단위라 row 수가 한정적, 1만 건 안전 상한).
+    """
+    client = get_client()
+    result = (
+        client.table(_SNAP_TABLE)
+        .select("*")
+        .gte("captured_at", start_utc.isoformat())
+        .lt("captured_at", end_utc.isoformat())
+        .order("captured_at", desc=False)
+        .limit(limit)
+        .execute()
+    )
+    return [_row_to_snapshot(cast("dict[str, Any]", r)) for r in (result.data or [])]
+
+
 def _publication_to_payload(p: Publication) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "keyword": p.keyword,

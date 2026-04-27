@@ -96,7 +96,12 @@ export default function RankingsDashboardPage() {
           ← 대시보드
         </Link>
         <h1 className="text-lg font-bold text-gray-900">순위 대시보드</h1>
-        <span className="w-16" />
+        <Link
+          href="/rankings/calendar"
+          className="text-sm text-blue-700 hover:underline"
+        >
+          월별 캘린더 →
+        </Link>
       </div>
 
       <ExternalUrlForm onRegistered={() => void load()} />

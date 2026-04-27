@@ -57,6 +57,28 @@ class RankingCheckSummary(BaseModel):
     duration_seconds: float = Field(ge=0)
 
 
+class CalendarRow(BaseModel):
+    """월별 캘린더 1행 — publication 1건의 KST 일자별 최신 순위.
+
+    days 키는 `YYYY-MM-DD` (KST), 값은 position (1~100, 100위 밖이면 None).
+    측정 없는 날짜는 키 미존재.
+    """
+
+    publication: Publication
+    days: dict[str, int | None] = Field(default_factory=dict)
+
+
+class RankingCalendar(BaseModel):
+    """월별 캘린더 응답.
+
+    month: `YYYY-MM` (KST 기준).
+    rows: 등록된 publication 별 row.
+    """
+
+    month: str
+    rows: list[CalendarRow]
+
+
 class RankingDuplicateUrlError(Exception):
     """publications.url unique 제약 위반. orchestrator 에서 멱등 변환."""
 

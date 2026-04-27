@@ -188,6 +188,21 @@ export function updatePublication(
   });
 }
 
+export interface CalendarRow {
+  publication: Publication;
+  days: Record<string, number | null>; // "YYYY-MM-DD" → position (null = 100위 밖)
+}
+
+export interface RankingCalendar {
+  month: string; // "YYYY-MM"
+  rows: CalendarRow[];
+}
+
+export function getMonthlyCalendar(month: string): Promise<RankingCalendar> {
+  // month: "YYYY-MM" (KST)
+  return fetchJson(`/rankings/calendar?month=${encodeURIComponent(month)}`);
+}
+
 export async function deletePublication(publicationId: string): Promise<void> {
   // 204 응답은 본문이 비어 있어 fetchJson 의 res.json() 이 실패한다.
   // cancelJob 과 동일 패턴으로 직접 처리.

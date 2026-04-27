@@ -6,6 +6,7 @@
 - GET    /rankings/publications/{id}   — 단건 + timeline
 - PATCH  /rankings/publications/{id}   — keyword/URL/slug/published_at 부분 수정
 - DELETE /rankings/publications/{id}   — 삭제 (snapshots 동반 cascade)
+- GET    /rankings/calendar            — 월별 캘린더 매트릭스 (KST 기준)
 - POST   /rankings/check/{publication_id}  — 즉시 SERP 체크
 - GET    /rankings/{publication_id}    — RankingSnapshot 시계열
 """
@@ -122,6 +123,19 @@ def delete_publication(publication_id: str) -> Response:
     if not deleted:
         raise HTTPException(status_code=404, detail="publication 미존재")
     return Response(status_code=204)
+
+
+@router.get("/calendar")
+def get_calendar(
+    month: str = Query(pattern=r"^\d{4}-\d{2}$", description="YYYY-MM (KST 기준)"),
+) -> dict[str, Any]:
+    """월별 publication × 일자 캘린더 (KST). 같은 일 다회 측정은 마지막 측정 사용."""
+    try:
+        year_str, month_str = month.split("-")
+        calendar = ranking_orchestrator.get_monthly_calendar(int(year_str), int(month_str))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return calendar.model_dump(mode="json")
 
 
 @router.post("/check/{publication_id}")
