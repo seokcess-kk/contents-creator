@@ -541,10 +541,11 @@
 - [ ] Q4.3 `RankingTimeline.tsx` 위에 `EventsTimeline.tsx` 컴포넌트 — 이벤트 카드 시간순
 - [ ] Q4.4 publication 상세 페이지 (/rankings/[id]) 에 통합
 
-### Q5: 재발행 원고 마커 (예상 1일)
-- [ ] Q5.1 `parent_publication_id` 컬럼 이미 존재 — API 응답에 부모 정보 포함
-- [ ] Q5.2 결과 페이지 (`/results/[slug]`) 헤더에 "이 원고는 재발행 원고입니다 / 부모: ..." 배너
-- [ ] Q5.3 publication 상세에서 형제 publication 목록 (1차/2차/3차) 표시
+### Q5: 재발행 원고 마커 ✅ 완료 (2026-04-27)
+- [x] Q5.1 frontend `Publication` 타입에 `parent_publication_id` 추가 — backend 는 model_dump 에서 이미 노출
+- [x] Q5.2 `PublicationLineage` 컴포넌트 — 부모 fetch + "이 원고는 재발행 원고입니다 / 부모: ..." 배너
+- [x] Q5.3 같은 keyword 의 publications 를 listPublications 로 fetch 후 부모/자식/초안 배지 + 본인 제외 형제 목록 (최대 5건 + … N건 더보기)
+- [x] Q5.4 `/results/[slug]` aside 와 `/rankings/[id]` 본문에 통합. variant="results" 시 slug 가 있으면 결과 페이지로 링크
 
 - 본 ranking 트랙은 SPEC-SEO-TEXT.md / SPEC-BRAND-CARD.md 어느 쪽에도 정의 없음. **별도 SPEC-RANKING.md 신규 작성 필요 여부는 사용자 결정 사항** — Phase R1 착수 전 확인. 미작성 시 `tasks/todo.md` 본 섹션이 사실상 SPEC 역할
 - SPEC v2 범위 변경 ❌ — 기존 8단계 파이프라인은 손대지 않음

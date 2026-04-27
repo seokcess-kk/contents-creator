@@ -125,6 +125,8 @@ export interface Publication {
   url: string;
   published_at: string | null;
   created_at: string;
+  parent_publication_id?: string | null;
+  workflow_status?: string;
 }
 
 export interface RankingSnapshot {

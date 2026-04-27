@@ -4,6 +4,7 @@ import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import DiagnosisCard from "@/components/DiagnosisCard";
 import PublicationEditDialog from "@/components/PublicationEditDialog";
+import PublicationLineage from "@/components/PublicationLineage";
 import RankingTimeline from "@/components/RankingTimeline";
 import {
   deletePublication,
@@ -138,6 +139,8 @@ export default function PublicationDetailPage({
           </div>
         </div>
       )}
+
+      {publication && <PublicationLineage publication={publication} />}
 
       <DiagnosisCard publicationId={id} />
 

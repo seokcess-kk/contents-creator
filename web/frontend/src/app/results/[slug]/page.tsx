@@ -4,6 +4,7 @@ import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import ResultViewer from "@/components/ResultViewer";
 import PublicationForm from "@/components/PublicationForm";
+import PublicationLineage from "@/components/PublicationLineage";
 import RankingTimeline from "@/components/RankingTimeline";
 import { listPublications, type Publication } from "@/lib/api";
 
@@ -46,6 +47,7 @@ export default function ResultDetailPage({
 
       <div className="grid grid-cols-12 gap-3">
         <aside className="col-span-12 lg:col-span-4 space-y-2 lg:sticky lg:top-14 lg:self-start lg:max-h-[calc(100vh-80px)] lg:overflow-auto">
+          {publication && <PublicationLineage publication={publication} variant="results" />}
           <PublicationForm
             keyword={inferredKeyword}
             slug={slug}
