@@ -10,7 +10,7 @@ from domain.diagnosis.model import Diagnosis
 
 logger = logging.getLogger(__name__)
 
-_TABLE = "diagnoses"
+_TABLE = "visibility_diagnoses"
 
 
 def insert_diagnosis(diagnosis: Diagnosis) -> Diagnosis:

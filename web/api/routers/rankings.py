@@ -21,7 +21,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from application import ranking_orchestrator
 from domain.ranking.model import RankingDuplicateUrlError, RankingMatchError
@@ -41,10 +41,20 @@ router = APIRouter(
 
 class PublicationCreateRequest(BaseModel):
     keyword: str = Field(min_length=1)
-    url: str = Field(min_length=1)
+    url: str | None = None  # null = draft 생성, str = 정식 등록 (네이버 블로그)
     slug: str | None = Field(default=None, min_length=1)
     job_id: str | None = None
     published_at: datetime | None = None
+
+    @field_validator("url")
+    @classmethod
+    def reject_empty_url(cls, v: str | None) -> str | None:
+        """빈 문자열은 모호한 입력 — 400. draft 생성 시 명시적으로 null 사용."""
+        if v is None:
+            return None
+        if not v.strip():
+            raise ValueError("url 이 비어있습니다 (draft 생성은 null 사용)")
+        return v
 
 
 class PublicationUpdateRequest(BaseModel):

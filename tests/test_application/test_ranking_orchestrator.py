@@ -72,19 +72,24 @@ class TestRegisterPublication:
         )
         assert result.id == "pub-existing"
 
-    def test_external_url_accepted(self, storage_mock: MagicMock) -> None:
-        """카페·인플루언서·외부 사이트 URL 도 등록 가능 (검증 완화)."""
-        storage_mock.insert_publication.return_value = _publication(url="https://tistory.com/foo")
-        ranking_orchestrator.register_publication(
-            keyword="kw", slug="s", url="https://tistory.com/foo"
-        )
-        storage_mock.insert_publication.assert_called_once()
-
-    def test_invalid_url_rejected(self, storage_mock: MagicMock) -> None:
-        """host 추출 불가한 형식은 여전히 거절."""
-        with pytest.raises(ValueError, match="URL 형식"):
-            ranking_orchestrator.register_publication(keyword="kw", slug="s", url="")
+    def test_external_url_rejected(self, storage_mock: MagicMock) -> None:
+        """정식 등록은 네이버 블로그 URL 만 허용 (측정 매칭 정합성). 외부 URL 거부."""
+        with pytest.raises(ValueError, match="네이버 블로그 포스트 URL"):
+            ranking_orchestrator.register_publication(
+                keyword="kw", slug="s", url="https://tistory.com/foo"
+            )
         storage_mock.insert_publication.assert_not_called()
+
+    def test_draft_publication_when_url_none(self, storage_mock: MagicMock) -> None:
+        """url=None 은 draft publication 생성 (재발행 임시 등)."""
+        storage_mock.insert_publication.return_value = _publication(
+            url=None, slug=None
+        )
+        ranking_orchestrator.register_publication(keyword="kw", url=None)
+        passed = storage_mock.insert_publication.call_args.args[0]
+        assert passed.url is None
+        assert passed.workflow_status == "draft"
+        assert passed.visibility_status == "not_measured"
 
     def test_normalizes_to_mobile(self, storage_mock: MagicMock) -> None:
         storage_mock.insert_publication.return_value = _publication()

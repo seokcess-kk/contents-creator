@@ -16,15 +16,29 @@ class Publication(BaseModel):
     동일 url 재등록은 storage 레이어에서 멱등 처리(기존 row 반환).
     slug 는 본 프로젝트로 발행한 글이면 output/{slug}/ 매칭용으로 채우고,
     외부 URL 추적이면 None.
+
+    url 은 nullable — draft 상태(재발행 임시 등)에서 None.
+    visibility_status / workflow_status 는 직교 2축 상태 머신.
     """
 
     id: str | None = None  # Supabase 가 채워서 반환
     job_id: str | None = None
     keyword: str
     slug: str | None = None
-    url: str
+    url: str | None = None
     published_at: datetime | None = None
     created_at: datetime | None = None
+
+    # 상태 머신 — 직교 2축
+    visibility_status: str = "not_measured"
+    workflow_status: str = "active"
+
+    # 운영 메타
+    held_until: datetime | None = None
+    held_reason: str | None = None
+    parent_publication_id: str | None = None
+    priority_score: float | None = None
+    republishing_started_at: datetime | None = None
 
 
 class RankingSnapshot(BaseModel):

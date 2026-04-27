@@ -253,19 +253,22 @@ create index if not exists idx_serp_top10_blog
 
 
 -- ============================================================
--- diagnoses — 미노출 사유 진단 결과 (evidence 기반)
+-- visibility_diagnoses — 미노출 사유 진단 결과 (evidence 기반)
 -- 발행 누락·측정 누락·검색결과 미발견·노출 후 이탈·카니발라이제이션 등
 -- 룰 기반으로 산출되는 진단을 evidence/metrics 와 함께 저장한다.
 --
 -- outcome 추적 컬럼: 진단 후 재노출·재발행 여부를 자동·수동 갱신해 추후
 -- 진단별 신뢰도/재노출률 통계의 데이터 토대가 된다.
 --
--- user_action: republished | held | dismissed | marked_competitor_strong
+-- user_action: 단순 캐시 (single source of truth 는 publication_actions).
+-- 캐시 갱신 실패가 히스토리 유실로 이어지지 않게 publication_actions 를 먼저 INSERT.
 --
--- 기존 DB 마이그레이션:
---   (신규 테이블, 기존 행 영향 없음)
+-- 기존 diagnoses 테이블 rename:
+--   alter table if exists diagnoses rename to visibility_diagnoses;
+--   alter index if exists idx_diagnoses_publication rename to idx_visibility_diagnoses_publication;
+--   alter index if exists idx_diagnoses_reason rename to idx_visibility_diagnoses_reason;
 -- ============================================================
-create table if not exists diagnoses (
+create table if not exists visibility_diagnoses (
     id uuid primary key default gen_random_uuid(),
     publication_id uuid not null references publications(id) on delete cascade,
     diagnosed_at timestamptz default now(),
@@ -285,21 +288,144 @@ create table if not exists diagnoses (
     republished_at timestamptz,
     republish_publication_id uuid references publications(id) on delete set null,
 
-    -- 사용자 액션 로그
+    -- 사용자 액션 캐시 (히스토리 단일 출처는 publication_actions)
     user_action text,
     user_action_at timestamptz
 );
 
-create index if not exists idx_diagnoses_publication
-    on diagnoses (publication_id, diagnosed_at desc);
+create index if not exists idx_visibility_diagnoses_publication
+    on visibility_diagnoses (publication_id, diagnosed_at desc);
 
-create index if not exists idx_diagnoses_reason
-    on diagnoses (reason, diagnosed_at desc);
+create index if not exists idx_visibility_diagnoses_reason
+    on visibility_diagnoses (reason, diagnosed_at desc);
+
+
+-- ============================================================
+-- publications 확장 — 상태 머신 + 운영 메타
+-- visibility_status 와 workflow_status 를 직교 2축으로 분리해
+-- "노출 중인데 사용자가 보류" 같은 복합 상태를 자연 표현한다.
+--
+-- visibility_status: 측정 결과 상태 (자동 산출)
+--   not_measured | exposed | off_radar | recovered | persistent_off
+-- workflow_status: 운영 액션 상태 (사용자/시스템 액션)
+--   active | action_required | held | republishing | dismissed | draft
+--
+-- 기존 DB 마이그레이션:
+--   alter table publications add column if not exists visibility_status text default 'not_measured';
+--   alter table publications add column if not exists workflow_status text default 'active';
+--   alter table publications add column if not exists held_until timestamptz;
+--   alter table publications add column if not exists held_reason text;
+--   alter table publications add column if not exists parent_publication_id uuid references publications(id) on delete set null;
+--   alter table publications add column if not exists priority_score numeric(4,2);
+--   alter table publications add column if not exists republishing_started_at timestamptz;
+--   alter table publications alter column url drop not null;
+--   update publications set visibility_status = 'not_measured' where visibility_status is null;
+--   update publications set workflow_status = 'active' where workflow_status is null;
+--   alter table publications alter column visibility_status set not null;
+--   alter table publications alter column workflow_status set not null;
+--   do $$ begin
+--     if not exists (select 1 from pg_constraint where conname = 'publications_visibility_status_check') then
+--       alter table publications add constraint publications_visibility_status_check
+--         check (visibility_status in ('not_measured','exposed','off_radar','recovered','persistent_off'));
+--     end if;
+--     if not exists (select 1 from pg_constraint where conname = 'publications_workflow_status_check') then
+--       alter table publications add constraint publications_workflow_status_check
+--         check (workflow_status in ('active','action_required','held','republishing','dismissed','draft'));
+--     end if;
+--   end $$;
+-- ============================================================
+
+
+-- ============================================================
+-- republish_jobs — 재발행 파이프라인 추적
+-- source_publication_id (부모) + new_publication_id (자식) + pipeline_job_id 로
+-- 재발행 사이클의 데이터 정합성 보장.
+-- 동시 실행 방지: 같은 source 에 active(queued/running) job 이 1개로 제한.
+--
+-- 기존 DB 마이그레이션:
+--   (신규 테이블, 기존 행 영향 없음)
+-- ============================================================
+create table if not exists republish_jobs (
+    id uuid primary key default gen_random_uuid(),
+    source_publication_id uuid not null references publications(id) on delete cascade,
+    source_diagnosis_id uuid references visibility_diagnoses(id) on delete set null,
+    pipeline_job_id text not null,
+    strategy text not null,
+    new_publication_id uuid references publications(id) on delete set null,
+    status text default 'queued',
+    created_at timestamptz default now(),
+    completed_at timestamptz
+);
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'republish_jobs_strategy_check') then
+    alter table republish_jobs add constraint republish_jobs_strategy_check
+      check (strategy in ('full_rewrite','light','cluster'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'republish_jobs_status_check') then
+    alter table republish_jobs add constraint republish_jobs_status_check
+      check (status in ('queued','running','completed','failed'));
+  end if;
+end $$;
+
+create index if not exists idx_republish_jobs_source
+    on republish_jobs (source_publication_id, created_at desc);
+
+create index if not exists idx_republish_jobs_pipeline
+    on republish_jobs (pipeline_job_id);
+
+-- 한 source 에 active(queued/running) job 동시 1개만 — race condition 차단
+create unique index if not exists uq_republish_jobs_active
+    on republish_jobs (source_publication_id)
+    where status in ('queued','running');
+
+
+-- ============================================================
+-- publication_actions — 사용자/시스템 액션 히스토리 (single source of truth)
+-- visibility_diagnoses.user_action 은 단순 캐시. 액션 발생 시 본 테이블에 먼저
+-- INSERT 한 후 캐시를 best-effort 갱신.
+--
+-- action: republished | held | released_hold | dismissed | restored
+--       | url_registered | auto_requeued
+-- auto_requeued metadata.trigger:
+--   republish_url_pending | republish_job_stuck | republish_job_failed | republish_job_missing
+--
+-- 기존 DB 마이그레이션:
+--   (신규 테이블, 기존 행 영향 없음)
+-- ============================================================
+create table if not exists publication_actions (
+    id uuid primary key default gen_random_uuid(),
+    publication_id uuid not null references publications(id) on delete cascade,
+    diagnosis_id uuid references visibility_diagnoses(id) on delete set null,
+    action text not null,
+    note text,
+    metadata jsonb default '{}'::jsonb,
+    created_at timestamptz default now()
+);
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'publication_actions_action_check') then
+    alter table publication_actions add constraint publication_actions_action_check
+      check (action in (
+        'republished','held','released_hold','dismissed','restored','url_registered','auto_requeued'
+      ));
+  end if;
+end $$;
+
+create index if not exists idx_publication_actions_pub
+    on publication_actions (publication_id, created_at desc);
+
+create index if not exists idx_publication_actions_action
+    on publication_actions (action, created_at desc);
 
 
 -- ============================================================
 -- 롤백 (배포 실패 시)
---   drop table if exists diagnoses;
+--   drop table if exists publication_actions;
+--   drop table if exists republish_jobs;
+--   drop table if exists visibility_diagnoses;
 --   drop table if exists serp_top10_snapshots;
 --   drop table if exists ranking_snapshots;
 --   drop table if exists publications;
@@ -311,4 +437,5 @@ create index if not exists idx_diagnoses_reason
 --   - client_profiles  (클라이언트 프로필, 브랜드와 구분)
 --   - visual_patterns  (비주얼 분석 / VLM)
 --   - ab_test_results  (카드 A/B 테스트)
+--   - republish_job_publications  (P3 — A/B 재발행 시 1 job ↔ N publication)
 -- ============================================================

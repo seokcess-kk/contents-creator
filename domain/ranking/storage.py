@@ -199,7 +199,9 @@ def list_snapshots_in_range(
 def _publication_to_payload(p: Publication) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "keyword": p.keyword,
-        "url": p.url,
+        "url": p.url,  # nullable — draft 시 None
+        "visibility_status": p.visibility_status,
+        "workflow_status": p.workflow_status,
     }
     if p.slug is not None:
         payload["slug"] = p.slug
@@ -207,6 +209,16 @@ def _publication_to_payload(p: Publication) -> dict[str, Any]:
         payload["job_id"] = p.job_id
     if p.published_at is not None:
         payload["published_at"] = p.published_at.isoformat()
+    if p.held_until is not None:
+        payload["held_until"] = p.held_until.isoformat()
+    if p.held_reason is not None:
+        payload["held_reason"] = p.held_reason
+    if p.parent_publication_id is not None:
+        payload["parent_publication_id"] = p.parent_publication_id
+    if p.priority_score is not None:
+        payload["priority_score"] = p.priority_score
+    if p.republishing_started_at is not None:
+        payload["republishing_started_at"] = p.republishing_started_at.isoformat()
     return payload
 
 
@@ -229,9 +241,16 @@ def _row_to_publication(row: dict[str, Any]) -> Publication:
         job_id=row.get("job_id"),
         keyword=row["keyword"],
         slug=row.get("slug"),
-        url=row["url"],
+        url=row.get("url"),  # nullable
         published_at=row.get("published_at"),
         created_at=row.get("created_at"),
+        visibility_status=row.get("visibility_status") or "not_measured",
+        workflow_status=row.get("workflow_status") or "active",
+        held_until=row.get("held_until"),
+        held_reason=row.get("held_reason"),
+        parent_publication_id=row.get("parent_publication_id"),
+        priority_score=row.get("priority_score"),
+        republishing_started_at=row.get("republishing_started_at"),
     )
 
 

@@ -33,7 +33,7 @@ from domain.ranking.serp_parser import (
     author_key,  # Top10 저장 시 blog_id 채움용
     parse_integrated_serp,
 )
-from domain.ranking.url_match import normalize_any_url
+from domain.ranking.url_match import normalize_any_url, normalize_blog_url
 
 KST = timezone(timedelta(hours=9))
 
@@ -43,24 +43,36 @@ logger = logging.getLogger(__name__)
 def register_publication(
     *,
     keyword: str,
-    url: str,
+    url: str | None = None,
     slug: str | None = None,
     job_id: str | None = None,
     published_at: datetime | None = None,
+    parent_publication_id: str | None = None,
 ) -> Publication:
     """URL 등록. 동일 url 재호출은 기존 row 반환 (멱등).
 
-    slug 가 None 이면 외부 URL 추적 (본 프로젝트로 발행하지 않은 글).
-    같은 URL 이 본 프로젝트로 나중에 발행되면 slug 를 채워 다시 등록할 수 있다 —
-    그 경우 멱등 분기에서 기존 row 가 반환되므로 별도 update API 가 필요하면
-    추후 도입한다.
+    url=None: draft publication (재발행 임시 등). visibility=not_measured / workflow=draft.
+    url=str: 정식 등록 — 네이버 블로그 URL 만 허용 (측정 매칭 정합성 보장).
 
     Raises:
-        ValueError: url 형식이 유효하지 않음 (host 추출 불가 등).
+        ValueError: url 이 네이버 블로그 포스트 URL 형식이 아님.
     """
-    normalized = normalize_any_url(url)
+    if url is None:
+        publication = Publication(
+            job_id=job_id,
+            keyword=keyword,
+            slug=slug,
+            url=None,
+            published_at=published_at,
+            parent_publication_id=parent_publication_id,
+            visibility_status="not_measured",
+            workflow_status="draft",
+        )
+        return storage.insert_publication(publication)
+
+    normalized = normalize_blog_url(url)
     if normalized is None:
-        raise ValueError(f"URL 형식이 유효하지 않습니다: {url!r}")
+        raise ValueError(f"네이버 블로그 포스트 URL 형식이 아닙니다: {url!r}")
 
     publication = Publication(
         job_id=job_id,
@@ -68,13 +80,15 @@ def register_publication(
         slug=slug,
         url=normalized,
         published_at=published_at,
+        parent_publication_id=parent_publication_id,
+        visibility_status="not_measured",
+        workflow_status="active",
     )
     try:
         return storage.insert_publication(publication)
     except RankingDuplicateUrlError:
         existing = storage.get_publication_by_url(normalized)
         if existing is None:
-            # 매우 드문 경합 — duplicate 신호 후 select 0건. 명시적 에러.
             raise
         logger.info(
             "publication.duplicate keyword=%r url=%s — returning existing", keyword, normalized
@@ -97,7 +111,7 @@ def update_publication(
     """
     normalized_url: str | None = None
     if url is not None:
-        normalized_url = normalize_any_url(url)
+        normalized_url = normalize_any_url(url)  # 수정 시에만 외부 URL 허용 (운영 유연성)
         if normalized_url is None:
             raise ValueError(f"URL 형식이 유효하지 않습니다: {url!r}")
 
@@ -123,12 +137,14 @@ def check_rankings_for_publication(publication_id: str) -> RankingSnapshot:
     유지된다.
 
     Raises:
-        ValueError: publication 미존재.
+        ValueError: publication 미존재 또는 url=None (draft).
         RankingMatchError: SERP fetch/parse 실패.
     """
     publication = storage.get_publication(publication_id)
     if publication is None:
         raise ValueError(f"publication 미존재: {publication_id}")
+    if publication.url is None:
+        raise ValueError(f"publication.url 이 비어 있어 측정 불가 (draft 상태): {publication_id}")
 
     client = BrightDataClient(
         api_key=require("bright_data_api_key"),
@@ -174,7 +190,8 @@ def _parse_and_match(html: str, publication: Publication, publication_id: str) -
 def _build_top10_from_html(html: str, publication: Publication) -> list[Top10Snapshot]:
     """SERP HTML 을 파싱해 Top10Snapshot 리스트로 변환."""
     parsed = parse_integrated_serp(html)
-    target_norm = publication.url.lower().rstrip("/")
+    # url=None 인 draft 는 check_rankings 가 차단하므로 여기엔 도달 안 함, 방어적 처리
+    target_norm = (publication.url or "").lower().rstrip("/")
     out: list[Top10Snapshot] = []
     for section in parsed.sections:
         for rank, url in enumerate(section.urls, start=1):
@@ -199,11 +216,17 @@ def check_all_active_rankings() -> RankingCheckSummary:
     """
     started = time.monotonic()
     publications = storage.list_publications(limit=10_000)
+    # 측정 대상 필터 — draft/held/republishing/dismissed 는 제외, URL 있는 active 계열만
+    measurable = [
+        p
+        for p in publications
+        if p.url is not None and p.workflow_status in ("active", "action_required")
+    ]
     checked = 0
     found = 0
     errors = 0
 
-    for pub in publications:
+    for pub in measurable:
         if pub.id is None:
             continue
         try:
