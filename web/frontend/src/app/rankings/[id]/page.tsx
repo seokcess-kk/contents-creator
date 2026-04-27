@@ -3,6 +3,7 @@
 import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import DiagnosisCard from "@/components/DiagnosisCard";
+import EventsTimeline from "@/components/EventsTimeline";
 import PublicationEditDialog from "@/components/PublicationEditDialog";
 import PublicationLineage from "@/components/PublicationLineage";
 import RankingTimeline from "@/components/RankingTimeline";
@@ -143,6 +144,8 @@ export default function PublicationDetailPage({
       {publication && <PublicationLineage publication={publication} />}
 
       <DiagnosisCard publicationId={id} />
+
+      <EventsTimeline publicationId={id} refreshKey={refreshKey} />
 
       <RankingTimeline publicationId={id} refreshKey={refreshKey} />
 

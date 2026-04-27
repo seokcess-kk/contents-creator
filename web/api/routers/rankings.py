@@ -349,6 +349,25 @@ def list_publication_actions(
     }
 
 
+@router.get("/publications/{publication_id}/events")
+def list_publication_events(
+    publication_id: str,
+    limit: int = Query(default=200, ge=1, le=500),
+) -> dict[str, Any]:
+    """publication 통합 이벤트 타임라인 — snapshot/diagnosis/action 시간순 merge."""
+    from application.events_aggregator import (
+        list_publication_events as aggregate_events,
+    )
+
+    events = aggregate_events(publication_id)
+    sliced = events[:limit]
+    return {
+        "publication_id": publication_id,
+        "count": len(sliced),
+        "items": [e.model_dump(mode="json") for e in sliced],
+    }
+
+
 # ── 재발행 ──
 
 

@@ -220,6 +220,21 @@ export function getPublicationTimeline(publicationId: string): Promise<RankingTi
   return fetchJson(`/rankings/publications/${encodeURIComponent(publicationId)}`);
 }
 
+export interface PublicationEvent {
+  type: "snapshot" | "diagnosis" | "action";
+  occurred_at: string;
+  data: Record<string, unknown>;
+}
+
+export function getPublicationEvents(
+  publicationId: string,
+  limit = 200,
+): Promise<{ publication_id: string; count: number; items: PublicationEvent[] }> {
+  return fetchJson(
+    `/rankings/publications/${encodeURIComponent(publicationId)}/events?limit=${limit}`,
+  );
+}
+
 export function triggerRankingCheck(publicationId: string): Promise<RankingSnapshot> {
   return fetchJson(`/rankings/check/${encodeURIComponent(publicationId)}`, {
     method: "POST",

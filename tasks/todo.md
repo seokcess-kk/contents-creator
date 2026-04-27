@@ -535,11 +535,11 @@
 - [x] Q2.3 `PublicationActionRow` 재발행 버튼 — wf="republishing" 시 비활성 `재발행 진행 중 · N분 전` + 펄스 인디케이터, title 에 정확한 시각
 - [x] Q2.4 `RepublishDialog` 3종 전략 + 추천 표시 — 이미 구현됨 (full_rewrite / light / cluster, RECOMMENDED_BY_REASON 기반 자동 추천)
 
-### Q4: 통합 타임라인 (예상 1일)
-- [ ] Q4.1 `GET /publications/{id}/events` 신규 — diagnoses + republish + hold/release + ranking_snapshots 통합 시간순
-- [ ] Q4.2 `domain/ranking/storage.py` 또는 신규 `events_aggregator.py` 에 통합 쿼리
-- [ ] Q4.3 `RankingTimeline.tsx` 위에 `EventsTimeline.tsx` 컴포넌트 — 이벤트 카드 시간순
-- [ ] Q4.4 publication 상세 페이지 (/rankings/[id]) 에 통합
+### Q4: 통합 타임라인 ✅ 완료 (2026-04-27)
+- [x] Q4.1 `GET /rankings/publications/{id}/events?limit=N` 엔드포인트 추가 (rankings.py)
+- [x] Q4.2 `application/events_aggregator.py` 신규 — 3종(snapshot/diagnosis/action) 도메인 list_* 함수 호출 후 application 레이어 merge. DB UNION 대신 도메인 격리 유지
+- [x] Q4.3 `EventsTimeline.tsx` — 이벤트 행: timestamp(monospace) + type 뱃지(측정/진단/액션 색상별) + detail (위치/사유/액션). 사유는 한국어 라벨, 액션 metadata.trigger/strategy 인라인 표시
+- [x] Q4.4 `/rankings/[id]` 에 `EventsTimeline` 통합 (PublicationLineage + DiagnosisCard 다음, RankingTimeline 위)
 
 ### Q5: 재발행 원고 마커 ✅ 완료 (2026-04-27)
 - [x] Q5.1 frontend `Publication` 타입에 `parent_publication_id` 추가 — backend 는 model_dump 에서 이미 노출
