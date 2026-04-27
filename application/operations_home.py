@@ -104,6 +104,8 @@ def _enrich_publication(
             "confidence": float(diag.confidence),
             "diagnosed_at": diag.diagnosed_at.isoformat() if diag.diagnosed_at else None,
             "recommended_action": diag.recommended_action,
+            "evidence": list(diag.evidence),
+            "metrics": dict(diag.metrics),
         }
     else:
         payload["latest_diagnosis"] = None

@@ -503,11 +503,48 @@
 - [x] U1.4 진단 권장 액션은 인라인 + `title` 툴팁 (URL 도 `↗` 아이콘 + tooltip)
 
 ## Phase U2: 캘린더 그룹핑 / 결과·작업·사용량 2-pane (P2) ✅ 완료 (2026-04-27)
-- [x] U2.1 캘린더 키워드 그룹핑 — `그룹 ON/OFF` 토글 + 펼치기/접기, group 헤더에 키워드(N) + 최고N위 요약
+- [x] U2.1 캘린더 키워드 그룹핑 — 이후 사용자 요청으로 제거 (refactor)
 - [x] U2.2 `results/[slug]/page.tsx` 2-pane — `grid grid-cols-12 lg:col-span-4 + lg:col-span-8` + 좌측 sticky
 - [x] U2.3 `ProgressTracker.tsx` 컴팩트 — `p-6 mb-6` → `p-3 mb-3`, 아이콘 `8×8` → `6×6`, currentDetail 인라인
 - [x] U2.4 `UsageDashboard.tsx` — 기간선택+요약카드 1줄, 일별/작업별 `grid lg:grid-cols-12 (7+5)` 병렬 + sticky thead
 - [x] U2.5 캘린더 헬퍼 컴포넌트를 `components/CalendarTable.tsx` 로 분리 (300줄 한계 준수)
+
+## Phase U3: 운영 큐 UX 강화 (2026-04-27 착수)
+
+> 사용자 결정:
+> - 카드형 미사용 — 1줄 유지 + hover/클릭 popover 로 진단 근거·streak 자연어 표시
+> - 우선순위 점수 생략 — 단순 정렬만
+> - 보류 사유 + 재확인일 옵션 도입
+> - 단가/등급(Q6) 미진행
+
+### Q1: 1줄 행 + 진단 근거 popover ✅ 완료 (2026-04-27)
+- [x] Q1.1 `application/operations_home.py` `_enrich_publication` 에 `evidence`, `metrics` 추가
+- [x] Q1.2 `formatDiagnosisLines(reason, metrics)` 헬퍼 — null_streak/best_position/days_since_publish/competing_rank 등을 자연어로 변환
+- [x] Q1.3 `DiagnosisBadge` 컴포넌트 — `group-hover` 로 popover 표시. 진단 헤더+신뢰도 / metrics 자연어 / evidence 리스트 / recommended_action 4섹션
+- [x] Q1.4 lib/api.ts `latest_diagnosis` 타입에 `evidence: string[]`, `metrics: Record<string, unknown>` 추가
+
+### Q3: 보류 사유 + 재확인일 옵션 (예상 4~5h)
+- [ ] Q3.1 `HoldDialog` 에 사유 select 추가 — `발행 직후 대기` / `경쟁 강도 높음` / `클라이언트 확인 필요` / `재발행 불필요` / `기타`
+- [ ] Q3.2 재확인일 빠른 버튼 — `3일 후` / `7일 후` / `14일 후` / `직접 지정` (date picker)
+- [ ] Q3.3 backend `held_reason` 컬럼 이미 존재 → API 요청에 포함, 응답에서 받아 표시
+- [ ] Q3.4 보류 중 탭의 행에 `N일 후 재확인` 자연어 표시 (예: "3일 후 재확인", "내일 큐 복귀")
+
+### Q2: 재발행 진행 중 잠금 (예상 4~5h)
+- [ ] Q2.1 publication ↔ 진행 중 job 매핑 — `publications.republishing_started_at` 또는 jobs 테이블 조회
+- [ ] Q2.2 `QueueItem` 에 `republishing_active: bool` + `republishing_job_id` + `republishing_started_at` 노출
+- [ ] Q2.3 `PublicationActionRow` 재발행 버튼 → 진행 중이면 `재발행 진행 중` 비활성, started_at 표시
+- [ ] Q2.4 `RepublishDialog` 에 "추천 방식으로 재발행" 기본 + 옵션 3종 (전체 재작성 / 가벼운 리라이트 / 클러스터 보강)
+
+### Q4: 통합 타임라인 (예상 1일)
+- [ ] Q4.1 `GET /publications/{id}/events` 신규 — diagnoses + republish + hold/release + ranking_snapshots 통합 시간순
+- [ ] Q4.2 `domain/ranking/storage.py` 또는 신규 `events_aggregator.py` 에 통합 쿼리
+- [ ] Q4.3 `RankingTimeline.tsx` 위에 `EventsTimeline.tsx` 컴포넌트 — 이벤트 카드 시간순
+- [ ] Q4.4 publication 상세 페이지 (/rankings/[id]) 에 통합
+
+### Q5: 재발행 원고 마커 (예상 1일)
+- [ ] Q5.1 `parent_publication_id` 컬럼 이미 존재 — API 응답에 부모 정보 포함
+- [ ] Q5.2 결과 페이지 (`/results/[slug]`) 헤더에 "이 원고는 재발행 원고입니다 / 부모: ..." 배너
+- [ ] Q5.3 publication 상세에서 형제 publication 목록 (1차/2차/3차) 표시
 
 - 본 ranking 트랙은 SPEC-SEO-TEXT.md / SPEC-BRAND-CARD.md 어느 쪽에도 정의 없음. **별도 SPEC-RANKING.md 신규 작성 필요 여부는 사용자 결정 사항** — Phase R1 착수 전 확인. 미작성 시 `tasks/todo.md` 본 섹션이 사실상 SPEC 역할
 - SPEC v2 범위 변경 ❌ — 기존 8단계 파이프라인은 손대지 않음

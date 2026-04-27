@@ -71,9 +71,6 @@ export default function PublicationActionRow({ item, onChanged }: PublicationAct
       month: "numeric",
       day: "numeric",
     });
-  const diagTooltip = diagnosis?.recommended_action
-    ? `→ ${diagnosis.recommended_action}`
-    : undefined;
 
   return (
     <div className="border border-gray-200 rounded px-3 py-1.5 bg-white">
@@ -109,18 +106,7 @@ export default function PublicationActionRow({ item, onChanged }: PublicationAct
           {latestText}
           {latestDate && <span className="text-gray-400 ml-1">· {latestDate}</span>}
         </span>
-        {diagnosis && (
-          <span
-            title={diagTooltip}
-            className="text-[11px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-medium truncate max-w-[260px]"
-          >
-            {REASON_LABELS[diagnosis.reason] ?? diagnosis.reason} (
-            {Math.round(diagnosis.confidence * 100)}%)
-            {diagnosis.recommended_action && (
-              <span className="text-blue-800 ml-1">→ {diagnosis.recommended_action}</span>
-            )}
-          </span>
-        )}
+        {diagnosis && <DiagnosisBadge diagnosis={diagnosis} />}
         <div className="ml-auto flex items-center gap-1 shrink-0">
           {wf !== "republishing" && wf !== "dismissed" && wf !== "draft" && (
             <button
@@ -215,6 +201,102 @@ export default function PublicationActionRow({ item, onChanged }: PublicationAct
         />
       )}
     </div>
+  );
+}
+
+type DiagnosisLike = NonNullable<QueueItem["latest_diagnosis"]>;
+
+function formatDiagnosisLines(reason: string, m: Record<string, unknown>): string[] {
+  const lines: string[] = [];
+  const num = (k: string) => (typeof m[k] === "number" ? (m[k] as number) : undefined);
+  const str = (k: string) => (typeof m[k] === "string" ? (m[k] as string) : undefined);
+  switch (reason) {
+    case "lost_visibility": {
+      const streak = num("null_streak");
+      const bestPos = num("best_position");
+      const bestSec = str("best_section");
+      const lastSeen = str("last_seen_at");
+      const hist = num("historical_count");
+      if (streak !== undefined) lines.push(`최근 ${streak}회 측정 미노출`);
+      if (bestPos !== undefined) {
+        const d = lastSeen
+          ? new Date(lastSeen).toLocaleDateString("ko-KR", {
+              month: "numeric",
+              day: "numeric",
+            })
+          : null;
+        lines.push(
+          `마지막 노출: ${bestSec ?? "?"} ${bestPos}위${d ? ` (${d})` : ""}`,
+        );
+      }
+      if (hist !== undefined) lines.push(`과거 ${hist}회 노출 이력`);
+      break;
+    }
+    case "never_indexed": {
+      const days = num("days_since_publish");
+      const mc = num("measurement_count");
+      if (days !== undefined) lines.push(`발행 후 D+${days}`);
+      if (mc !== undefined) lines.push(`총 ${mc}회 측정 모두 미노출`);
+      break;
+    }
+    case "cannibalization": {
+      const rank = num("competing_rank");
+      const sec = str("competing_section");
+      const sa = num("same_author_count");
+      if (rank !== undefined)
+        lines.push(`동일 작성자 다른 글이 ${sec ?? "?"} ${rank}위 점유`);
+      if (sa !== undefined && sa > 1)
+        lines.push(`동일 작성자 다른 글 ${sa}개 발견`);
+      break;
+    }
+    case "no_measurement": {
+      const sc = num("snapshot_count");
+      if (sc !== undefined) lines.push(`측정 기록 ${sc}회`);
+      break;
+    }
+  }
+  return lines;
+}
+
+function DiagnosisBadge({ diagnosis }: { diagnosis: DiagnosisLike }) {
+  const label = REASON_LABELS[diagnosis.reason] ?? diagnosis.reason;
+  const confidence = Math.round(diagnosis.confidence * 100);
+  const detailLines = formatDiagnosisLines(diagnosis.reason, diagnosis.metrics);
+  return (
+    <span className="relative group shrink-0">
+      <span className="text-[11px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-medium cursor-help">
+        {label} ({confidence}%)
+      </span>
+      <div className="absolute left-0 top-full mt-1 hidden group-hover:block z-30 w-[320px] bg-white border border-gray-300 rounded shadow-lg p-3 text-xs text-gray-800">
+        <div className="font-semibold text-gray-900 mb-1">
+          {label} <span className="text-gray-500 font-normal">· 신뢰도 {confidence}%</span>
+        </div>
+        {detailLines.length > 0 && (
+          <ul className="list-disc list-inside text-gray-700 space-y-0.5 mb-2">
+            {detailLines.map((line, i) => (
+              <li key={i}>{line}</li>
+            ))}
+          </ul>
+        )}
+        {diagnosis.evidence.length > 0 && (
+          <div className="border-t border-gray-100 pt-2 mb-2">
+            <div className="text-[10px] uppercase text-gray-500 font-semibold mb-1">
+              근거
+            </div>
+            <ul className="list-disc list-inside text-gray-700 space-y-0.5">
+              {diagnosis.evidence.map((e, i) => (
+                <li key={i}>{e}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {diagnosis.recommended_action && (
+          <div className="border-t border-gray-100 pt-2 text-blue-800">
+            → {diagnosis.recommended_action}
+          </div>
+        )}
+      </div>
+    </span>
   );
 }
 

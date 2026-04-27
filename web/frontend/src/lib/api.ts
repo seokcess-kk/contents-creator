@@ -298,6 +298,8 @@ export interface QueueItem extends Publication {
     confidence: number;
     diagnosed_at: string | null;
     recommended_action: string | null;
+    evidence: string[];
+    metrics: Record<string, unknown>;
   } | null;
 }
 
