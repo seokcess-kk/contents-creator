@@ -3,13 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { getMonthlyCalendar, type RankingCalendar } from "@/lib/api";
-import {
-  CalendarRow,
-  CellLegend,
-  GroupBlock,
-  bestPosition,
-  type CalendarRowData,
-} from "@/components/CalendarTable";
+import { CalendarRow, CellLegend } from "@/components/CalendarTable";
 
 /**
  * 월별 캘린더 — 키워드(행) × 일자(열) 매트릭스.
@@ -25,12 +19,9 @@ export default function RankingCalendarPage() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [compact, setCompact] = useState(true);
-  const [grouped, setGrouped] = useState(false);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const cellW = compact ? "w-[22px]" : "w-[28px]";
-  const cellH = compact ? "h-[20px]" : "h-[28px]";
-  const keyColW = compact ? "min-w-[160px]" : "min-w-[180px]";
+  const keyColW = compact ? "min-w-[200px]" : "min-w-[220px]";
 
   const monthStr = useMemo(
     () => `${year}-${String(month).padStart(2, "0")}`,
@@ -80,34 +71,6 @@ export default function RankingCalendarPage() {
       (r.publication.slug ?? "").toLowerCase().includes(filterLower),
   );
 
-  const groups = useMemo(() => {
-    if (!grouped) return null;
-    const map = new Map<string, CalendarRowData[]>();
-    for (const r of rows) {
-      const key = r.publication.keyword;
-      const list = map.get(key);
-      if (list) list.push(r);
-      else map.set(key, [r]);
-    }
-    return Array.from(map.entries()).sort((a, b) =>
-      a[0].localeCompare(b[0], "ko"),
-    );
-  }, [rows, grouped]);
-
-  function toggleGroup(key: string) {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }
-
-  function expandAll(open: boolean) {
-    if (!groups) return;
-    setExpanded(open ? new Set(groups.map(([k]) => k)) : new Set());
-  }
-
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
@@ -153,35 +116,6 @@ export default function RankingCalendarPage() {
         >
           {compact ? "확장" : "압축"}
         </button>
-        <button
-          type="button"
-          onClick={() => {
-            setGrouped((v) => !v);
-            setExpanded(new Set());
-          }}
-          className={`px-2 py-0.5 text-xs border rounded ${grouped ? "bg-blue-50 border-blue-300 text-blue-800" : "border-gray-300 hover:bg-gray-50"}`}
-          title="키워드별 묶기"
-        >
-          {grouped ? "그룹 ON" : "그룹 OFF"}
-        </button>
-        {grouped && (
-          <>
-            <button
-              type="button"
-              onClick={() => expandAll(true)}
-              className="px-2 py-0.5 text-xs text-gray-700 hover:underline"
-            >
-              모두 펼치기
-            </button>
-            <button
-              type="button"
-              onClick={() => expandAll(false)}
-              className="px-2 py-0.5 text-xs text-gray-700 hover:underline"
-            >
-              모두 접기
-            </button>
-          </>
-        )}
         <input
           type="text"
           value={filter}
@@ -211,7 +145,7 @@ export default function RankingCalendarPage() {
                 <th
                   className={`sticky top-0 left-0 bg-gray-50 text-left p-2 border-r border-b border-gray-200 ${keyColW} z-30`}
                 >
-                  키워드 / URL
+                  키워드
                 </th>
                 {dayList.map((d) => {
                   const dayDate = new Date(year, month - 1, d);
@@ -234,35 +168,15 @@ export default function RankingCalendarPage() {
               </tr>
             </thead>
             <tbody>
-              {grouped && groups
-                ? groups.map(([key, gRows]) => {
-                    const isOpen = expanded.has(key);
-                    const best = bestPosition(gRows, dayList, monthStr);
-                    return (
-                      <GroupBlock
-                        key={key}
-                        keyword={key}
-                        count={gRows.length}
-                        best={best}
-                        isOpen={isOpen}
-                        onToggle={() => toggleGroup(key)}
-                        colSpan={daysInMonth + 1}
-                        rows={gRows}
-                        dayList={dayList}
-                        monthStr={monthStr}
-                        compact={compact}
-                      />
-                    );
-                  })
-                : rows.map((row) => (
-                    <CalendarRow
-                      key={row.publication.id}
-                      row={row}
-                      dayList={dayList}
-                      monthStr={monthStr}
-                      compact={compact}
-                    />
-                  ))}
+              {rows.map((row) => (
+                <CalendarRow
+                  key={row.publication.id}
+                  row={row}
+                  dayList={dayList}
+                  monthStr={monthStr}
+                  compact={compact}
+                />
+              ))}
             </tbody>
           </table>
         </div>
@@ -270,4 +184,3 @@ export default function RankingCalendarPage() {
     </div>
   );
 }
-
