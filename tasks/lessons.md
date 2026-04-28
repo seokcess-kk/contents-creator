@@ -505,6 +505,20 @@ alter default privileges in schema public grant all on tables to postgres, anon,
 
 **재발 방지**: render.yaml 또는 배포 설정에 인스턴스 수 변경 시 본 메모를 확인하고 advisory lock 추가 PR 을 함께.
 
-## 참고 패턴
+### pytest 전체 실행 시 출력 버퍼링 + 커버리지 cold start (2026-04-28)
 
-_(유용한 패턴이나 관례를 기록)_
+**증상**: `pytest -q 2>&1 | tail -8` 호출 후 15분간 출력 0 라인 → hang 으로 오해. 강제 stop 후 재시도 반복으로 cache 무효화 → 더 느려짐. 사용자가 "언제 끝나니?" 두 번 묻는 상황까지 발전.
+
+**근본 원인 2건 결합**:
+1. **bash 파이프 출력 버퍼링** — `| tail -N` 은 입력 스트림을 EOF 까지 읽어야 출력. pytest 의 진행 도트(`.`)는 흐르고 있으나 화면에 안 보임. 로그 파일도 0 바이트 (FD flush 가 tail 종료 시점)
+2. **`pyproject.toml` 의 `--cov` 강제** — 800개 테스트 × 5,573 statement 인스트루먼트, cold start 시 매우 느림. 이전 build-check.sh 56초는 hot cache 였음
+
+**재발 방지 — pytest 실행 표준**:
+- ❌ 금지: `pytest ... 2>&1 | tail -N`
+- ✅ 출력 직접 보기: `pytest -q --no-cov` (line-buffered, 도트 실시간)
+- ✅ 출력 잘라야 한다면 `tee` 로 분기: `pytest -q --no-cov 2>&1 | tee /tmp/pytest.log | tail -20`
+- ✅ 빠른 반복: `--no-cov` 로 인스트루먼트 끔. 커버리지 게이트는 build-check.sh 한 번만
+- ✅ 부분 회귀: 변경 영향 모듈만 명시 (`pytest tests/test_brand_card --no-cov` 등). 798 → 298 으로 줄어 2.4초
+- ✅ Hang 의심 시 stop 보다 로그 파일 직접 read 가 우선 (불필요한 cache 무효화 방지)
+
+**교훈**: bash 파이프 + heavy instrumentation 조합은 사일런트 진행으로 보인다. "출력 없음 = 진행 없음" 추론 금지.

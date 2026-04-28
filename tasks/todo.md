@@ -612,6 +612,77 @@
 - [x] tests/test_compliance/test_rules.py 카운트 어서션 갱신 (8→10, 7→9)
 - [x] tests/test_brand_card/test_brand_lenient_coverage.py xfail 제거, §7 9/9 매핑 검증
 
+## Phase U11: 브랜드 카드 Phase 3 (2026-04-28) ✅ — 컴플라이언스/운영
+
+### Phase 3.1 ✅ domain/brand_card/compliance.py 신규
+- [x] `validate_brand_card_plan(plan, *, max_iterations=2)` — BRAND_LENIENT checker/fixer wrapper
+- [x] phrase replacement 만 수행 (paragraph regeneration 미사용 — 블록 텍스트가 짧아 비용 대비 의미 적음)
+- [x] `ai_image_prompt` 별도 검증 — `image_prompt_validator` 호출, 위반 시 `None` 으로 비움 + changelog
+- [x] expression_level 차등: `safe` 일 때만 hooking 표현 6종(실패했다면, 굶는, 혼자 버티 등) 추가 경고. 텍스트는 수정 안 함, changelog 만 기록
+- [x] 알 수 없는 카테고리(LLM 환각) 방어 — `_is_known_category` 가 ViolationCategory enum 검증
+
+### Phase 3.2 ✅ 상태 전이 검증 (SPEC §9.3)
+- [x] `domain/brand_card/model.py` — `StatusTransitionError` 예외 + `_VALID_STATUS_TRANSITIONS` dict
+- [x] `assert_status_transition(current, target)` — 허용되지 않은 전이 시 raise. 동일 상태는 idempotent
+- [x] 전이도: draft → reviewed/approved/rejected, reviewed → approved/rejected, approved → published/rejected, published → archived. rejected/archived 는 종결
+
+### Phase 3.3 ✅ orchestrator 통합
+- [x] `generate_card_plan`: plan_generator 출력 → `bc_compliance.validate_brand_card_plan` → `source_summary["compliance_report"]` 병합 → storage 저장. 위반 fix 실패 시 plan 은 `draft` 유지 (사용자 판단 위임)
+- [x] `approve_plan` / `reject_plan`: `_transition_plan(plan_id, target)` 헬퍼로 전이 검증 후 storage 호출. 누락 plan 은 `None` 반환
+- [x] `render_card_set`: 렌더 직전 최종 재검증 → `RenderedBrandCard.compliance_report` 실데이터 채움. `update_card_status` 에 `compliance_report` 함께 전달 (storage 가 jsonb 저장)
+- [x] `_render_plan_blocks`: `compliance_report: ComplianceReport | None` 파라미터 추가, placeholder `{"passed": True}` 제거
+
+### Phase 3.4 ✅ 테스트
+- [x] `tests/test_brand_card/test_compliance.py` 신규 — 31 시나리오 (clean/violation/iter cap/unknown category/image prompt/expression_level 3종/multi-block/final_text/status transition matrix 17 케이스)
+- [x] `tests/test_application/test_brand_card_orchestrator.py` Phase 3 5 케이스 추가:
+  - generate compliance 호출 횟수 / source_summary 병합 / 위반 시 draft 유지
+  - render compliance_report 카드 propagate / status 전이 검증
+- [x] 기존 fixture (`storage_mock`/`plan_gen_mock`) 에 `compliance_mock` 추가
+- [x] approve/reject 테스트를 `get_card_plan` mock 으로 갱신, 잘못된 전이 케이스 + idempotent + None 반환 케이스 추가
+
+### Phase 3 검증
+- [x] `bash .claude/hooks/build-check.sh` ✓ PASSED
+- [x] 테스트 660 → **801 passed** (+141)
+- [x] 커버리지 71.31% → **76.24%**
+
+## Phase U12: 브랜드 카드 Phase 4.1 (2026-04-28) ✅ — 백엔드 API 라우터
+
+### Phase 4.1 ✅ web/api/routers/brand_studio.py 신규 (10 routes)
+- [x] GET /brands — 브랜드 목록
+- [x] GET /brands/{id}/sources — 메시지 소스 목록
+- [x] POST /brands/{id}/sources — multipart 업로드 (txt/docx/pdf/html → source_parser)
+- [x] POST /brands/{id}/campaign-inputs — 캠페인 입력 저장
+- [x] POST /brands/{id}/plans — orchestrator.generate_card_plan (LLM 동기)
+- [x] GET /plans/{group_id} — 묶음 조회
+- [x] POST /plans/{plan_id}/approve | /reject — StatusTransitionError → 409
+- [x] POST /plans/{group_id}/render — JobManager.submit_brand_card_render (job_id 반환, 202)
+- [x] GET /cards/{group_id} — 8 항목 결과 보관함 + png_paths
+
+### Phase 4.1 인프라
+- [x] domain/brand_card/storage.py — list_brands / get_brand / list_media_assets / get_media_asset / insert_media_asset 추가
+- [x] domain/brand_card/model.py — BrandProfile / BrandMediaAsset Pydantic 추가
+- [x] web/api/job_manager.py — submit_brand_card_render + _dispatch 분기 (brand_card_render → application.brand_card_orchestrator.render_card_set)
+- [x] web/api/main.py — brand_studio.router 등록
+- [x] pyproject.toml — `python-multipart>=0.0.9` web extras 추가, 환경에 설치 완료
+
+### Phase 4.1 테스트
+- [x] tests/test_web/test_brand_studio_api.py 신규 — 25 시나리오:
+  - list_brands(2) / sources(6) / campaign_input(1) / generate(3) / get_plans(2) / approve_reject(4) / render(3) / archive(2) / auth(2)
+- [x] FastAPI TestClient + monkeypatch + multipart 업로드 검증
+- [x] 변경 영향 범위 회귀: tests/test_brand_card + test_application + test_compliance + test_web/test_brand_studio = **298 passed**
+
+### Phase 4.1 검증
+- [x] ruff check — All checks passed
+- [x] ruff format — applied (2 files)
+- [x] pyright — 0 errors / 0 warnings
+- [x] 관련 테스트 298 passed
+
+### Phase 4.2 — 프론트엔드 UI (다음 차수)
+- [ ] /brand-studio (브랜드 목록 + 자산 관리)
+- [ ] /brand-studio/[brandId]/new (카드 생성 9 필드 폼)
+- [ ] /brand-studio/[brandId]/plans/[groupId] (승인 5 액션)
+- [ ] /brand-studio/[brandId]/archive (결과 보관함 8 항목)
+
 ## Phase U8: 브랜드 카드 SPEC v2.1 패치 — 결정 D1~D7 반영 (2026-04-28) ✅ 완료
 
 > 두 문서(`SPEC-BRAND-CARD.md` v2 + `docs/brand-card-redesign.md`) 검토 후 7개 결정 위임 일괄 처리.

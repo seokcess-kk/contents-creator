@@ -107,10 +107,17 @@ output/{slug}/{ts}/  ← 타임스탬프별 결과물 (재실행 이력 누적)
 ruff check .                    # 린트 0개
 ruff format --check .           # 포맷 0개
 pyright                         # 타입 에러 0개 (pyrightconfig.json basic)
-pytest                          # 테스트 통과
-bash .claude/hooks/build-check.sh  # 위 4개 + architecture-check 일괄
+pytest -q --no-cov              # 빠른 반복 (line-buffered, 도트 실시간)
+bash .claude/hooks/build-check.sh  # 커버리지 게이트 포함 일괄 (한 번만)
 ```
 
+- **pytest 실행 절대 규칙** (lessons `pytest 전체 실행 시 출력 버퍼링 + 커버리지 cold start` 참조):
+  - ❌ `pytest ... 2>&1 | tail -N` — bash 파이프가 EOF 까지 버퍼링해 진행이 안 보인다
+  - ✅ 출력 그대로: `pytest -q --no-cov` (도트 line-buffered)
+  - ✅ 잘라야 하면 `tee` 분기: `pytest -q --no-cov 2>&1 | tee /tmp/pytest.log | tail -20`
+  - ✅ 변경 영향 모듈만: `pytest tests/test_brand_card --no-cov`
+  - ✅ 커버리지 강제(`--cov-fail-under=60`)는 build-check.sh 한 번만, 반복 실행에서는 `--no-cov`
+  - 출력 0 라인이라도 강제 stop 금지 — 로그 파일 read 가 우선 (cache 무효화 방지)
 - **2026-04-28 mypy → pyright 전환**. 사유: Windows Python 3.13 에서 mypy DLL 로드 산발적 실패 + anthropic SDK 타입 업데이트로 strict 사전 에러 누적. pyright 는 Node 단일 바이너리로 cross-platform 안정
 - `pyproject.toml [tool.mypy]` strict 설정은 유지 — 더 엄격한 검사를 원할 때 수동 사용 가능
 - 에러 발생 시 원인 분석 → 수정 → 재검증까지 자체 완료. 3회 실패 후에만 사용자에게 판단 요청
@@ -141,3 +148,4 @@ bash .claude/hooks/build-check.sh  # 위 4개 + architecture-check 일괄
 
 - `2026-04-16`: 3계층 품질 강제, 물리 분석 정확도, Gemini 이미지, 의료법 안정화, 톤앤매너 전환, regression 테스트
 - `2026-04-16`: CLAUDE.md 200줄 이내 리팩터링. 도메인별 규칙을 서브 CLAUDE.md로 분리, @reference 구조화
+- `2026-04-28`: pytest 실행 절대 규칙 추가 (`| tail` 금지, `--no-cov` 권장). 사유: bash 파이프 출력 버퍼링 + 커버리지 cold start 결합으로 hang 오인 발생 (lessons 참조)
