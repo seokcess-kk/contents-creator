@@ -64,6 +64,15 @@ else
   echo "━━━ pytest — SKIP (tests/ 없음) ━━━"
 fi
 
+# frontend vitest — package.json 에 test script 가 있고 node_modules 가 존재할 때만.
+# (CI 가 npm install 한 환경에서만 실행 — 로컬 미설치 시 SKIP)
+if [[ -f web/frontend/package.json ]] && [[ -d web/frontend/node_modules ]] && \
+   grep -q '"test"' web/frontend/package.json; then
+  step "vitest" bash -c "cd web/frontend && npm test --silent"
+else
+  echo "━━━ vitest — SKIP (web/frontend/node_modules 없음 또는 test 스크립트 부재) ━━━"
+fi
+
 echo ""
 if [[ ${#failed_steps[@]} -gt 0 ]]; then
   echo "━━━━━━━━━━━━━━━━━━━━━━"
