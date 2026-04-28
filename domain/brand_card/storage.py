@@ -260,6 +260,38 @@ def update_card_status(
     return _row_to_plan(cast("dict[str, Any]", rows[0]))
 
 
+def update_card_blocks(
+    card_id: str,
+    blocks: list[CardBlock],
+    *,
+    new_status: str | None = None,
+) -> BrandCardPlan | None:
+    """카드 blocks 부분 수정 (문구·image_asset_id·ai_image_prompt 등).
+
+    blocks 는 `source_summary["blocks"]` 안에 jsonb 로 저장되어 있어 기존
+    summary 를 보존하며 blocks 만 교체. new_status 가 주어지면 함께 업데이트
+    (예: draft → reviewed 전이).
+    """
+    current = get_card_plan(card_id)
+    if current is None:
+        return None
+    new_summary = {
+        **current.source_summary,
+        "blocks": [_block_to_dict(b) for b in blocks],
+        "required_phrases_used": current.required_phrases_used,
+        "forbidden_phrases_avoided": current.forbidden_phrases_avoided,
+    }
+    payload: dict[str, Any] = {"source_summary": new_summary}
+    if new_status is not None:
+        payload["status"] = new_status
+    client = get_client()
+    result = client.table(_CARDS_TABLE).update(payload).eq("id", card_id).execute()
+    rows = result.data or []
+    if not rows:
+        return None
+    return _row_to_plan(cast("dict[str, Any]", rows[0]))
+
+
 def list_recent_cards_for_brand(
     brand_id: str,
     *,

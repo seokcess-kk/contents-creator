@@ -1,6 +1,6 @@
 """브랜드 스튜디오 API 라우터 — Phase 4.1·4.2·후속 백엔드.
 
-SPEC-BRAND-CARD §14 UX 의 백엔드 진입점. 16 라우트 + X-API-Key 일괄 인증.
+SPEC-BRAND-CARD §14 UX 의 백엔드 진입점. 17 라우트 + X-API-Key 일괄 인증.
 
 흐름:
 1. GET /brands → 브랜드 목록
@@ -11,6 +11,7 @@ SPEC-BRAND-CARD §14 UX 의 백엔드 진입점. 16 라우트 + X-API-Key 일괄
 6. POST /brands/{id}/plans → orchestrator.generate_card_plan 호출 (LLM 동기, 1~10s)
 7. GET /plans/{group_id} → 기획안 묶음 조회
 8. POST /plans/{plan_id}/approve | /reject → 상태 전이
+   PATCH /plans/{plan_id} → blocks 수정 (draft/reviewed 만, 자동 reviewed 전이)
 9. POST /plans/{group_id}/render → JobManager 통합 비동기 렌더
 10. GET /cards/{group_id} → 결과 보관함 (8 항목)
 11. GET /cards/{group_id}/files/{filename} → 렌더된 PNG 다운로드 (path traversal 방어)
@@ -37,6 +38,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from application import brand_card_orchestrator as orch
+from application.brand_card_orchestrator import PlanEditNotAllowedError
 from config.settings import settings
 from domain.brand_card import source_parser, storage
 from domain.brand_card.model import (
@@ -45,6 +47,7 @@ from domain.brand_card.model import (
     BrandMediaAsset,
     BrandMessageSource,
     BrandProfile,
+    CardBlock,
     CardCampaignInput,
     StatusTransitionError,
 )
@@ -260,7 +263,7 @@ def get_plans(group_id: str) -> list[BrandCardPlan]:
     return plans
 
 
-# ── 7. approve / reject ─────────────────────────────────────
+# ── 7. approve / reject / edit ──────────────────────────────
 
 
 @router.post("/plans/{plan_id}/approve")
@@ -271,6 +274,30 @@ def approve(plan_id: str) -> BrandCardPlan:
 @router.post("/plans/{plan_id}/reject")
 def reject(plan_id: str) -> BrandCardPlan:
     return _transition(plan_id, "reject")
+
+
+class PlanEditRequest(BaseModel):
+    """plan blocks 부분 수정 — 문구/사진/AI prompt.
+
+    blocks 배열 통째 교체. status: draft/reviewed 만 허용 (그 외 409).
+    draft → 자동 reviewed 전이.
+    """
+
+    blocks: list[CardBlock]
+
+
+@router.patch("/plans/{plan_id}")
+def edit_plan(plan_id: str, req: PlanEditRequest) -> BrandCardPlan:
+    """plan blocks 수정 — draft/reviewed 만 허용. 미존재 → 404, 잘못된 status → 409."""
+    if not req.blocks:
+        raise HTTPException(status_code=422, detail="blocks 배열은 비어있을 수 없습니다")
+    try:
+        result = orch.edit_plan(plan_id, blocks=req.blocks)
+    except PlanEditNotAllowedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    return result
 
 
 def _transition(plan_id: str, action: str) -> BrandCardPlan:

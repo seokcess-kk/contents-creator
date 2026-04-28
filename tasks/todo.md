@@ -702,6 +702,8 @@
 - [x] E2E smoke test 체크리스트 — `docs/brand-studio-e2e-checklist.md` (S1~S7, 알려진 한계, 회귀 발견 절차) (2026-04-29)
 - [x] `brand_media_assets` 미디어 라이브러리 (CRUD) — 5 백엔드 라우트(list/upload/get/delete/download) + Pillow 이미지 검증 + width/height 자동 추출 + orientation 라벨 + Hard delete + UI graceful + BrandMediaLibrary 컴포넌트 (그리드 + 업로드 + 삭제) (2026-04-29)
   - 카드 생성 폼 ⑦ 통합은 별도 차수 (CardCampaignInput 필드 추가 + plan_generator image_asset_id 사용)
+- [x] approve/reject 외 액션 PATCH (문구 수정 + 사진 교체) — `PATCH /plans/{plan_id}` (draft/reviewed 만, 자동 reviewed 전이) + `PlanEditNotAllowedError` (409) + PlanEditModal (블록별 헤드라인/부제/bullets/image_asset_id 편집 + 미디어 자산 dropdown + 썸네일 미리보기) (2026-04-29)
+  - 전략 변경은 우회 deep link 유지 (재기획 = /new?prefill)
 - [ ] approve/reject 외 3 액션(문구 수정 / 사진 교체 / 전략 변경) 백엔드 PATCH 라우트
 - [ ] frontend 테스트 프레임워크 (vitest + Testing Library)
 

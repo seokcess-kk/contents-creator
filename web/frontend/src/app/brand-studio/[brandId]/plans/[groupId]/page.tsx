@@ -4,6 +4,7 @@ import { use, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import CardPlanCard from "@/components/CardPlanCard";
+import PlanEditModal from "@/components/PlanEditModal";
 import {
   approvePlan,
   getPlans,
@@ -33,6 +34,7 @@ export default function BrandPlansPage({
   const [brand, setBrand] = useState<BrandProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rendering, setRendering] = useState(false);
+  const [editingPlan, setEditingPlan] = useState<BrandCardPlan | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -139,6 +141,7 @@ export default function BrandPlansPage({
               plan={p}
               onApprove={handleApprove}
               onReject={handleReject}
+              onEdit={() => setEditingPlan(p)}
               onRegenerate={handleRegenerate}
             />
           ))}
@@ -160,6 +163,18 @@ export default function BrandPlansPage({
           {rendering ? "렌더 시작 중…" : "렌더 시작 (PNG 생성)"}
         </button>
       </div>
+
+      {editingPlan && (
+        <PlanEditModal
+          plan={editingPlan}
+          onClose={() => setEditingPlan(null)}
+          onSaved={(updated) => {
+            setPlans((prev) =>
+              prev ? prev.map((p) => (p.id === updated.id ? updated : p)) : prev,
+            );
+          }}
+        />
+      )}
     </div>
   );
 }

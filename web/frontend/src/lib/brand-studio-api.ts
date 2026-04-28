@@ -250,6 +250,16 @@ export function rejectPlan(planId: string): Promise<BrandCardPlan> {
   });
 }
 
+export function editPlan(
+  planId: string,
+  blocks: CardBlock[],
+): Promise<BrandCardPlan> {
+  return request(`/plans/${encodeURIComponent(planId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ blocks }),
+  });
+}
+
 export interface RenderRequest {
   brand_name?: string | null;
   brand_url?: string | null;

@@ -172,6 +172,35 @@ def reject_plan(plan_id: str) -> BrandCardPlan | None:
     return _transition_plan(plan_id, target=BrandCardStatus.REJECTED.value)
 
 
+class PlanEditNotAllowedError(BrandCardError):
+    """수정 가능한 status 가 아님 — published/rejected/archived 등."""
+
+
+_EDITABLE_STATUSES = frozenset({BrandCardStatus.DRAFT.value, BrandCardStatus.REVIEWED.value})
+
+
+def edit_plan(plan_id: str, *, blocks: list[CardBlock]) -> BrandCardPlan | None:
+    """카드 blocks 부분 수정 — 문구/사진(image_asset_id)/AI prompt 변경.
+
+    제약:
+    - 수정 가능한 status 는 draft / reviewed 만. 그 외(approved/published/
+      rejected/archived) 는 PlanEditNotAllowedError.
+    - draft 였다면 자동으로 reviewed 로 전이 (사용자 검토 흔적 기록).
+    - blocks 배열 통째 교체 — 부분 수정은 호출자가 fetch + merge 후 전달.
+    """
+    current = storage.get_card_plan(plan_id)
+    if current is None:
+        return None
+    if current.status not in _EDITABLE_STATUSES:
+        raise PlanEditNotAllowedError(
+            f"수정 가능한 status 가 아닙니다: {current.status} (허용: draft/reviewed)"
+        )
+    new_status = (
+        BrandCardStatus.REVIEWED.value if current.status == BrandCardStatus.DRAFT.value else None
+    )
+    return storage.update_card_blocks(plan_id, blocks, new_status=new_status)
+
+
 def _transition_plan(plan_id: str, *, target: str) -> BrandCardPlan | None:
     """현재 status fetch → SPEC §9.3 전이 검증 → storage 업데이트."""
     current = storage.get_card_plan(plan_id)

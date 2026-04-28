@@ -19,13 +19,15 @@ import { buildPngDownloadUrl, type BrandCardPlan } from "@/lib/brand-studio-api"
  *
  * 액션 5종:
  *   approve / reject / 문구 수정 / 사진 교체 / 전략 변경
- *   (후 3종은 백엔드 미지원 — onRegenerate 콜백으로 /new?prefill 이동)
+ *   - 문구 수정 + 사진 교체: onEdit 콜백 (PATCH /plans/{id} 모달)
+ *   - 전략 변경: onRegenerate 콜백 (/new?prefill 재생성)
  */
 
 interface CardPlanCardProps {
   plan: BrandCardPlan;
   onApprove?: (planId: string) => Promise<void>;
   onReject?: (planId: string) => Promise<void>;
+  onEdit?: () => void;
   onRegenerate?: () => void;
   /** archive 페이지 등 액션 비활성 모드 */
   readOnly?: boolean;
@@ -55,6 +57,7 @@ export default function CardPlanCard({
   plan,
   onApprove,
   onReject,
+  onEdit,
   onRegenerate,
   readOnly = false,
   pngPaths = [],
@@ -94,6 +97,10 @@ export default function CardPlanCard({
     plan.status !== "rejected" &&
     plan.status !== "archived" &&
     plan.status !== "published";
+  const canEdit =
+    !readOnly &&
+    !!onEdit &&
+    (plan.status === "draft" || plan.status === "reviewed");
 
   return (
     <article className="border border-gray-200 rounded p-3 bg-white space-y-2">
@@ -239,19 +246,19 @@ export default function CardPlanCard({
           </button>
           <button
             type="button"
-            onClick={onRegenerate}
-            disabled={!onRegenerate}
-            title="같은 폼으로 재생성 (백엔드 직접 수정 미지원)"
-            className="px-2 py-1 text-xs border border-gray-300 text-gray-700 rounded hover:bg-gray-50 disabled:opacity-40"
+            onClick={onEdit}
+            disabled={!canEdit || acting !== null}
+            title="블록·문구 수정 (PATCH)"
+            className="px-2 py-1 text-xs border border-blue-300 text-blue-700 rounded hover:bg-blue-50 disabled:opacity-40"
           >
             문구 수정
           </button>
           <button
             type="button"
-            onClick={onRegenerate}
-            disabled={!onRegenerate}
-            title="같은 폼으로 재생성"
-            className="px-2 py-1 text-xs border border-gray-300 text-gray-700 rounded hover:bg-gray-50 disabled:opacity-40"
+            onClick={onEdit}
+            disabled={!canEdit || acting !== null}
+            title="image_asset_id 변경 (PATCH 모달에서 선택)"
+            className="px-2 py-1 text-xs border border-blue-300 text-blue-700 rounded hover:bg-blue-50 disabled:opacity-40"
           >
             사진 교체
           </button>
@@ -259,7 +266,7 @@ export default function CardPlanCard({
             type="button"
             onClick={onRegenerate}
             disabled={!onRegenerate}
-            title="같은 폼으로 재생성"
+            title="같은 폼으로 재생성 (전략 변경)"
             className="px-2 py-1 text-xs border border-gray-300 text-gray-700 rounded hover:bg-gray-50 disabled:opacity-40"
           >
             전략 변경

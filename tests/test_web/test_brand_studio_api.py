@@ -401,6 +401,85 @@ class TestApproveReject:
         assert resp.status_code == 409
 
 
+# ── 7b. PATCH /plans/{plan_id} (edit blocks) ────────────────
+
+
+class TestEditPlan:
+    def _payload(self) -> dict[str, Any]:
+        return {
+            "blocks": [
+                {
+                    "card_type": "hero",
+                    "headline": "수정된 헤드라인",
+                    "subcopy": "수정된 부제",
+                    "bullets": ["요점 A", "요점 B"],
+                    "image_asset_id": "m-99",
+                    "ai_image_prompt": None,
+                    "recommended_position": "after_intro",
+                }
+            ]
+        }
+
+    def test_edit_draft_transitions_to_reviewed(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """draft 인 plan 을 수정하면 reviewed 로 자동 전이."""
+        from web.api.routers import brand_studio
+
+        captured: dict[str, Any] = {}
+
+        def fake_edit(plan_id: str, *, blocks: Any) -> BrandCardPlan:
+            captured["plan_id"] = plan_id
+            captured["blocks"] = blocks
+            return _plan().model_copy(
+                update={
+                    "status": "reviewed",
+                    "blocks": blocks,
+                }
+            )
+
+        monkeypatch.setattr(brand_studio.orch, "edit_plan", fake_edit)
+        resp = client.patch("/api/brand-studio/plans/p-1", json=self._payload())
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "reviewed"
+        assert body["blocks"][0]["headline"] == "수정된 헤드라인"
+        assert captured["plan_id"] == "p-1"
+
+    def test_edit_published_409(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        from application.brand_card_orchestrator import PlanEditNotAllowedError
+        from web.api.routers import brand_studio
+
+        def fake_edit(plan_id: str, *, blocks: Any) -> BrandCardPlan:
+            raise PlanEditNotAllowedError("수정 가능한 status 가 아닙니다: published")
+
+        monkeypatch.setattr(brand_studio.orch, "edit_plan", fake_edit)
+        resp = client.patch("/api/brand-studio/plans/p-1", json=self._payload())
+        assert resp.status_code == 409
+
+    def test_edit_unknown_404(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(
+            brand_studio.orch,
+            "edit_plan",
+            lambda plan_id, *, blocks: None,
+        )
+        resp = client.patch("/api/brand-studio/plans/missing", json=self._payload())
+        assert resp.status_code == 404
+
+    def test_empty_blocks_422(self, client: TestClient) -> None:
+        resp = client.patch("/api/brand-studio/plans/p-1", json={"blocks": []})
+        assert resp.status_code == 422
+
+    def test_invalid_block_shape_422(self, client: TestClient) -> None:
+        resp = client.patch(
+            "/api/brand-studio/plans/p-1",
+            json={"blocks": [{"card_type": "hero"}]},  # required: headline, recommended_position
+        )
+        assert resp.status_code == 422
+
+
 # ── 8. POST /plans/{group_id}/render ────────────────────────
 
 
