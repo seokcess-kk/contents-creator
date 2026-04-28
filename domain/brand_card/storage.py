@@ -57,6 +57,42 @@ def get_brand(brand_id: str) -> BrandProfile | None:
     return _row_to_profile(cast("dict[str, Any]", rows[0]))
 
 
+def get_brand_by_slug(slug: str) -> BrandProfile | None:
+    """slug 로 브랜드 조회 — UNIQUE 제약 사전 확인용."""
+    client = get_client()
+    result = client.table(_PROFILES_TABLE).select("*").eq("slug", slug).limit(1).execute()
+    rows = result.data or []
+    if not rows:
+        return None
+    return _row_to_profile(cast("dict[str, Any]", rows[0]))
+
+
+def insert_brand(profile: BrandProfile) -> BrandProfile:
+    """신규 브랜드 등록. id 는 DB 가 채움. slug UNIQUE 충돌은 BrandSlugConflictError."""
+    client = get_client()
+    payload: dict[str, Any] = {
+        "name": profile.name,
+        "slug": profile.slug,
+        "homepage_url": profile.homepage_url,
+        "locale": profile.locale,
+        "current_asset_version": profile.current_asset_version,
+    }
+    try:
+        result = client.table(_PROFILES_TABLE).insert(payload).execute()
+    except Exception as exc:  # noqa: BLE001 — Supabase 예외 형태가 모듈 버전마다 상이
+        if "duplicate" in str(exc).lower() or "unique" in str(exc).lower():
+            raise BrandSlugConflictError(f"slug 중복: {profile.slug!r}") from exc
+        raise
+    rows = result.data or []
+    if not rows:
+        raise RuntimeError("brand_profiles insert: no row returned")
+    return _row_to_profile(cast("dict[str, Any]", rows[0]))
+
+
+class BrandSlugConflictError(Exception):
+    """brand_profiles.slug UNIQUE 충돌."""
+
+
 # ── brand_media_assets ──────────────────────────────────────
 
 

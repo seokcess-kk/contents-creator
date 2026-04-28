@@ -125,6 +125,20 @@ export function listBrands(): Promise<BrandProfile[]> {
   return request("/brands");
 }
 
+export interface BrandRegisterPayload {
+  name: string;
+  slug: string;
+  homepage_url: string;
+  locale?: string;
+}
+
+export function registerBrand(payload: BrandRegisterPayload): Promise<BrandProfile> {
+  return request("/brands", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function listSources(brandId: string): Promise<BrandMessageSource[]> {
   return request(`/brands/${encodeURIComponent(brandId)}/sources`);
 }

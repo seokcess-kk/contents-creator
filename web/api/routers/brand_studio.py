@@ -1,18 +1,19 @@
 """브랜드 스튜디오 API 라우터 — Phase 4.1·4.2 백엔드.
 
-SPEC-BRAND-CARD §14 UX 의 백엔드 진입점. 10 엔드포인트 + X-API-Key 일괄 인증.
+SPEC-BRAND-CARD §14 UX 의 백엔드 진입점. 12 라우트 + X-API-Key 일괄 인증.
 
 흐름:
 1. GET /brands → 브랜드 목록
-2. GET /brands/{id}/sources → 메시지 소스 목록
-3. POST /brands/{id}/sources → 파일 업로드 (multipart) → source_parser → DB 저장
-4. POST /brands/{id}/campaign-inputs → 캠페인 입력 저장 (키워드 + 표현강도 + 제외문구 등)
-5. POST /brands/{id}/plans → orchestrator.generate_card_plan 호출 (LLM 동기, 1~10s)
-6. GET /plans/{group_id} → 기획안 묶음 조회
-7. POST /plans/{plan_id}/approve | /reject → 상태 전이
-8. POST /plans/{group_id}/render → JobManager 통합 비동기 렌더
-9. GET /cards/{group_id} → 결과 보관함 (8 항목)
-10. GET /cards/{group_id}/files/{filename} → 렌더된 PNG 다운로드 (path traversal 방어)
+2. POST /brands → 신규 브랜드 등록 (slug UNIQUE)
+3. GET /brands/{id}/sources → 메시지 소스 목록
+4. POST /brands/{id}/sources → 파일 업로드 (multipart) → source_parser → DB 저장
+5. POST /brands/{id}/campaign-inputs → 캠페인 입력 저장 (키워드 + 표현강도 + 제외문구 등)
+6. POST /brands/{id}/plans → orchestrator.generate_card_plan 호출 (LLM 동기, 1~10s)
+7. GET /plans/{group_id} → 기획안 묶음 조회
+8. POST /plans/{plan_id}/approve | /reject → 상태 전이
+9. POST /plans/{group_id}/render → JobManager 통합 비동기 렌더
+10. GET /cards/{group_id} → 결과 보관함 (8 항목)
+11. GET /cards/{group_id}/files/{filename} → 렌더된 PNG 다운로드 (path traversal 방어)
 
 도메인 격리: 본 라우터는 `application/brand_card_orchestrator` 와 `domain/brand_card/storage`
 만 호출한다. domain 함수를 직접 호출하지 않는다 (오케스트레이션 일관성).
@@ -41,6 +42,7 @@ from domain.brand_card.model import (
     CardCampaignInput,
     StatusTransitionError,
 )
+from domain.brand_card.storage import BrandSlugConflictError
 from web.api.auth import require_api_key
 from web.api.schemas import JobSubmitResponse
 
@@ -110,12 +112,39 @@ class CardArchiveResponse(BaseModel):
     items: list[CardArchiveItem]
 
 
-# ── 1. GET /brands ──────────────────────────────────────────
+# ── 1-2. brands ─────────────────────────────────────────────
 
 
 @router.get("/brands")
 def list_brands() -> list[BrandProfile]:
     return storage.list_brands()
+
+
+class BrandRegisterRequest(BaseModel):
+    """신규 브랜드 등록 입력 — slug 는 UNIQUE."""
+
+    name: str = Field(min_length=1, max_length=120)
+    slug: str = Field(min_length=2, max_length=64, pattern=r"^[a-z0-9][a-z0-9-]*$")
+    homepage_url: str = Field(min_length=1)
+    locale: str = Field(default="ko-KR", max_length=16)
+
+
+@router.post("/brands", status_code=201)
+def register_brand(req: BrandRegisterRequest) -> BrandProfile:
+    """신규 브랜드 등록. slug 중복 시 409, 형식 위반 시 422 (Pydantic)."""
+    if storage.get_brand_by_slug(req.slug) is not None:
+        raise HTTPException(status_code=409, detail=f"slug 중복: {req.slug!r}")
+    profile = BrandProfile(
+        name=req.name,
+        slug=req.slug,
+        homepage_url=req.homepage_url,
+        locale=req.locale,
+    )
+    try:
+        return storage.insert_brand(profile)
+    except BrandSlugConflictError as exc:
+        # 동시성 race — get_brand_by_slug 이후 다른 요청이 먼저 INSERT
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 # ── 2-3. brand sources ──────────────────────────────────────

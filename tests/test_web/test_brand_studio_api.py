@@ -84,7 +84,75 @@ class TestListBrands:
         assert resp.json() == []
 
 
-# ── 2-3. sources ────────────────────────────────────────────
+# ── 2. POST /brands ─────────────────────────────────────────
+
+
+class TestRegisterBrand:
+    def test_creates_brand(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_brand_by_slug", lambda _s: None)
+
+        captured: dict[str, Any] = {}
+
+        def fake_insert(profile: BrandProfile) -> BrandProfile:
+            captured["profile"] = profile
+            return profile.model_copy(update={"id": "brand-new"})
+
+        monkeypatch.setattr(brand_studio.storage, "insert_brand", fake_insert)
+
+        resp = client.post(
+            "/api/brand-studio/brands",
+            json={
+                "name": "신규의원",
+                "slug": "new-clinic",
+                "homepage_url": "https://newclinic.example.com",
+            },
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["id"] == "brand-new"
+        assert body["slug"] == "new-clinic"
+        assert captured["profile"].locale == "ko-KR"
+
+    def test_duplicate_slug_409(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(
+            brand_studio.storage,
+            "get_brand_by_slug",
+            lambda _s: _profile(slug="dup"),
+        )
+        resp = client.post(
+            "/api/brand-studio/brands",
+            json={
+                "name": "중복",
+                "slug": "dup",
+                "homepage_url": "https://dup.example.com",
+            },
+        )
+        assert resp.status_code == 409
+
+    def test_invalid_slug_format_422(self, client: TestClient) -> None:
+        resp = client.post(
+            "/api/brand-studio/brands",
+            json={
+                "name": "X",
+                "slug": "BAD SLUG WITH SPACES",
+                "homepage_url": "https://x.example.com",
+            },
+        )
+        assert resp.status_code == 422
+
+    def test_missing_required_field_422(self, client: TestClient) -> None:
+        resp = client.post(
+            "/api/brand-studio/brands",
+            json={"name": "X", "slug": "x-clinic"},
+        )
+        assert resp.status_code == 422
+
+
+# ── 3-4. sources ────────────────────────────────────────────
 
 
 class TestSources:

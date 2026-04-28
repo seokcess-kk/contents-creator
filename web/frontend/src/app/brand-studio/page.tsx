@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import BrandRegisterDialog from "@/components/BrandRegisterDialog";
 import BrandSourceUpload from "@/components/BrandSourceUpload";
 import {
   listBrands,
@@ -16,6 +17,7 @@ export default function BrandStudioListPage() {
   const [activeBrand, setActiveBrand] = useState<BrandProfile | null>(null);
   const [activeSources, setActiveSources] = useState<BrandMessageSource[]>([]);
   const [sourcesLoading, setSourcesLoading] = useState(false);
+  const [showRegister, setShowRegister] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -57,9 +59,18 @@ export default function BrandStudioListPage() {
           ← 대시보드
         </Link>
         <h1 className="text-base font-bold text-gray-900">브랜드 스튜디오</h1>
-        <span className="text-xs text-gray-500">
-          {brands?.length ?? 0} 브랜드
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500">
+            {brands?.length ?? 0} 브랜드
+          </span>
+          <button
+            type="button"
+            onClick={() => setShowRegister(true)}
+            className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            + 신규 브랜드
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -98,6 +109,15 @@ export default function BrandStudioListPage() {
         <div className="fixed bottom-4 right-4 text-xs bg-gray-900 text-white px-2 py-1 rounded">
           sources 로드 중…
         </div>
+      )}
+
+      {showRegister && (
+        <BrandRegisterDialog
+          onClose={() => setShowRegister(false)}
+          onCreated={(b) => {
+            setBrands((prev) => (prev ? [b, ...prev] : [b]));
+          }}
+        />
       )}
     </div>
   );
@@ -159,8 +179,7 @@ function EmptyState() {
     <div className="border border-dashed border-gray-300 rounded p-6 text-center text-sm text-gray-600 space-y-1">
       <div className="font-semibold text-gray-800">등록된 브랜드가 없습니다</div>
       <div className="text-xs">
-        본 차수에서는 브랜드 등록 UI 가 미구현입니다. Supabase 의 <code>brand_profiles</code>
-        테이블에 직접 시드한 후 새로고침하세요.
+        우측 상단 <strong>+ 신규 브랜드</strong> 버튼으로 첫 브랜드를 등록하세요.
       </div>
     </div>
   );
