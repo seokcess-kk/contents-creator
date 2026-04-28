@@ -71,6 +71,36 @@ class MessageSourceType(StrEnum):
 # ── 기본 모델 ─────────────────────────────────────────
 
 
+class BrandProfile(BaseModel):
+    """brand_profiles 1행 — 브랜드 기본 정보."""
+
+    id: str | None = None
+    name: str
+    slug: str
+    homepage_url: str
+    locale: str = "ko-KR"
+    current_asset_version: int = 1
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class BrandMediaAsset(BaseModel):
+    """brand_media_assets 1행 — 실사 사진 라이브러리."""
+
+    id: str | None = None
+    brand_id: str
+    type: str  # doctor | facility | equipment | cert | other
+    file_path: str
+    file_sha256: str
+    title: str | None = None
+    description: str | None = None
+    orientation: str | None = None
+    width: int | None = None
+    height: int | None = None
+    tags: list[str] = Field(default_factory=list)
+    created_at: datetime | None = None
+
+
 class BrandMessageSource(BaseModel):
     """브랜드 메시지 파일 1건 (txt/docx/pdf/html 추출 후 보관)."""
 
@@ -191,3 +221,54 @@ class ReuseGuardError(BrandCardError):
 
     사용자 override 옵션이 있을 때는 catch 후 무시 가능.
     """
+
+
+class StatusTransitionError(BrandCardError):
+    """허용되지 않은 status 전이 시도 — SPEC §9.3 위반."""
+
+
+# ── 상태 전이도 (SPEC §9.3) ─────────────────────────────
+
+_VALID_STATUS_TRANSITIONS: dict[str, frozenset[str]] = {
+    BrandCardStatus.DRAFT.value: frozenset(
+        {
+            BrandCardStatus.REVIEWED.value,
+            BrandCardStatus.APPROVED.value,
+            BrandCardStatus.REJECTED.value,
+        },
+    ),
+    BrandCardStatus.REVIEWED.value: frozenset(
+        {
+            BrandCardStatus.APPROVED.value,
+            BrandCardStatus.REJECTED.value,
+        },
+    ),
+    BrandCardStatus.APPROVED.value: frozenset(
+        {
+            BrandCardStatus.PUBLISHED.value,
+            BrandCardStatus.REJECTED.value,
+        },
+    ),
+    BrandCardStatus.PUBLISHED.value: frozenset({BrandCardStatus.ARCHIVED.value}),
+    BrandCardStatus.REJECTED.value: frozenset(),
+    BrandCardStatus.ARCHIVED.value: frozenset(),
+}
+
+
+def assert_status_transition(current: str, target: str) -> None:
+    """SPEC §9.3 전이도 검증. 위반 시 StatusTransitionError.
+
+    동일 상태 전이는 idempotent 로 허용 (재호출 안전).
+    """
+    if current == target:
+        return
+    allowed = _VALID_STATUS_TRANSITIONS.get(current)
+    if allowed is None:
+        raise StatusTransitionError(
+            f"알 수 없는 현재 status: {current!r}",
+        )
+    if target not in allowed:
+        raise StatusTransitionError(
+            f"허용되지 않은 전이: {current!r} → {target!r}. "
+            f"허용된 다음 상태: {sorted(allowed) or '(종결 상태)'}",
+        )

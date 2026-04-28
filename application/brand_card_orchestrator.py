@@ -27,14 +27,20 @@ from domain.brand_card import (
     reuse_guard,
     storage,
 )
+from domain.brand_card import (
+    compliance as bc_compliance,
+)
 from domain.brand_card.model import (
     BrandCardError,
     BrandCardPlan,
+    BrandCardStatus,
     CardBlock,
     ExpressionLevel,
     RenderedBrandCard,
     RenderedCardSet,
+    assert_status_transition,
 )
+from domain.compliance.model import ComplianceReport
 
 logger = logging.getLogger(__name__)
 
@@ -120,14 +126,23 @@ def generate_card_plan(
             reuse_check=reuse_check,
             reuse_group_id=group_id,
         )
-        saved = storage.insert_card_plan(plan)
+        # [B7] 컴플라이언스 검증·수정 — plan 저장 전에 적용해 draft 상태부터 안전 텍스트 보장.
+        # 위반 fix 실패 시 plan 은 draft 유지 + source_summary 에 위반 표시 (사용자 판단 위임).
+        fixed_plan, report = bc_compliance.validate_brand_card_plan(plan)
+        fixed_plan = fixed_plan.model_copy(
+            update={"source_summary": _merge_compliance_summary(fixed_plan, report)},
+        )
+        saved = storage.insert_card_plan(fixed_plan)
         plans.append(saved)
         logger.info(
-            "brand_card.plan_generated brand=%s keyword=%r strategy=%s plan_id=%s",
+            "brand_card.plan_generated brand=%s keyword=%r strategy=%s "
+            "plan_id=%s compliance_passed=%s violations=%d",
             brand_id,
             keyword,
             strategy,
             saved.id,
+            report.passed,
+            len(report.violations),
         )
 
     logger.info(
@@ -141,16 +156,29 @@ def generate_card_plan(
 
 
 def approve_plan(plan_id: str) -> BrandCardPlan | None:
-    """[B6] 사용자 승인 — status=draft → approved.
+    """[B6] 사용자 승인 — draft/reviewed → approved.
 
     승인된 plan 만 render_card_set 으로 진행 가능. 비용 게이트.
+    SPEC §9.3 전이도 위반 시 StatusTransitionError.
     """
-    return storage.update_card_status(plan_id, status="approved")
+    return _transition_plan(plan_id, target=BrandCardStatus.APPROVED.value)
 
 
 def reject_plan(plan_id: str) -> BrandCardPlan | None:
-    """사용자 반려 — status=rejected."""
-    return storage.update_card_status(plan_id, status="rejected")
+    """사용자 반려 — draft/reviewed/approved → rejected.
+
+    SPEC §9.3 전이도. published/archived/rejected 상태에서는 호출 금지.
+    """
+    return _transition_plan(plan_id, target=BrandCardStatus.REJECTED.value)
+
+
+def _transition_plan(plan_id: str, *, target: str) -> BrandCardPlan | None:
+    """현재 status fetch → SPEC §9.3 전이 검증 → storage 업데이트."""
+    current = storage.get_card_plan(plan_id)
+    if current is None:
+        return None
+    assert_status_transition(current.status, target)
+    return storage.update_card_status(plan_id, status=target)
 
 
 def render_card_set(
@@ -191,12 +219,23 @@ def render_card_set(
     work_dir = base_dir / "_work"
     cards_dir.mkdir(parents=True, exist_ok=True)
 
+    # [B7] 렌더 직전 최종 컴플라이언스 재검증 — 승인 후 텍스트가 안전한지 보증.
+    # generate 시 1차 통과했어도, 사용자가 수동으로 텍스트를 수정한 케이스 대비.
+    plan_reports: dict[str, ComplianceReport] = {}
+    fixed_plans: list[BrandCardPlan] = []
+    for plan in approved:
+        fixed, report = bc_compliance.validate_brand_card_plan(plan)
+        fixed_plans.append(fixed)
+        if plan.id:
+            plan_reports[plan.id] = report
+
     # [B8.5] AI 이미지 prefetch — 모든 plan 의 ai_image_prompt 블록 일괄
-    image_paths = _prefetch_ai_images(approved, base_dir=base_dir, images_dir=images_dir)
+    image_paths = _prefetch_ai_images(fixed_plans, base_dir=base_dir, images_dir=images_dir)
 
     rendered: list[RenderedBrandCard] = []
-    name = brand_name or approved[0].brand_id
-    for plan in approved:
+    name = brand_name or fixed_plans[0].brand_id
+    for plan in fixed_plans:
+        report = plan_reports.get(plan.id or "")
         rendered.extend(
             _render_plan_blocks(
                 plan=plan,
@@ -206,22 +245,30 @@ def render_card_set(
                 work_dir=work_dir,
                 brand_name=name,
                 brand_url=brand_url,
+                compliance_report=report,
             )
         )
 
     # [B11] manifest 저장
     manifest_path = manifest.write_manifest(
         output_dir=base_dir,
-        brand_id=approved[0].brand_id,
-        keyword=approved[0].keyword,
+        brand_id=fixed_plans[0].brand_id,
+        keyword=fixed_plans[0].keyword,
         cards=rendered,
         generated_at=datetime.now().astimezone(),
     )
 
-    # plan status 전이: approved → published
-    for plan in approved:
-        if plan.id:
-            storage.update_card_status(plan.id, status="published")
+    # plan status 전이: approved → published (compliance_report 함께 저장)
+    for plan in fixed_plans:
+        if not plan.id:
+            continue
+        assert_status_transition(plan.status, BrandCardStatus.PUBLISHED.value)
+        report = plan_reports.get(plan.id)
+        storage.update_card_status(
+            plan.id,
+            status=BrandCardStatus.PUBLISHED.value,
+            compliance_report=_report_to_dict(report) if report else None,
+        )
 
     logger.info(
         "brand_card.render_completed group=%s cards=%d manifest=%s",
@@ -231,8 +278,8 @@ def render_card_set(
     )
     return RenderedCardSet(
         reuse_group_id=reuse_group_id,
-        brand_id=approved[0].brand_id,
-        keyword=approved[0].keyword,
+        brand_id=fixed_plans[0].brand_id,
+        keyword=fixed_plans[0].keyword,
         cards=rendered,
         manifest_path=manifest_path,
     )
@@ -291,9 +338,11 @@ def _render_plan_blocks(
     work_dir: Path,
     brand_name: str,
     brand_url: str | None,
+    compliance_report: ComplianceReport | None = None,
 ) -> list[RenderedBrandCard]:
     """plan 의 각 block 을 1 PNG 로 렌더 후 RenderedBrandCard 리스트 반환."""
     out: list[RenderedBrandCard] = []
+    report_dict = _report_to_dict(compliance_report) if compliance_report else {"passed": True}
     for block_idx, block in enumerate(plan.blocks, start=1):
         image_url = _resolve_image_url(
             block=block,
@@ -326,9 +375,9 @@ def _render_plan_blocks(
                 png_path=png_path,
                 width_px=1080,
                 height_px=1350,
-                compliance_report={"passed": True},  # Phase 3 에서 본격 검사
+                compliance_report=report_dict,
                 reuse_group_id=plan.reuse_group_id,
-                status="published",
+                status=BrandCardStatus.PUBLISHED.value,
             )
         )
     return out
@@ -367,3 +416,18 @@ def _select_strategies(keyword: str, count: int) -> list[str]:
     """
     _ = keyword
     return _STRATEGY_HINTS["default"][:count]
+
+
+def _report_to_dict(report: ComplianceReport) -> dict[str, Any]:
+    """ComplianceReport 를 brand_cards.compliance_report jsonb 형태로 직렬화."""
+    return report.model_dump(mode="json")
+
+
+def _merge_compliance_summary(
+    plan: BrandCardPlan,
+    report: ComplianceReport,
+) -> dict[str, Any]:
+    """plan.source_summary 에 compliance_report 를 병합 — DB 보존용."""
+    summary = dict(plan.source_summary)
+    summary["compliance_report"] = _report_to_dict(report)
+    return summary
