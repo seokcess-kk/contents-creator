@@ -139,6 +139,17 @@ def insert_media_asset(asset: BrandMediaAsset) -> BrandMediaAsset:
     return _row_to_media(cast("dict[str, Any]", rows[0]))
 
 
+def delete_media_asset(asset_id: str) -> bool:
+    """미디어 자산 hard delete. 행이 삭제되면 True, 미존재면 False.
+
+    plan.image_asset_id 가 dangling 되면 UI 가 graceful 처리 (자산 미존재 시
+    `(deleted)` 표시). cascade 정책 결정 사항: Hard delete + UI graceful.
+    """
+    client = get_client()
+    result = client.table(_MEDIA_TABLE).delete().eq("id", asset_id).execute()
+    return bool(result.data)
+
+
 # ── brand_message_sources ───────────────────────────────────
 
 

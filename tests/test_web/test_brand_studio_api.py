@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from domain.brand_card.model import (
     BrandCardPlan,
+    BrandMediaAsset,
     BrandMessageSource,
     BrandProfile,
     CardBlock,
@@ -602,6 +603,233 @@ class TestDownloadCardPng:
         # 차단 케이스
         for bad in ("", ".", "..", "a/b", "a\\b", "a\x00b"):
             assert _is_safe_path_segment(bad) is False, bad
+
+
+# ── 12-16. media-assets ─────────────────────────────────────
+
+
+def _make_png_bytes(width: int = 4, height: int = 4) -> bytes:
+    """테스트용 작은 PNG 바이트 — Pillow 디코드 통과 보장."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    img = Image.new("RGB", (width, height), color=(200, 100, 50))
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _media(asset_id: str = "m-1", **overrides: Any) -> BrandMediaAsset:
+    base: dict[str, Any] = {
+        "id": asset_id,
+        "brand_id": "brand-1",
+        "type": "doctor",
+        "file_path": f"/tmp/{asset_id}.png",
+        "file_sha256": "deadbeef" * 8,
+        "title": "원장 프로필",
+        "width": 800,
+        "height": 600,
+        "orientation": "landscape",
+    }
+    base.update(overrides)
+    return BrandMediaAsset(**base)
+
+
+class TestMediaAssetList:
+    def test_unknown_brand_404(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_brand", lambda _id: None)
+        resp = client.get("/api/brand-studio/brands/missing/media-assets")
+        assert resp.status_code == 404
+
+    def test_returns_assets(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_brand", lambda _id: _profile())
+        monkeypatch.setattr(
+            brand_studio.storage,
+            "list_media_assets",
+            lambda _id: [_media()],
+        )
+        resp = client.get("/api/brand-studio/brands/brand-1/media-assets")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body) == 1
+        assert body[0]["type"] == "doctor"
+
+
+class TestMediaAssetUpload:
+    def test_upload_unknown_brand_404(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_brand", lambda _id: None)
+        resp = client.post(
+            "/api/brand-studio/brands/missing/media-assets",
+            files={"file": ("a.png", b"", "image/png")},
+        )
+        assert resp.status_code == 404
+
+    def test_upload_unsupported_extension_415(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+    ) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_brand", lambda _id: _profile())
+        monkeypatch.setattr(brand_studio, "_ASSET_ROOT", tmp_path)
+        resp = client.post(
+            "/api/brand-studio/brands/brand-1/media-assets",
+            files={"file": ("a.bmp", b"binary", "image/bmp")},
+        )
+        assert resp.status_code == 415
+
+    def test_upload_empty_file_400(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_brand", lambda _id: _profile())
+        resp = client.post(
+            "/api/brand-studio/brands/brand-1/media-assets",
+            files={"file": ("empty.png", b"", "image/png")},
+        )
+        assert resp.status_code == 400
+
+    def test_upload_corrupt_image_422(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+    ) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_brand", lambda _id: _profile())
+        monkeypatch.setattr(brand_studio, "_ASSET_ROOT", tmp_path)
+        resp = client.post(
+            "/api/brand-studio/brands/brand-1/media-assets",
+            files={"file": ("bad.png", b"not-a-png", "image/png")},
+        )
+        assert resp.status_code == 422
+
+    def test_upload_persists_with_dimensions(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+    ) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_brand", lambda _id: _profile())
+        monkeypatch.setattr(brand_studio, "_ASSET_ROOT", tmp_path)
+
+        captured: dict[str, Any] = {}
+
+        def fake_insert(asset: BrandMediaAsset) -> BrandMediaAsset:
+            captured["asset"] = asset
+            return asset.model_copy(update={"id": "m-new"})
+
+        monkeypatch.setattr(brand_studio.storage, "insert_media_asset", fake_insert)
+
+        png = _make_png_bytes(width=400, height=300)
+        resp = client.post(
+            "/api/brand-studio/brands/brand-1/media-assets",
+            files={"file": ("doctor.png", png, "image/png")},
+            data={"asset_type": "doctor", "title": "원장님"},
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["id"] == "m-new"
+        assert body["width"] == 400
+        assert body["height"] == 300
+        assert body["orientation"] == "landscape"
+        assert captured["asset"].type == "doctor"
+        assert captured["asset"].title == "원장님"
+
+
+class TestMediaAssetGet:
+    def test_get_404(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_media_asset", lambda _id: None)
+        resp = client.get("/api/brand-studio/media-assets/missing")
+        assert resp.status_code == 404
+
+    def test_get_returns_asset(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_media_asset", lambda _id: _media())
+        resp = client.get("/api/brand-studio/media-assets/m-1")
+        assert resp.status_code == 200
+        assert resp.json()["title"] == "원장 프로필"
+
+
+class TestMediaAssetDelete:
+    def test_delete_404(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_media_asset", lambda _id: None)
+        resp = client.delete("/api/brand-studio/media-assets/missing")
+        assert resp.status_code == 404
+
+    def test_delete_204(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+    ) -> None:
+        from web.api.routers import brand_studio
+
+        # 디스크 파일 생성 → unlink 동작 검증
+        f = tmp_path / "asset.png"
+        f.write_bytes(b"\x89PNG")
+        monkeypatch.setattr(
+            brand_studio.storage,
+            "get_media_asset",
+            lambda _id: _media(file_path=str(f)),
+        )
+        deleted: dict[str, Any] = {}
+
+        def fake_delete(asset_id: str) -> bool:
+            deleted["id"] = asset_id
+            return True
+
+        monkeypatch.setattr(brand_studio.storage, "delete_media_asset", fake_delete)
+        resp = client.delete("/api/brand-studio/media-assets/m-1")
+        assert resp.status_code == 204
+        assert deleted["id"] == "m-1"
+        assert not f.exists(), "디스크 파일도 삭제되어야 함"
+
+
+class TestMediaAssetDownload:
+    def test_asset_404(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_media_asset", lambda _id: None)
+        resp = client.get("/api/brand-studio/media-assets/missing/file")
+        assert resp.status_code == 404
+
+    def test_disk_missing_404(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(
+            brand_studio.storage,
+            "get_media_asset",
+            lambda _id: _media(file_path="/nope/missing.png"),
+        )
+        resp = client.get("/api/brand-studio/media-assets/m-1/file")
+        assert resp.status_code == 404
+
+    def test_returns_image_with_content_type(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+    ) -> None:
+        from web.api.routers import brand_studio
+
+        png = _make_png_bytes()
+        f = tmp_path / "asset.png"
+        f.write_bytes(png)
+        monkeypatch.setattr(
+            brand_studio.storage,
+            "get_media_asset",
+            lambda _id: _media(file_path=str(f)),
+        )
+        resp = client.get("/api/brand-studio/media-assets/m-1/file")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "image/png"
+        assert resp.content == png
 
 
 # ── 인증 ────────────────────────────────────────────────────

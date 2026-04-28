@@ -157,6 +157,51 @@ export function uploadSource(
   });
 }
 
+export interface BrandMediaAsset {
+  id: string | null;
+  brand_id: string;
+  type: string;
+  file_path: string;
+  file_sha256: string;
+  title: string | null;
+  description: string | null;
+  orientation: string | null;
+  width: number | null;
+  height: number | null;
+  tags?: string[];
+  created_at?: string | null;
+}
+
+export function listMediaAssets(brandId: string): Promise<BrandMediaAsset[]> {
+  return request(`/brands/${encodeURIComponent(brandId)}/media-assets`);
+}
+
+export function uploadMediaAsset(
+  brandId: string,
+  file: File,
+  options: { asset_type: string; title?: string; description?: string },
+): Promise<BrandMediaAsset> {
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("asset_type", options.asset_type);
+  if (options.title) fd.append("title", options.title);
+  if (options.description) fd.append("description", options.description);
+  return request(`/brands/${encodeURIComponent(brandId)}/media-assets`, {
+    method: "POST",
+    body: fd,
+  });
+}
+
+export function deleteMediaAsset(assetId: string): Promise<void> {
+  return request(`/media-assets/${encodeURIComponent(assetId)}`, {
+    method: "DELETE",
+  });
+}
+
+export function buildMediaAssetUrl(assetId: string): string {
+  return `${API_BASE}/media-assets/${encodeURIComponent(assetId)}/file`;
+}
+
 export type CampaignInputPayload = Omit<
   CardCampaignInput,
   "id" | "brand_id" | "created_at"

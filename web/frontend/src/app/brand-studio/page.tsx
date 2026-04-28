@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import BrandMediaLibrary from "@/components/BrandMediaLibrary";
 import BrandRegisterDialog from "@/components/BrandRegisterDialog";
 import BrandSourceUpload from "@/components/BrandSourceUpload";
 import {
@@ -18,6 +19,7 @@ export default function BrandStudioListPage() {
   const [activeSources, setActiveSources] = useState<BrandMessageSource[]>([]);
   const [sourcesLoading, setSourcesLoading] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
+  const [mediaBrand, setMediaBrand] = useState<BrandProfile | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -90,6 +92,7 @@ export default function BrandStudioListPage() {
               key={b.id ?? b.slug}
               brand={b}
               onOpenSources={() => openSourcesDialog(b)}
+              onOpenMedia={() => setMediaBrand(b)}
             />
           ))}
         </div>
@@ -119,6 +122,14 @@ export default function BrandStudioListPage() {
           }}
         />
       )}
+
+      {mediaBrand && mediaBrand.id && (
+        <BrandMediaLibrary
+          brandId={mediaBrand.id}
+          brandName={mediaBrand.name}
+          onClose={() => setMediaBrand(null)}
+        />
+      )}
     </div>
   );
 }
@@ -126,9 +137,11 @@ export default function BrandStudioListPage() {
 function BrandCard({
   brand,
   onOpenSources,
+  onOpenMedia,
 }: {
   brand: BrandProfile;
   onOpenSources: () => void;
+  onOpenMedia: () => void;
 }) {
   const created = brand.created_at
     ? new Date(brand.created_at).toLocaleDateString("ko-KR")
@@ -148,7 +161,7 @@ function BrandCard({
         <div>📅 {created}</div>
         <div>자산 v{brand.current_asset_version}</div>
       </div>
-      <div className="flex gap-2 pt-1">
+      <div className="flex flex-wrap gap-1.5 pt-1">
         {brand.id ? (
           <Link
             href={`/brand-studio/${encodeURIComponent(brand.id)}/new`}
@@ -167,7 +180,15 @@ function BrandCard({
           disabled={!brand.id}
           className="px-2 py-1 text-xs border border-gray-300 text-gray-700 rounded hover:bg-gray-50 disabled:opacity-50"
         >
-          sources 관리
+          sources
+        </button>
+        <button
+          type="button"
+          onClick={onOpenMedia}
+          disabled={!brand.id}
+          className="px-2 py-1 text-xs border border-gray-300 text-gray-700 rounded hover:bg-gray-50 disabled:opacity-50"
+        >
+          미디어
         </button>
       </div>
     </div>

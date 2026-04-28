@@ -1,6 +1,6 @@
-"""브랜드 스튜디오 API 라우터 — Phase 4.1·4.2 백엔드.
+"""브랜드 스튜디오 API 라우터 — Phase 4.1·4.2·후속 백엔드.
 
-SPEC-BRAND-CARD §14 UX 의 백엔드 진입점. 12 라우트 + X-API-Key 일괄 인증.
+SPEC-BRAND-CARD §14 UX 의 백엔드 진입점. 16 라우트 + X-API-Key 일괄 인증.
 
 흐름:
 1. GET /brands → 브랜드 목록
@@ -14,6 +14,11 @@ SPEC-BRAND-CARD §14 UX 의 백엔드 진입점. 12 라우트 + X-API-Key 일괄
 9. POST /plans/{group_id}/render → JobManager 통합 비동기 렌더
 10. GET /cards/{group_id} → 결과 보관함 (8 항목)
 11. GET /cards/{group_id}/files/{filename} → 렌더된 PNG 다운로드 (path traversal 방어)
+12. GET /brands/{id}/media-assets → 미디어 자산 목록 (실사 사진 라이브러리)
+13. POST /brands/{id}/media-assets → 이미지 업로드 (multipart, Pillow 검증)
+14. GET /media-assets/{id} → 자산 메타 단건
+15. DELETE /media-assets/{id} → hard delete (plan.image_asset_id dangling UI graceful)
+16. GET /media-assets/{id}/file → 이미지 파일 (img src 미리보기·다운로드)
 
 도메인 격리: 본 라우터는 `application/brand_card_orchestrator` 와 `domain/brand_card/storage`
 만 호출한다. domain 함수를 직접 호출하지 않는다 (오케스트레이션 일관성).
@@ -27,7 +32,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -37,6 +42,7 @@ from domain.brand_card import source_parser, storage
 from domain.brand_card.model import (
     BrandCardError,
     BrandCardPlan,
+    BrandMediaAsset,
     BrandMessageSource,
     BrandProfile,
     CardCampaignInput,
@@ -404,6 +410,143 @@ def _is_safe_path_segment(segment: str) -> bool:
     if "/" in segment or "\\" in segment or "\x00" in segment:
         return False
     return Path(segment).name == segment
+
+
+# ── 12-16. media-assets (미디어 자산 라이브러리) ───────────
+
+
+_ALLOWED_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
+
+
+@router.get("/brands/{brand_id}/media-assets")
+def list_media_assets(brand_id: str) -> list[BrandMediaAsset]:
+    if storage.get_brand(brand_id) is None:
+        raise HTTPException(status_code=404, detail="Brand not found")
+    return storage.list_media_assets(brand_id)
+
+
+@router.post("/brands/{brand_id}/media-assets", status_code=201)
+async def upload_media_asset(
+    brand_id: str,
+    file: UploadFile = File(...),  # noqa: B008
+    asset_type: str = Form("other"),
+    title: str | None = Form(None),
+    description: str | None = Form(None),
+) -> BrandMediaAsset:
+    """이미지 업로드 → Pillow 검증 → output/brand_assets/{id}/media/{sha256}{ext}.
+
+    asset_type: doctor / facility / equipment / cert / other (free-text, model 주석 참조).
+    """
+    if storage.get_brand(brand_id) is None:
+        raise HTTPException(status_code=404, detail="Brand not found")
+
+    file_name = file.filename or "upload.bin"
+    safe_name = _sanitize_filename(file_name)
+    suffix = Path(safe_name).suffix.lower()
+    if suffix not in _ALLOWED_IMAGE_SUFFIXES:
+        raise HTTPException(
+            status_code=415,
+            detail=f"지원되지 않는 이미지 형식: {suffix!r} (허용: jpg/jpeg/png/webp)",
+        )
+
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Empty file")
+
+    width, height = _validate_and_size(raw)
+
+    digest = hashlib.sha256(raw).hexdigest()
+    save_dir = _ASSET_ROOT / brand_id / "media"
+    save_dir.mkdir(parents=True, exist_ok=True)
+    save_path = save_dir / f"{digest}{suffix}"
+    save_path.write_bytes(raw)
+
+    record = BrandMediaAsset(
+        brand_id=brand_id,
+        type=asset_type,
+        file_path=str(save_path),
+        file_sha256=digest,
+        title=title,
+        description=description,
+        orientation=_orientation_label(width, height),
+        width=width,
+        height=height,
+    )
+    return storage.insert_media_asset(record)
+
+
+@router.get("/media-assets/{asset_id}")
+def get_media_asset(asset_id: str) -> BrandMediaAsset:
+    asset = storage.get_media_asset(asset_id)
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    return asset
+
+
+@router.delete("/media-assets/{asset_id}", status_code=204)
+def delete_media_asset(asset_id: str) -> Response:
+    """Hard delete. 디스크 파일도 best-effort 삭제. 미존재 → 404."""
+    asset = storage.get_media_asset(asset_id)
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    storage.delete_media_asset(asset_id)
+    try:
+        Path(asset.file_path).unlink(missing_ok=True)
+    except OSError:
+        # 디스크 삭제 실패는 데이터 정합성에 영향 없음 (DB 행은 이미 사라짐)
+        logger.warning("media_asset.disk_unlink_failed path=%s", asset.file_path)
+    return Response(status_code=204)
+
+
+@router.get("/media-assets/{asset_id}/file")
+def download_media_asset(asset_id: str) -> FileResponse:
+    """이미지 파일 응답 — img src 또는 다운로드. 디스크 파일 미존재 → 404."""
+    asset = storage.get_media_asset(asset_id)
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    path = Path(asset.file_path)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Asset file missing on disk")
+    suffix = path.suffix.lower().lstrip(".")
+    media_type = {
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "png": "image/png",
+        "webp": "image/webp",
+    }.get(
+        suffix,
+        "application/octet-stream",
+    )
+    return FileResponse(path=str(path), media_type=media_type, filename=path.name)
+
+
+def _validate_and_size(raw: bytes) -> tuple[int, int]:
+    """Pillow 로 이미지 디코드 + 크기 추출. 디코드 실패 시 422."""
+    from io import BytesIO
+
+    try:
+        from PIL import Image, UnidentifiedImageError
+
+        with Image.open(BytesIO(raw)) as img:
+            img.verify()
+        with Image.open(BytesIO(raw)) as img:
+            return int(img.width), int(img.height)
+    except UnidentifiedImageError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="이미지 디코드 실패 (손상된 파일이거나 지원되지 않는 형식)",
+        ) from exc
+    except Exception as exc:  # noqa: BLE001 — Pillow 다양한 예외
+        raise HTTPException(status_code=422, detail=f"이미지 검증 실패: {exc}") from exc
+
+
+def _orientation_label(width: int, height: int) -> str:
+    """가로/세로/정사각 라벨 — 카드 templates 가 적합한 자산 선택용."""
+    if width > height * 1.1:
+        return "landscape"
+    if height > width * 1.1:
+        return "portrait"
+    return "square"
 
 
 # ── 헬퍼 ────────────────────────────────────────────────────

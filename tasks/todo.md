@@ -700,7 +700,8 @@
 - [x] PNG 정적 다운로드 라우트 — `GET /brand-studio/cards/{group}/files/{name}` (path traversal 방어 + FileResponse) + archive 페이지 썸네일·다운로드 링크 (2026-04-29)
 - [x] 브랜드 등록 UI + `POST /brands` 백엔드 — slug UNIQUE 충돌 409, Pydantic regex 422, 자동 slug 제안 + slugTouched 토글, BrandRegisterDialog (2026-04-29)
 - [x] E2E smoke test 체크리스트 — `docs/brand-studio-e2e-checklist.md` (S1~S7, 알려진 한계, 회귀 발견 절차) (2026-04-29)
-- [ ] `brand_media_assets` 미디어 라이브러리 UI
+- [x] `brand_media_assets` 미디어 라이브러리 (CRUD) — 5 백엔드 라우트(list/upload/get/delete/download) + Pillow 이미지 검증 + width/height 자동 추출 + orientation 라벨 + Hard delete + UI graceful + BrandMediaLibrary 컴포넌트 (그리드 + 업로드 + 삭제) (2026-04-29)
+  - 카드 생성 폼 ⑦ 통합은 별도 차수 (CardCampaignInput 필드 추가 + plan_generator image_asset_id 사용)
 - [ ] approve/reject 외 3 액션(문구 수정 / 사진 교체 / 전략 변경) 백엔드 PATCH 라우트
 - [ ] frontend 테스트 프레임워크 (vitest + Testing Library)
 
