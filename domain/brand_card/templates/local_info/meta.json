@@ -1,0 +1,15 @@
+{
+  "template_id": "local_info",
+  "name": "Local Info",
+  "description": "지역/위치/생활권 강조 — forest green/cream. 동네 친화적이고 자연스러운 톤.",
+  "supported_card_types": [
+    "hero",
+    "problem",
+    "solution",
+    "differentiator",
+    "process",
+    "trust_closing"
+  ],
+  "width_px": 1080,
+  "height_px": 1350
+}

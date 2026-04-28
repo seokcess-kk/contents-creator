@@ -562,11 +562,12 @@
 - [x] `templates/clinic_trust/style.css` — Pretendard @font-face (PRETENDARD_URL placeholder), card_type 별 미세 조정 (problem=red tag, solution=green, process=numbered list, hero=84px headline)
 - [x] `templates/clinic_trust/card.html.j2` — Jinja2, 6 card_type 분기, data-text-block 속성으로 overflow 검출 표시
 - [x] `tests/test_brand_card/test_template_registry.py` — 6 시나리오 (load/files exist/unknown raise/list/compat/all six types)
-- [ ] 나머지 3 템플릿 (diet_empathy/process_guide/local_info) — Phase 2.5 직전 또는 사용자 시안 후
-  - **2026-04-29 시안 가용성 확인 결과**: `domain/brand_card/templates/` 에 `clinic_trust` 1종만 존재 (card.html.j2 72줄, style.css 197줄, meta.json). 3 종 디자인 시안·의도 정의 부재로 코드 진행 블로킹. 진행 옵션:
-    - (a) 사용자가 Figma/PNG/HTML mock-up 제공
-    - (b) Claude `frontend-design` 스킬로 짧은 설명 기반 자동 프로토타이핑 (D4 결정)
-    - (c) `clinic_trust` 색상·레이아웃 변형으로 단순 파생 3종 (디자인 의도 추후 보강)
+- [x] 나머지 3 템플릿 (diet_empathy/process_guide/local_info) — clinic_trust 패턴 기반 자체 프로토타이핑 (a+b 조합) (2026-04-29)
+  - `diet_empathy` — warm coral (#E76F51 / #FCD5CE / #FFF8F4), 다이어트 공감형, 친근한 라벨 ("이런 고민" / "함께 풀어요" 등)
+  - `process_guide` — muted teal (#2A9D8F / #E9F5F4 / #1F2D2C), 단계 강조, → 화살표 마커, process step 56px box
+  - `local_info` — forest green (#2C5F2D / #FAEBD7 / #FFF8E7), CSS 위치 핀 아이콘, 다이아몬드 마커, 동네 친화 라벨
+  - 4종 parametrize 회귀 테스트: 21 passed (load/files/meta_human_fields/all_p1_card_types)
+  - **사용자 디자인 피드백 시 색상/라벨/디테일 조정** — 시안 또는 단순 컨펌 제공 시 후속 차수에서 반영
 
 ### Phase 2.2 ✅ Playwright PNG 렌더러 + overflow 검출
 - [x] `domain/brand_card/renderer.py` — sync API (G3=A), 1080×1350 viewport

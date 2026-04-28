@@ -1,0 +1,15 @@
+{
+  "template_id": "diet_empathy",
+  "name": "Diet Empathy",
+  "description": "다이어트 고민 공감형 — 따뜻한 코랄/크림 팔레트, 친근한 톤. 사용자 마음에 다가가는 메시지 중심.",
+  "supported_card_types": [
+    "hero",
+    "problem",
+    "solution",
+    "differentiator",
+    "process",
+    "trust_closing"
+  ],
+  "width_px": 1080,
+  "height_px": 1350
+}

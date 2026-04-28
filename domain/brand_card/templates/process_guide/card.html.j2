@@ -1,0 +1,65 @@
+{#
+  Process Guide 단일 카드 템플릿. CardBlock 1개를 받아 1080×1350 PNG 1장 렌더.
+  clinic_trust 와 동일 변수 인터페이스. 톤은 단계 안내·정돈된 흐름.
+#}<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="card card--{{ block.card_type }}">
+
+    <header class="card__brand-band" data-text-block="brand">
+      {{ brand_name }}
+    </header>
+
+    <main class="card__main">
+      <span class="card__type-tag" data-text-block="type-tag">
+        {%- if block.card_type == "hero" -%}안내
+        {%- elif block.card_type == "problem" -%}체크포인트
+        {%- elif block.card_type == "solution" -%}솔루션
+        {%- elif block.card_type == "differentiator" -%}포인트
+        {%- elif block.card_type == "process" -%}단계 안내
+        {%- elif block.card_type == "trust_closing" -%}마무리
+        {%- else -%}{{ block.card_type }}{%- endif -%}
+      </span>
+
+      <h1 class="card__headline {% if block.headline|length > 16 %}card__headline--small{% endif %}"
+          data-text-block="headline">
+        {{ block.headline }}
+      </h1>
+
+      {% if block.subcopy %}
+      <p class="card__subcopy" data-text-block="subcopy">{{ block.subcopy }}</p>
+      {% endif %}
+
+      {% if block.bullets %}
+      <ul class="card__bullets" data-text-block="bullets">
+        {% for bullet in block.bullets %}
+        <li>{{ bullet }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+
+      {% if image_url %}
+      <div class="card__image-area">
+        <img src="{{ image_url }}" alt="">
+      </div>
+      {% else %}
+      <div class="card__image-area">
+        <span class="card__image-placeholder">IMAGE</span>
+      </div>
+      {% endif %}
+    </main>
+
+    <footer class="card__footer">
+      <span class="card__footer-brand">{{ brand_name }}</span>
+      {% if brand_url %}
+      <span>{{ brand_url }}</span>
+      {% endif %}
+    </footer>
+
+  </div>
+</body>
+</html>

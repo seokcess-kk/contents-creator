@@ -1,0 +1,15 @@
+{
+  "template_id": "process_guide",
+  "name": "Process Guide",
+  "description": "상담/처방/관리 흐름 — muted teal/light gray. 단계와 정돈된 동선 강조.",
+  "supported_card_types": [
+    "hero",
+    "problem",
+    "solution",
+    "differentiator",
+    "process",
+    "trust_closing"
+  ],
+  "width_px": 1080,
+  "height_px": 1350
+}

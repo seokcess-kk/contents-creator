@@ -1,0 +1,232 @@
+/* Local Info 템플릿 — 지역/위치/생활권 (forest green / cream / earth).
+
+   폰트: Pretendard Variable (assets/fonts/Pretendard-Regular.woff2 G4=B 경로). */
+
+@font-face {
+  font-family: "Pretendard";
+  src: url("PRETENDARD_URL") format("woff2");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: block;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 1080px;
+  height: 1350px;
+  font-family:
+    "Pretendard", -apple-system, BlinkMacSystemFont, system-ui,
+    "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  font-feature-settings: "ss03", "tnum";
+  background: #fff8e7;
+  color: #1a3a1b;
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.01em;
+}
+
+.card {
+  width: 1080px;
+  height: 1350px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  background: #fff8e7;
+}
+
+.card__brand-band {
+  height: 96px;
+  padding: 0 64px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: #2c5f2d;
+  color: #f8f4e5;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* 위치 핀 — CSS 만으로 구현 (텍스트·이모지 사용 X). */
+.card__brand-pin {
+  width: 18px;
+  height: 24px;
+  background: #f8f4e5;
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.card__brand-pin::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  background: #2c5f2d;
+  border-radius: 50%;
+  transform: translate(-50%, -60%);
+}
+
+.card__main {
+  flex: 1;
+  padding: 80px 80px 56px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.card__type-tag {
+  display: inline-block;
+  padding: 8px 22px;
+  border-radius: 4px;
+  background: #faebd7;
+  color: #2c5f2d;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  align-self: flex-start;
+  border: 1px solid #d4c4a8;
+}
+
+.card__headline {
+  font-size: 72px;
+  font-weight: 700;
+  line-height: 1.18;
+  color: #1a3a1b;
+}
+
+.card__headline--small {
+  font-size: 56px;
+}
+
+.card__subcopy {
+  font-size: 30px;
+  font-weight: 400;
+  line-height: 1.55;
+  color: #4a5e3a;
+}
+
+.card__bullets {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-top: 12px;
+}
+
+.card__bullets li {
+  position: relative;
+  padding-left: 40px;
+  font-size: 28px;
+  line-height: 1.5;
+  color: #233a23;
+}
+
+.card__bullets li::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 14px;
+  width: 14px;
+  height: 14px;
+  background: #2c5f2d;
+  transform: rotate(45deg);
+}
+
+.card__image-area {
+  flex: 1;
+  margin-top: 16px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #ede4cc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #d4c4a8;
+}
+
+.card__image-area img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
+.card__image-placeholder {
+  font-size: 22px;
+  color: #6e7a4a;
+  letter-spacing: 0.05em;
+}
+
+.card__footer {
+  height: 84px;
+  padding: 0 64px;
+  background: #faebd7;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 22px;
+  color: #4a5e3a;
+  border-top: 1px solid #d4c4a8;
+}
+
+.card__footer-brand {
+  font-weight: 600;
+  color: #2c5f2d;
+}
+
+/* card_type 별 미세 조정 */
+.card--hero .card__headline {
+  font-size: 84px;
+}
+
+.card--problem .card__type-tag {
+  background: #f8e4d4;
+  color: #8a3a1f;
+  border-color: #d4a082;
+}
+
+.card--solution .card__type-tag {
+  background: #e8f0d8;
+  color: #355c1f;
+  border-color: #b8c89e;
+}
+
+.card--differentiator .card__type-tag {
+  background: #f0e0c8;
+  color: #6a4a17;
+  border-color: #c8b48a;
+}
+
+.card--process .card__bullets {
+  counter-reset: step;
+}
+
+.card--process .card__bullets li {
+  padding-left: 60px;
+}
+
+.card--process .card__bullets li::before {
+  counter-increment: step;
+  content: counter(step);
+  background: #2c5f2d;
+  color: #f8f4e5;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 600;
+  top: 4px;
+  transform: none;
+}

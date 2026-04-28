@@ -1,0 +1,217 @@
+/* Process Guide 템플릿 — 상담/처방/관리 흐름 (muted teal / light gray).
+
+   폰트: Pretendard Variable (assets/fonts/Pretendard-Regular.woff2 G4=B 경로). */
+
+@font-face {
+  font-family: "Pretendard";
+  src: url("PRETENDARD_URL") format("woff2");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: block;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 1080px;
+  height: 1350px;
+  font-family:
+    "Pretendard", -apple-system, BlinkMacSystemFont, system-ui,
+    "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  font-feature-settings: "ss03", "tnum";
+  background: #ffffff;
+  color: #1f2d2c;
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.01em;
+}
+
+.card {
+  width: 1080px;
+  height: 1350px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.card__brand-band {
+  height: 96px;
+  padding: 0 64px;
+  display: flex;
+  align-items: center;
+  background: #2a9d8f;
+  color: #ffffff;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border-bottom: 4px solid #1c6d63;
+}
+
+.card__main {
+  flex: 1;
+  padding: 80px 80px 56px;
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+.card__type-tag {
+  display: inline-block;
+  padding: 8px 22px;
+  border-radius: 6px;
+  background: #e9f5f4;
+  color: #1c6d63;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  align-self: flex-start;
+}
+
+.card__headline {
+  font-size: 70px;
+  font-weight: 700;
+  line-height: 1.18;
+  color: #1f2d2c;
+}
+
+.card__headline--small {
+  font-size: 54px;
+}
+
+.card__subcopy {
+  font-size: 30px;
+  font-weight: 400;
+  line-height: 1.55;
+  color: #4a5e5d;
+}
+
+.card__bullets {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 8px;
+}
+
+.card__bullets li {
+  position: relative;
+  padding-left: 40px;
+  font-size: 28px;
+  line-height: 1.5;
+  color: #233634;
+}
+
+.card__bullets li::before {
+  content: "→";
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: 28px;
+  color: #2a9d8f;
+  font-weight: 700;
+}
+
+.card__image-area {
+  flex: 1;
+  margin-top: 16px;
+  border: 2px solid #e9f5f4;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #f4f7f7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card__image-area img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
+.card__image-placeholder {
+  font-size: 22px;
+  color: #6c8585;
+  letter-spacing: 0.05em;
+}
+
+.card__footer {
+  height: 84px;
+  padding: 0 64px;
+  background: #f4f7f7;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 22px;
+  color: #4a5e5d;
+  border-top: 1px solid #d6e6e4;
+}
+
+.card__footer-brand {
+  font-weight: 600;
+  color: #1c6d63;
+}
+
+/* card_type 별 미세 조정 */
+.card--hero .card__headline {
+  font-size: 82px;
+}
+
+.card--problem .card__type-tag {
+  background: #fde9e6;
+  color: #a83a2a;
+}
+
+.card--solution .card__type-tag {
+  background: #e1f0e6;
+  color: #1f6d3a;
+}
+
+.card--differentiator .card__type-tag {
+  background: #fff4d6;
+  color: #806017;
+}
+
+.card--process .card__type-tag {
+  background: #1c6d63;
+  color: #ffffff;
+}
+
+/* process card_type 은 단계 강조 — 숫자 step 큼 */
+.card--process .card__bullets {
+  counter-reset: step;
+  gap: 22px;
+  margin-top: 16px;
+}
+
+.card--process .card__bullets li {
+  padding-left: 78px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  min-height: 56px;
+}
+
+.card--process .card__bullets li::before {
+  counter-increment: step;
+  content: counter(step);
+  background: #2a9d8f;
+  color: #ffffff;
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: 700;
+  top: 0;
+  border: 3px solid #1c6d63;
+}
