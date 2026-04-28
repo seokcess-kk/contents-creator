@@ -1,0 +1,15 @@
+{
+  "template_id": "clinic_trust",
+  "name": "Clinic Trust",
+  "description": "신뢰형 — 의료진/시설/진료 원칙 중심. 차분한 네이비 + 화이트 팔레트.",
+  "supported_card_types": [
+    "hero",
+    "problem",
+    "solution",
+    "differentiator",
+    "process",
+    "trust_closing"
+  ],
+  "width_px": 1080,
+  "height_px": 1350
+}

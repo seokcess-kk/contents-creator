@@ -1,0 +1,197 @@
+/* Clinic Trust 템플릿 — 신뢰형 네이비/화이트.
+
+   폰트: Pretendard Variable (assets/fonts/Pretendard-Regular.woff2 G4=B 경로).
+   렌더러가 file:// URL 로 임베딩 — placeholder PRETENDARD_URL 가 변환 시 치환됨. */
+
+@font-face {
+  font-family: "Pretendard";
+  src: url("PRETENDARD_URL") format("woff2");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: block;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 1080px;
+  height: 1350px;
+  font-family:
+    "Pretendard", -apple-system, BlinkMacSystemFont, system-ui,
+    "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  font-feature-settings: "ss03", "tnum";
+  background: #ffffff;
+  color: #0f1f3a;
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.01em;
+}
+
+.card {
+  width: 1080px;
+  height: 1350px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+.card__brand-band {
+  height: 96px;
+  padding: 0 64px;
+  display: flex;
+  align-items: center;
+  background: #0f3d8a;
+  color: #ffffff;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.card__main {
+  flex: 1;
+  padding: 80px 80px 56px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.card__type-tag {
+  display: inline-block;
+  padding: 8px 20px;
+  border-radius: 999px;
+  background: #e8eef9;
+  color: #0f3d8a;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  align-self: flex-start;
+}
+
+.card__headline {
+  font-size: 72px;
+  font-weight: 700;
+  line-height: 1.18;
+  color: #0f1f3a;
+}
+
+.card__headline--small {
+  font-size: 56px;
+}
+
+.card__subcopy {
+  font-size: 30px;
+  font-weight: 400;
+  line-height: 1.55;
+  color: #44546b;
+}
+
+.card__bullets {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-top: 12px;
+}
+
+.card__bullets li {
+  position: relative;
+  padding-left: 36px;
+  font-size: 28px;
+  line-height: 1.5;
+  color: #1d2c45;
+}
+
+.card__bullets li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 16px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #0f3d8a;
+}
+
+.card__image-area {
+  flex: 1;
+  margin-top: 16px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #f0f3f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card__image-area img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
+.card__image-placeholder {
+  font-size: 22px;
+  color: #8493ad;
+  letter-spacing: 0.05em;
+}
+
+.card__footer {
+  height: 84px;
+  padding: 0 64px;
+  background: #f6f7fa;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 22px;
+  color: #5a6b88;
+}
+
+.card__footer-brand {
+  font-weight: 600;
+  color: #0f3d8a;
+}
+
+/* card_type 별 미세 조정 */
+.card--hero .card__headline {
+  font-size: 84px;
+}
+
+.card--problem .card__type-tag {
+  background: #fdecea;
+  color: #b03a2e;
+}
+
+.card--solution .card__type-tag {
+  background: #e6f4ea;
+  color: #1e7a3a;
+}
+
+.card--process .card__bullets {
+  counter-reset: step;
+}
+
+.card--process .card__bullets li {
+  padding-left: 60px;
+}
+
+.card--process .card__bullets li::before {
+  counter-increment: step;
+  content: counter(step);
+  background: #0f3d8a;
+  color: #ffffff;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 600;
+  top: 4px;
+}

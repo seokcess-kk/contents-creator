@@ -556,15 +556,22 @@
 - [x] 자산 fetch (campaign + attached + brand) → asset_merge → reuse_guard → plan_generator 통합 흐름
 - [x] `tests/test_application/test_brand_card_orchestrator.py` — 8 시나리오 (N variants / shared group_id / invalid count / strategy mapping / storage insert / approve / reject / render placeholder)
 
-### Phase 2.1 (TODO) — 템플릿 4종 HTML/CSS
-- [ ] `domain/brand_card/template_registry.py` — 템플릿 메타·호환성 검증
-- [ ] `domain/brand_card/templates/clinic_trust/` (index.html.j2 + style.css + meta.json)
-- [ ] 나머지 3 템플릿 (Phase 2.1.2 이후)
+### Phase 2.1 ✅ 템플릿 1종 (clinic_trust) + template_registry
+- [x] `template_registry.py` — TemplateMeta dataclass + get_template + list_templates + validate_card_type_compat
+- [x] `templates/clinic_trust/meta.json` — 1080×1350, 6 card_types 모두 지원, 신뢰형 네이비/화이트 팔레트
+- [x] `templates/clinic_trust/style.css` — Pretendard @font-face (PRETENDARD_URL placeholder), card_type 별 미세 조정 (problem=red tag, solution=green, process=numbered list, hero=84px headline)
+- [x] `templates/clinic_trust/card.html.j2` — Jinja2, 6 card_type 분기, data-text-block 속성으로 overflow 검출 표시
+- [x] `tests/test_brand_card/test_template_registry.py` — 6 시나리오 (load/files exist/unknown raise/list/compat/all six types)
+- [ ] 나머지 3 템플릿 (diet_empathy/process_guide/local_info) — Phase 2.5 직전 또는 사용자 시안 후
 
-### Phase 2.2 (TODO) — Playwright PNG 렌더러 + overflow 검출
-- [ ] `domain/brand_card/renderer.py` — Playwright sync 세션 + 1080×1350 viewport
-- [ ] overflow 검출 (Playwright `page.evaluate()` — M6)
-- [ ] PNG `tEXt` metadata 삽입
+### Phase 2.2 ✅ Playwright PNG 렌더러 + overflow 검출
+- [x] `domain/brand_card/renderer.py` — sync API (G3=A), 1080×1350 viewport
+- [x] `_prepare_html` — Jinja2 렌더 + style.css PRETENDARD_URL → file:// 치환 (G4=B, assets/fonts/Pretendard-Regular.woff2)
+- [x] `_render_with_playwright` — file:// 로딩 + document.fonts.ready 대기 + page.evaluate() overflow 검출 + screenshot
+- [x] M6: overflow 검출 시 `TextOverflowError` raise (data-text-block 별 scrollW/H 비교)
+- [x] `RenderContext` 데이터클래스 (block + brand_name + brand_url + image_url)
+- [x] `cleanup_work_dir` — 디버깅 후 임시 정리
+- [x] `tests/test_brand_card/test_renderer.py` — 11 시나리오 (HTML/CSS 작성 / 폰트 placeholder 치환 / 이미지 URL 임베드 / placeholder / card_type class / data-text-block / subcopy 생략 / overflow raise / mock screenshot / cleanup)
 
 ### Phase 2.3 (TODO) — AI 이미지 prefetch ([B8.5])
 - [ ] `application/brand_card_orchestrator` 에 [B8.5] 단계 추가
