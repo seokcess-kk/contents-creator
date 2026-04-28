@@ -1,16 +1,19 @@
 """재발행 use case — 파이프라인 트리거 + DB 잠금 + 부모 상태 전이.
 
-흐름:
+흐름 (P0-1 재정렬: 액션 기록을 부모 상태 전이 앞으로 이동):
 1. 부모 publication 의 active republish job 존재 시 RuntimeError (DB unique 제약)
 2. draft publication 자동 생성 (url=None, parent 연결, workflow=draft)
 3. job_manager 에 pipeline job 제출 (12-hex job_id)
 4. republish_jobs row INSERT — 위 두 단계 연결
-5. 부모 publication.workflow_status = republishing, republishing_started_at = now
-6. publication_actions.republished 히스토리 기록
+5. publication_actions.republished 히스토리 기록 (실패 시 raise — 부모 상태 미전이)
+6. 부모 publication.workflow_status = republishing, republishing_started_at = now
 
 🔴 데이터 정합성:
 - 같은 source_publication_id 에 active(queued/running) job 1개만 — DB partial unique
-- republish_jobs INSERT 실패 → draft publication 도 정리해야 하지만 v1 에선 best-effort
+- 액션 기록(5) 실패 시 부모 상태(6) 는 그대로 active → 사용자 재시도 시 unique
+  위반으로 "이미 진행 중" 에러 (기존 draft + republish_jobs 유지)
+- republish_jobs INSERT 실패 → draft publication cleanup (구현됨)
+- 진정한 atomicity 는 Supabase RPC 로만 가능 — P1 에서 RPC 도입 검토
 """
 
 from __future__ import annotations
@@ -85,21 +88,21 @@ def start_republish(
             ) from exc
         raise
 
-    # 4) 부모 status 전이 + republishing_started_at 기록
-    started_at = datetime.now(tz=UTC)
-    ranking_storage.update_publication_workflow_state(
-        source_publication_id,
-        workflow_status="republishing",
-        republishing_started_at=started_at,
-    )
-
-    # 5) publication_actions 히스토리 (best-effort)
+    # 5) publication_actions 히스토리 — 실패 시 raise → 부모 status 미전이
     _record_republished_action(
         source_publication_id=source_publication_id,
         diagnosis_id=diagnosis_id,
         new_publication_id=new_pub.id,
         pipeline_job_id=pipeline_job_id,
         strategy=strategy,
+    )
+
+    # 6) 부모 status 전이 + republishing_started_at 기록
+    started_at = datetime.now(tz=UTC)
+    ranking_storage.update_publication_workflow_state(
+        source_publication_id,
+        workflow_status="republishing",
+        republishing_started_at=started_at,
     )
 
     logger.info(
@@ -168,29 +171,22 @@ def _record_republished_action(
     pipeline_job_id: str,
     strategy: str,
 ) -> None:
+    """publication_actions 히스토리 — 실패 시 raise (single source of truth)."""
     from domain.ranking import publication_actions as actions_storage
 
-    try:
-        actions_storage.insert_action(
-            PublicationAction(
-                publication_id=source_publication_id,
-                diagnosis_id=diagnosis_id,
-                action="republished",
-                note=f"재발행 시작 ({strategy})",
-                metadata={
-                    "new_publication_id": new_publication_id,
-                    "pipeline_job_id": pipeline_job_id,
-                    "strategy": strategy,
-                },
-            )
+    actions_storage.insert_action(
+        PublicationAction(
+            publication_id=source_publication_id,
+            diagnosis_id=diagnosis_id,
+            action="republished",
+            note=f"재발행 시작 ({strategy})",
+            metadata={
+                "new_publication_id": new_publication_id,
+                "pipeline_job_id": pipeline_job_id,
+                "strategy": strategy,
+            },
         )
-    except Exception:
-        logger.warning(
-            "republish.action_log_failed source=%s job=%s",
-            source_publication_id,
-            pipeline_job_id,
-            exc_info=True,
-        )
+    )
 
 
 def update_republish_job_status(
@@ -201,7 +197,8 @@ def update_republish_job_status(
 ) -> int:
     """파이프라인 job 상태 변화를 republish_jobs 에 동기화.
 
-    job_manager 의 finished 콜백에서 호출 예정. 영향 행 수 반환.
+    job_manager 의 finished 콜백(`on_pipeline_job_finished`)에서 호출.
+    영향 행 수 반환 (해당 pipeline_job_id 가 republish 가 아니면 0).
     """
     if status not in ("queued", "running", "completed", "failed"):
         raise ValueError(f"status 는 queued/running/completed/failed: {status!r}")
@@ -218,3 +215,99 @@ def update_republish_job_status(
         .execute()
     )
     return len(cast("list[Any]", result.data or []))
+
+
+# job 상태(succeeded/failed/cancelled/timed_out) → republish_jobs 상태 매핑
+_JOB_STATUS_TO_REPUBLISH_STATUS = {
+    "succeeded": "completed",
+    "failed": "failed",
+    "cancelled": "failed",
+    "timed_out": "failed",
+}
+
+
+def on_pipeline_job_finished(job: Any) -> None:
+    """job_manager 의 종료 훅. pipeline job 이 republish 와 연결되어 있으면 동기화.
+
+    1. republish_jobs status 갱신 (queued/running → completed/failed)
+    2. failed/cancelled/timed_out 인 경우 부모 publication 을 자동 큐 복귀
+       (workflow_status: republishing → action_required) — 사용자가 다시
+       시도하거나 다른 액션을 취할 수 있도록.
+    """
+    if job.type != "pipeline":
+        return
+    new_status = _JOB_STATUS_TO_REPUBLISH_STATUS.get(job.status)
+    if new_status is None:
+        return  # pending/running 등 종료 외 상태는 무시
+    affected = update_republish_job_status(job.id, new_status)
+    if affected == 0:
+        return  # 일반 파이프라인 job (재발행 아님) — 종료
+    if new_status == "failed":
+        _auto_requeue_failed_republish(job.id)
+
+
+def _auto_requeue_failed_republish(pipeline_job_id: str) -> None:
+    """실패한 재발행 job 의 부모를 큐로 복귀시킨다."""
+    from application.publication_actions_orchestrator import auto_requeue
+
+    client = get_client()
+    result = (
+        client.table(_REPUBLISH_JOBS_TABLE)
+        .select("source_publication_id")
+        .eq("pipeline_job_id", pipeline_job_id)
+        .limit(1)
+        .execute()
+    )
+    rows = cast("list[dict[str, Any]]", result.data or [])
+    if not rows:
+        return
+    source_id = rows[0].get("source_publication_id")
+    if not source_id:
+        return
+    try:
+        auto_requeue(
+            source_id,
+            trigger="republish_job_failed",
+            note=f"재발행 파이프라인 실패 (job={pipeline_job_id})",
+        )
+    except Exception:
+        logger.exception(
+            "auto_requeue.failed_after_republish source=%s job=%s",
+            source_id,
+            pipeline_job_id,
+        )
+
+
+def recover_stuck_republish_jobs() -> int:
+    """서버 재시작 시 in-memory job_manager 와 끊긴 republish_jobs 회수.
+
+    queued/running 상태로 남아있는 모든 republish_jobs 를 failed 처리하고,
+    부모 publication 을 action_required 로 복귀시킨다. job_manager 가
+    in-memory 라 재시작 후엔 모든 active republish 는 정의상 stuck.
+
+    Lifespan startup 에서 1회 호출. 영향 행 수 반환.
+    """
+    client = get_client()
+    result = (
+        client.table(_REPUBLISH_JOBS_TABLE)
+        .select("pipeline_job_id, source_publication_id")
+        .in_("status", ["queued", "running"])
+        .execute()
+    )
+    rows = cast("list[dict[str, Any]]", result.data or [])
+    recovered = 0
+    for row in rows:
+        pipeline_job_id = row.get("pipeline_job_id")
+        if not pipeline_job_id:
+            continue
+        try:
+            update_republish_job_status(pipeline_job_id, "failed")
+            _auto_requeue_failed_republish(pipeline_job_id)
+            recovered += 1
+        except Exception:
+            logger.exception(
+                "recover_stuck_republish.failed pipeline_job_id=%s", pipeline_job_id
+            )
+    if recovered > 0:
+        logger.warning("recover_stuck_republish.summary recovered=%d", recovered)
+    return recovered

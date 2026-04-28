@@ -509,6 +509,30 @@
 - [x] U2.4 `UsageDashboard.tsx` — 기간선택+요약카드 1줄, 일별/작업별 `grid lg:grid-cols-12 (7+5)` 병렬 + sticky thead
 - [x] U2.5 캘린더 헬퍼 컴포넌트를 `components/CalendarTable.tsx` 로 분리 (300줄 한계 준수)
 
+## Phase U4: 외부 검토 P0 묶음 — invariant + job durability (2026-04-28) ✅ 완료
+
+> 외부 검토(High #1·#2·Med #4) 반영. 운영 들어가기 전 데이터 부패·job 고착·탭 의미 차이 잠금.
+
+### P0-1: publication_actions 트랜잭션 보장 ✅
+- [x] `publication_actions_orchestrator._record_action` best-effort 제거 → 실패 시 raise
+- [x] `republish_orchestrator._record_republished_action` 동일 적용 + 액션 기록을 부모 상태 전이 앞으로 재정렬
+- [x] 회귀 테스트 변경: action insert 실패 시 status 전이 미발생 검증 (TestActionRecordIsTransactional)
+
+### P0-2: republish_jobs 라이프사이클 finalizer ✅
+- [x] `JobManager.register_on_finished` 훅 등록 메커니즘 추가, `_run_job` finally 에서 호출
+- [x] `republish_orchestrator.on_pipeline_job_finished` — succeeded→completed, failed/cancelled/timed_out→failed 매핑
+- [x] 실패 시 `_auto_requeue_failed_republish` — 부모 publication 자동 큐 복귀 (workflow=action_required)
+- [x] `recover_stuck_republish_jobs` — 서버 재시작 시 stuck queued/running republish_jobs 일괄 회수
+- [x] `web/api/main.py` lifespan 에 finalizer 등록 + 재시작 회수 호출 통합
+- [x] `tests/test_application/test_republish_finalizer.py` — 13개 시나리오 (succeeded/failed/cancelled/timed_out, non-pipeline ignore, 일반 파이프라인 unrelated, recover stuck 정상/빈/부분 실패, status 검증)
+
+### P0-3: /rankings 노출 중 탭 의미 정합성 ✅
+- [x] `domain/ranking/storage.list_publications` 에 `visibility_status` IN 필터 추가
+- [x] `count_publications_by_workflow_status` 에 `__exposed` 가상 키 — workflow=active AND visibility in (exposed/recovered) 카운트
+- [x] `operations_home.TAB_FILTERS` 구조 변경: `{workflow, visibility}` dict. "active" 탭은 visibility=[exposed,recovered] 필터
+- [x] `get_summary` "active" 카운트가 실제 노출 의미와 일치 (workflow=active AND visibility 노출)
+- [x] 기존 테스트 갱신 + active=0 케이스 신규 테스트
+
 ## Phase U3: 운영 큐 UX 강화 (2026-04-27 착수)
 
 > 사용자 결정:

@@ -28,6 +28,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     loop = asyncio.get_running_loop()
     job_manager.set_loop(loop)
 
+    # P0-2: republish_jobs 라이프사이클 동기화 — job 종료 시 자동 finalize
+    from application.republish_orchestrator import (
+        on_pipeline_job_finished,
+        recover_stuck_republish_jobs,
+    )
+
+    job_manager.register_on_finished(on_pipeline_job_finished)
+    # 서버 재시작 시 in-memory job_manager 와 끊긴 stuck republish_jobs 회수
+    try:
+        recovered = recover_stuck_republish_jobs()
+        if recovered:
+            logger.warning("startup.recover_stuck_republish recovered=%d", recovered)
+    except Exception:
+        logger.exception("startup.recover_stuck_republish failed")
+
     ranking_scheduler = None
     if settings.ranking_scheduler_enabled:
         from application.scheduler import start_scheduler

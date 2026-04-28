@@ -11,6 +11,7 @@ import logging
 import threading
 import uuid
 from collections import defaultdict
+from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -96,6 +97,15 @@ class JobManager:
         self._jobs: dict[str, Job] = {}
         self._executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
         self.event_bus = JobEventBus()
+        self._on_finished_hooks: list[Callable[[Job], None]] = []
+
+    def register_on_finished(self, hook: Callable[[Job], None]) -> None:
+        """job 종료(succeeded/failed/cancelled/timed_out) 시 호출되는 훅 등록.
+
+        훅 실행 중 예외는 swallow + 로깅 (다른 훅·후속 처리 차단 방지).
+        republish_jobs 라이프사이클 동기화 등에 사용.
+        """
+        self._on_finished_hooks.append(hook)
 
     def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self.event_bus.set_loop(loop)
@@ -218,6 +228,13 @@ class JobManager:
         finally:
             job.finished_at = datetime.now(tz=UTC)
             self.event_bus.emit(job.id, {"type": "job_status", "status": job.status})
+            for hook in self._on_finished_hooks:
+                try:
+                    hook(job)
+                except Exception:
+                    logger.exception(
+                        "on_finished hook failed for job %s (%s)", job.id, hook.__name__
+                    )
 
     def _dispatch(
         self,

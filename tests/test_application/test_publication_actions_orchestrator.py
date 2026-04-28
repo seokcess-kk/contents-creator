@@ -138,20 +138,35 @@ class TestAutoRequeue:
         assert kwargs["clear_held"] is False
 
 
-class TestActionRecordIsBestEffort:
-    def test_action_failure_does_not_block_state_transition(
+class TestActionRecordIsTransactional:
+    """P0-1 정합성: 액션 INSERT 실패 시 status 전이도 차단 (single source of truth)."""
+
+    def test_action_failure_blocks_state_transition(
         self,
         storage_mock: MagicMock,
         actions_storage_mock: MagicMock,
     ) -> None:
-        """publication_actions INSERT 실패해도 status 전이는 진행 (logger 만 경고)."""
+        """publication_actions INSERT 실패하면 status 전이가 진행되지 않음."""
+        import pytest
+
         storage_mock.get_publication.return_value = _publication()
-        storage_mock.update_publication_workflow_state.return_value = _publication(
-            workflow_status="held"
-        )
         actions_storage_mock.insert_action.side_effect = RuntimeError("DB down")
 
-        result = actions_orch.hold("pub-1", days=3)
-        # state 전이는 실행됨 (best-effort 보장)
-        assert result is not None
-        storage_mock.update_publication_workflow_state.assert_called_once()
+        with pytest.raises(RuntimeError, match="DB down"):
+            actions_orch.hold("pub-1", days=3)
+        # 액션 INSERT 가 raise → state 전이는 실행되지 않아야 함
+        storage_mock.update_publication_workflow_state.assert_not_called()
+
+    def test_action_failure_blocks_release_hold(
+        self,
+        storage_mock: MagicMock,
+        actions_storage_mock: MagicMock,
+    ) -> None:
+        import pytest
+
+        storage_mock.get_publication.return_value = _publication(workflow_status="held")
+        actions_storage_mock.insert_action.side_effect = RuntimeError("DB down")
+
+        with pytest.raises(RuntimeError):
+            actions_orch.release_hold("pub-1")
+        storage_mock.update_publication_workflow_state.assert_not_called()

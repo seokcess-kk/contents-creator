@@ -15,32 +15,37 @@ from domain.ranking.model import Publication, RankingSnapshot
 
 logger = logging.getLogger(__name__)
 
-# 사용자 가시 탭 → workflow_status 필터 매핑
-TAB_FILTERS: dict[str, list[str]] = {
-    "action_required": ["action_required"],
-    "republishing": ["republishing"],
-    "held": ["held"],
-    "active": ["active"],  # 노출 중 (visibility_status 로 추가 분기)
-    "dismissed": ["dismissed"],
-    "all": [],  # 빈 리스트 = 필터 없음
+# P0-3: 탭별 필터 — workflow_status + visibility_status 동시 IN 매핑.
+# "active" 탭은 워크플로우=active AND 가시성 in (exposed/recovered) — 진짜 노출 중만.
+# 빈 리스트는 "필터 없음" 의미.
+TAB_FILTERS: dict[str, dict[str, list[str]]] = {
+    "action_required": {"workflow": ["action_required"], "visibility": []},
+    "republishing": {"workflow": ["republishing"], "visibility": []},
+    "held": {"workflow": ["held"], "visibility": []},
+    "active": {"workflow": ["active"], "visibility": ["exposed", "recovered"]},
+    "dismissed": {"workflow": ["dismissed"], "visibility": []},
+    "all": {"workflow": [], "visibility": []},
 }
 
 
 def get_summary() -> dict[str, int]:
     """운영 홈 상단 요약 카드용 카운트.
 
-    반환 키: action_required / republishing / held / exposed / dismissed / draft / total
+    "active" 카운트는 workflow=active AND visibility in (exposed/recovered) —
+    실제 노출 의미와 일치 (P0-3). 그 외는 workflow_status 별 카운트.
     """
     counts = ranking_storage.count_publications_by_workflow_status()
+    exposed_active = counts.get("__exposed", 0)
     summary = {
         "action_required": counts.get("action_required", 0),
         "republishing": counts.get("republishing", 0),
         "held": counts.get("held", 0),
-        "active": counts.get("active", 0),
+        "active": exposed_active,
         "dismissed": counts.get("dismissed", 0),
         "draft": counts.get("draft", 0),
     }
-    summary["total"] = sum(summary.values())
+    # total 은 workflow_status 모든 카운트 (가상 __exposed 제외)
+    summary["total"] = sum(v for k, v in counts.items() if not k.startswith("__"))
     return summary
 
 
@@ -57,10 +62,11 @@ def list_publications_for_tab(
     """
     if tab not in TAB_FILTERS:
         raise ValueError(f"unknown tab: {tab!r}")
-    statuses = TAB_FILTERS[tab]
+    spec = TAB_FILTERS[tab]
     publications = ranking_storage.list_publications(
         limit=limit,
-        workflow_status=statuses or None,
+        workflow_status=spec["workflow"] or None,
+        visibility_status=spec["visibility"] or None,
     )
 
     pub_ids = [p.id for p in publications if p.id is not None]

@@ -1,8 +1,15 @@
 """publication 운영 액션 — 보류·해제·기각·복원.
 
 🔴 핵심 원칙: publication_actions 테이블이 히스토리의 single source of truth.
-액션 발생 시 본 테이블 INSERT 우선, status 전이 + 캐시 갱신은 best-effort.
-캐시·전이 실패가 히스토리 유실로 이어지지 않게 분리.
+액션 INSERT 가 실패하면 status 전이도 진행하지 않는다 (raise 로 보장).
+이전 best-effort 정책은 히스토리 유실 시 status 만 바뀌어 운영 추적이
+끊기는 부패 시나리오를 만들었기에 폐기.
+
+원자성 한계: Supabase REST 는 다중 statement transaction 미지원.
+따라서 INSERT → UPDATE 순서를 보장하되, INSERT 실패 시 raise 로
+UPDATE 자체가 실행되지 않도록 한다. 반대(UPDATE 실패) 시에는 액션
+히스토리가 INSERT 된 채 status 가 남는 비대칭 케이스가 발생할 수
+있으므로, 이 케이스는 추후 RPC 로 원자화 예정 (P1).
 
 매일 09:00 측정 사이클이 held_until 만료 등 자동 전이도 동일 패턴으로 호출.
 """
@@ -144,25 +151,19 @@ def _record_action(
     metadata: dict[str, Any],
     diagnosis_id: str | None = None,
 ) -> None:
-    """publication_actions 히스토리에 액션 기록 (best-effort).
+    """publication_actions 히스토리에 액션 기록 (실패 시 raise).
 
-    히스토리는 single source of truth — 실패해도 이후 status 전이는 진행.
-    실패한 경우 logger 로 운영자에게 추적 단서 남김.
+    히스토리는 single source of truth — INSERT 실패 시 status 전이도
+    중단되어야 하므로 예외를 그대로 전파한다. 호출자(API 레이어)가 500 으로
+    응답하고, 사용자는 재시도 가능. 부분 적용 상태로 진행되어 데이터가
+    부패하는 것보다 명시적 실패가 운영 안전성 측면에서 우선이다.
     """
-    try:
-        actions_storage.insert_action(
-            PublicationAction(
-                publication_id=publication_id,
-                diagnosis_id=diagnosis_id,
-                action=action,
-                note=note,
-                metadata=metadata,
-            )
+    actions_storage.insert_action(
+        PublicationAction(
+            publication_id=publication_id,
+            diagnosis_id=diagnosis_id,
+            action=action,
+            note=note,
+            metadata=metadata,
         )
-    except Exception:
-        logger.warning(
-            "publication_action.insert_failed publication_id=%s action=%s",
-            publication_id,
-            action,
-            exc_info=True,
-        )
+    )

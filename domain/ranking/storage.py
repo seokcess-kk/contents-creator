@@ -112,26 +112,45 @@ def list_publications(
     keyword: str | None = None,
     limit: int = 50,
     workflow_status: list[str] | None = None,
+    visibility_status: list[str] | None = None,
 ) -> list[Publication]:
-    """publications 목록. workflow_status 가 주어지면 IN 필터 적용."""
+    """publications 목록. workflow_status / visibility_status IN 필터 동시 지원.
+
+    P0-3: visibility_status 필터 추가 — "노출 중" 탭이 workflow=active 만이
+    아니라 실제로 노출된 항목(visibility in exposed/recovered) 만 보여주도록.
+    """
     client = get_client()
     query = client.table(_PUB_TABLE).select("*").order("created_at", desc=True).limit(limit)
     if keyword:
         query = query.eq("keyword", keyword)
     if workflow_status:
         query = query.in_("workflow_status", workflow_status)
+    if visibility_status:
+        query = query.in_("visibility_status", visibility_status)
     result = query.execute()
     return [_row_to_publication(cast("dict[str, Any]", r)) for r in (result.data or [])]
 
 
 def count_publications_by_workflow_status() -> dict[str, int]:
-    """workflow_status 별 publication 개수 — 운영 홈 요약 카드용."""
+    """workflow_status 별 publication 개수 — 운영 홈 요약 카드용.
+
+    추가로 `__exposed` 가상 키에 (workflow=active AND visibility in exposed/recovered)
+    카운트를 채워 운영 홈 "노출 중" 카드가 실제 노출 의미를 반영하도록 한다.
+    """
     client = get_client()
-    result = client.table(_PUB_TABLE).select("workflow_status").execute()
+    result = (
+        client.table(_PUB_TABLE).select("workflow_status,visibility_status").execute()
+    )
     counts: dict[str, int] = {}
+    exposed_active = 0
     for row in result.data or []:
-        status = (cast("dict[str, Any]", row)).get("workflow_status") or "unknown"
-        counts[status] = counts.get(status, 0) + 1
+        r = cast("dict[str, Any]", row)
+        wf = r.get("workflow_status") or "unknown"
+        vis = r.get("visibility_status") or "unknown"
+        counts[wf] = counts.get(wf, 0) + 1
+        if wf == "active" and vis in ("exposed", "recovered"):
+            exposed_active += 1
+    counts["__exposed"] = exposed_active
     return counts
 
 

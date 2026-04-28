@@ -108,17 +108,33 @@ class TestSummary:
     def test_returns_workflow_counts_with_total(
         self, ranking_storage_mock: MagicMock
     ) -> None:
+        # P0-3: __exposed 가상 키가 active 카운트 (workflow=active AND visibility 노출).
         ranking_storage_mock.count_publications_by_workflow_status.return_value = {
             "active": 30,
             "action_required": 12,
             "held": 5,
             "republishing": 2,
             "dismissed": 3,
+            "__exposed": 25,  # 30 active 중 실제 노출 25
         }
         s = operations_home.get_summary()
-        assert s["active"] == 30
+        # active 는 노출 카운트 (25), 비노출 5 는 다른 탭에서 처리
+        assert s["active"] == 25
         assert s["action_required"] == 12
         assert s["held"] == 5
         assert s["republishing"] == 2
         assert s["dismissed"] == 3
+        # total 은 workflow 합계 (__exposed 제외) = 52
         assert s["total"] == 52
+
+    def test_active_count_zero_when_no_exposed(
+        self, ranking_storage_mock: MagicMock
+    ) -> None:
+        """workflow=active 인데 모두 visibility=not_measured 면 active 카운트=0."""
+        ranking_storage_mock.count_publications_by_workflow_status.return_value = {
+            "active": 10,
+            "__exposed": 0,
+        }
+        s = operations_home.get_summary()
+        assert s["active"] == 0
+        assert s["total"] == 10  # workflow active 10 그대로
