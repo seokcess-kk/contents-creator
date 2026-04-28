@@ -677,11 +677,24 @@
 - [x] pyright — 0 errors / 0 warnings
 - [x] 관련 테스트 298 passed
 
-### Phase 4.2 — 프론트엔드 UI (다음 차수)
-- [ ] /brand-studio (브랜드 목록 + 자산 관리)
-- [ ] /brand-studio/[brandId]/new (카드 생성 9 필드 폼)
-- [ ] /brand-studio/[brandId]/plans/[groupId] (승인 5 액션)
-- [ ] /brand-studio/[brandId]/archive (결과 보관함 8 항목)
+### Phase 4.2 — 프론트엔드 UI (2026-04-28) ✅
+- [x] `lib/brand-studio-api.ts` — 9 헬퍼 + 타입 (Pydantic 1:1, 도메인 격리)
+- [x] `components/BrandSourceUpload.tsx` — multipart 업로드 모달 (txt/html/docx/pdf)
+- [x] `components/ComplianceRiskBadge.tsx` — 차단(high)/경고(low·med)/통과 라벨 + hover popover
+- [x] `components/CardPlanCard.tsx` — SPEC §14 8 항목 + 5 액션 버튼 (readOnly+pngPaths archive 모드 겸용)
+- [x] `/brand-studio` — 브랜드 목록 + sources 관리 다이얼로그 (브랜드 등록은 SQL 시드 안내)
+- [x] `/brand-studio/[brandId]/new` — 9 필드 폼 + ChipInput + saveCampaignInput→generatePlans 순차 + ?prefill 재생성
+- [x] `/brand-studio/[brandId]/plans/[groupId]` — N variant + approve/reject + 렌더 시작(→`/jobs/{id}?return=archive`)
+- [x] `/brand-studio/[brandId]/archive` — `?group=` 필수, CardArchiveItem→Plan 어댑트, PNG 경로 텍스트(다운로드 라우트는 후속 차수)
+- [x] `app/layout.tsx` 헤더 nav 에 "브랜드 스튜디오" 추가
+- [x] 검증: `npx tsc --noEmit` 0 errors / `npx next build` 통과 / 회귀 테스트 통과
+
+### Phase 4.2 — 본 차수 외 (후속)
+- [ ] PNG 정적 다운로드 라우트 (`GET /brand-studio/cards/{group}/files/{name}`)
+- [ ] 브랜드 등록 UI + `POST /brands` 백엔드
+- [ ] `brand_media_assets` 미디어 라이브러리 UI
+- [ ] approve/reject 외 3 액션(문구 수정 / 사진 교체 / 전략 변경) 백엔드 PATCH 라우트
+- [ ] frontend 테스트 프레임워크 (vitest + Testing Library)
 
 ## Phase U8: 브랜드 카드 SPEC v2.1 패치 — 결정 D1~D7 반영 (2026-04-28) ✅ 완료
 
