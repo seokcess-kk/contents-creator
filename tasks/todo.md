@@ -563,6 +563,10 @@
 - [x] `templates/clinic_trust/card.html.j2` — Jinja2, 6 card_type 분기, data-text-block 속성으로 overflow 검출 표시
 - [x] `tests/test_brand_card/test_template_registry.py` — 6 시나리오 (load/files exist/unknown raise/list/compat/all six types)
 - [ ] 나머지 3 템플릿 (diet_empathy/process_guide/local_info) — Phase 2.5 직전 또는 사용자 시안 후
+  - **2026-04-29 시안 가용성 확인 결과**: `domain/brand_card/templates/` 에 `clinic_trust` 1종만 존재 (card.html.j2 72줄, style.css 197줄, meta.json). 3 종 디자인 시안·의도 정의 부재로 코드 진행 블로킹. 진행 옵션:
+    - (a) 사용자가 Figma/PNG/HTML mock-up 제공
+    - (b) Claude `frontend-design` 스킬로 짧은 설명 기반 자동 프로토타이핑 (D4 결정)
+    - (c) `clinic_trust` 색상·레이아웃 변형으로 단순 파생 3종 (디자인 의도 추후 보강)
 
 ### Phase 2.2 ✅ Playwright PNG 렌더러 + overflow 검출
 - [x] `domain/brand_card/renderer.py` — sync API (G3=A), 1080×1350 viewport
@@ -691,7 +695,8 @@
 
 ### Phase 4.2 — 본 차수 외 (후속)
 - [x] PNG 정적 다운로드 라우트 — `GET /brand-studio/cards/{group}/files/{name}` (path traversal 방어 + FileResponse) + archive 페이지 썸네일·다운로드 링크 (2026-04-29)
-- [ ] 브랜드 등록 UI + `POST /brands` 백엔드
+- [x] 브랜드 등록 UI + `POST /brands` 백엔드 — slug UNIQUE 충돌 409, Pydantic regex 422, 자동 slug 제안 + slugTouched 토글, BrandRegisterDialog (2026-04-29)
+- [x] E2E smoke test 체크리스트 — `docs/brand-studio-e2e-checklist.md` (S1~S7, 알려진 한계, 회귀 발견 절차) (2026-04-29)
 - [ ] `brand_media_assets` 미디어 라이브러리 UI
 - [ ] approve/reject 외 3 액션(문구 수정 / 사진 교체 / 전략 변경) 백엔드 PATCH 라우트
 - [ ] frontend 테스트 프레임워크 (vitest + Testing Library)
