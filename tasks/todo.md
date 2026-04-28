@@ -546,12 +546,35 @@
 - [x] 테스트 634 → **660 passed** (+26)
 - [x] 커버리지 71.32% 유지
 
-### 다음 단계 (Phase 2 진입 가능)
-- [ ] `application/brand_card_orchestrator.py` — `generate_card_plan` + `render_card_set` 진입점 분리 (D3)
-- [ ] Phase 2.1 템플릿 1종 (`clinic_trust`) HTML/CSS prototyping (D4 — frontend-design 스킬)
-- [ ] Phase 2.2 Playwright PNG 렌더러 + overflow 검출 (M6)
-- [ ] Phase 2.3 AI 이미지 prefetch ([B8.5], `domain/image_generation` 재사용)
-- [ ] Phase 2.4 PNG metadata + manifest 저장
+## Phase U10: 브랜드 카드 Phase 2 (2026-04-28 진행) — application + 렌더링
+
+### Phase 2.0 ✅ application/brand_card_orchestrator.py
+- [x] `generate_card_plan(brand_id, keyword, expression_level, strategy_count, allow_reuse_override)` — N variant 묶음 생성, reuse_group_id 공유, 모두 status=draft 저장
+- [x] strategy → template_id 매핑 (trust_first → clinic_trust 등)
+- [x] approve_plan / reject_plan — status 전이 ([B6])
+- [x] render_card_set — Phase 2.5 placeholder (NotImplementedError)
+- [x] 자산 fetch (campaign + attached + brand) → asset_merge → reuse_guard → plan_generator 통합 흐름
+- [x] `tests/test_application/test_brand_card_orchestrator.py` — 8 시나리오 (N variants / shared group_id / invalid count / strategy mapping / storage insert / approve / reject / render placeholder)
+
+### Phase 2.1 (TODO) — 템플릿 4종 HTML/CSS
+- [ ] `domain/brand_card/template_registry.py` — 템플릿 메타·호환성 검증
+- [ ] `domain/brand_card/templates/clinic_trust/` (index.html.j2 + style.css + meta.json)
+- [ ] 나머지 3 템플릿 (Phase 2.1.2 이후)
+
+### Phase 2.2 (TODO) — Playwright PNG 렌더러 + overflow 검출
+- [ ] `domain/brand_card/renderer.py` — Playwright sync 세션 + 1080×1350 viewport
+- [ ] overflow 검출 (Playwright `page.evaluate()` — M6)
+- [ ] PNG `tEXt` metadata 삽입
+
+### Phase 2.3 (TODO) — AI 이미지 prefetch ([B8.5])
+- [ ] `application/brand_card_orchestrator` 에 [B8.5] 단계 추가
+- [ ] `domain/image_generation` 재사용. SHA256 캐시 + brand_card_image_budget_per_set 가드
+
+### Phase 2.4 (TODO) — manifest + 보관함
+- [ ] `cards-manifest.json` 생성
+- [ ] `output/{slug}/{ts}/cards/` 저장 경로
+
+### Phase 2.5 (TODO) — render_card_set 본격 구현 (Phase 2.1~2.4 통합)
 
 ### Phase 1 검증
 - [x] `bash .claude/hooks/build-check.sh` ✓ PASSED
