@@ -16,7 +16,9 @@ from typing import Any, cast
 from config.supabase import get_client
 from domain.brand_card.model import (
     BrandCardPlan,
+    BrandMediaAsset,
     BrandMessageSource,
+    BrandProfile,
     CardBlock,
     CardCampaignInput,
 )
@@ -26,6 +28,79 @@ logger = logging.getLogger(__name__)
 _SOURCES_TABLE = "brand_message_sources"
 _INPUTS_TABLE = "card_campaign_inputs"
 _CARDS_TABLE = "brand_cards"
+_PROFILES_TABLE = "brand_profiles"
+_MEDIA_TABLE = "brand_media_assets"
+
+
+# ── brand_profiles ──────────────────────────────────────────
+
+
+def list_brands(*, limit: int = 100) -> list[BrandProfile]:
+    """등록된 모든 브랜드 (created_at desc)."""
+    client = get_client()
+    result = (
+        client.table(_PROFILES_TABLE)
+        .select("*")
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return [_row_to_profile(cast("dict[str, Any]", r)) for r in (result.data or [])]
+
+
+def get_brand(brand_id: str) -> BrandProfile | None:
+    client = get_client()
+    result = client.table(_PROFILES_TABLE).select("*").eq("id", brand_id).limit(1).execute()
+    rows = result.data or []
+    if not rows:
+        return None
+    return _row_to_profile(cast("dict[str, Any]", rows[0]))
+
+
+# ── brand_media_assets ──────────────────────────────────────
+
+
+def list_media_assets(brand_id: str, *, limit: int = 200) -> list[BrandMediaAsset]:
+    client = get_client()
+    result = (
+        client.table(_MEDIA_TABLE)
+        .select("*")
+        .eq("brand_id", brand_id)
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return [_row_to_media(cast("dict[str, Any]", r)) for r in (result.data or [])]
+
+
+def get_media_asset(asset_id: str) -> BrandMediaAsset | None:
+    client = get_client()
+    result = client.table(_MEDIA_TABLE).select("*").eq("id", asset_id).limit(1).execute()
+    rows = result.data or []
+    if not rows:
+        return None
+    return _row_to_media(cast("dict[str, Any]", rows[0]))
+
+
+def insert_media_asset(asset: BrandMediaAsset) -> BrandMediaAsset:
+    client = get_client()
+    payload: dict[str, Any] = {
+        "brand_id": asset.brand_id,
+        "type": asset.type,
+        "file_path": asset.file_path,
+        "file_sha256": asset.file_sha256,
+        "title": asset.title,
+        "description": asset.description,
+        "orientation": asset.orientation,
+        "width": asset.width,
+        "height": asset.height,
+        "tags": list(asset.tags),
+    }
+    result = client.table(_MEDIA_TABLE).insert(payload).execute()
+    rows = result.data or []
+    if not rows:
+        raise RuntimeError("brand_media_assets insert: no row returned")
+    return _row_to_media(cast("dict[str, Any]", rows[0]))
 
 
 # ── brand_message_sources ───────────────────────────────────
@@ -175,6 +250,36 @@ def list_cards_by_reuse_group(reuse_group_id: str) -> list[BrandCardPlan]:
 
 
 # ── 직렬화 헬퍼 ─────────────────────────────────────────────
+
+
+def _row_to_profile(row: dict[str, Any]) -> BrandProfile:
+    return BrandProfile(
+        id=row.get("id"),
+        name=row["name"],
+        slug=row["slug"],
+        homepage_url=row["homepage_url"],
+        locale=row.get("locale") or "ko-KR",
+        current_asset_version=row.get("current_asset_version") or 1,
+        created_at=_parse_dt(row.get("created_at")),
+        updated_at=_parse_dt(row.get("updated_at")),
+    )
+
+
+def _row_to_media(row: dict[str, Any]) -> BrandMediaAsset:
+    return BrandMediaAsset(
+        id=row.get("id"),
+        brand_id=row["brand_id"],
+        type=row["type"],
+        file_path=row["file_path"],
+        file_sha256=row["file_sha256"],
+        title=row.get("title"),
+        description=row.get("description"),
+        orientation=row.get("orientation"),
+        width=row.get("width"),
+        height=row.get("height"),
+        tags=list(row.get("tags") or []),
+        created_at=_parse_dt(row.get("created_at")),
+    )
 
 
 def _source_to_payload(s: BrandMessageSource) -> dict[str, Any]:

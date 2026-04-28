@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config.settings import settings
 from web.api.job_manager import JobManager
-from web.api.routers import jobs, rankings, results, usage, ws
+from web.api.routers import brand_studio, jobs, rankings, results, usage, ws
 
 logger = logging.getLogger(__name__)
 
@@ -81,5 +81,6 @@ app.include_router(results.router, prefix="/api")
 app.include_router(ws.router, prefix="/api")
 app.include_router(usage.router, prefix="/api")
 app.include_router(rankings.router, prefix="/api")
+app.include_router(brand_studio.router, prefix="/api")
 
 # /output 정적 마운트는 인증 우회 통로가 되어 제거. 결과물은 인증된 /api/results/* 로만 접근.

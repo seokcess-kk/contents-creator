@@ -32,6 +32,7 @@ from application.orchestrator import (
 )
 from application.ranking_bulk_check import bulk_check_rankings
 from config.settings import settings
+from domain.brand_card.model import RenderedCardSet
 from domain.ranking.model import RankingCheckSummary
 from web.api.ws_reporter import WebSocketProgressReporter
 
@@ -131,6 +132,15 @@ class JobManager:
     def submit_ranking_bulk_check(self, params: dict[str, Any]) -> Job:
         """일괄 SERP 측정 job 제출. params: {publication_ids?: [...]}."""
         return self._submit("ranking_bulk_check", params)
+
+    def submit_brand_card_render(self, params: dict[str, Any]) -> Job:
+        """브랜드 카드 렌더 job 제출.
+
+        params: {reuse_group_id, brand_name?, brand_url?}.
+        Playwright PNG 렌더 + AI 이미지 prefetch — 5~30s 소요라 동기 응답이
+        클라이언트 UX 를 막아 background 처리. 진행은 GET /api/jobs/{job_id} 폴링.
+        """
+        return self._submit("brand_card_render", params)
 
     def _submit(self, job_type: str, params: dict[str, Any]) -> Job:
         job_id = uuid.uuid4().hex[:12]
@@ -240,7 +250,14 @@ class JobManager:
         self,
         job: Job,
         reporter: WebSocketProgressReporter,
-    ) -> PipelineResult | AnalyzeResult | GenerateResult | ValidateResult | RankingCheckSummary:
+    ) -> (
+        PipelineResult
+        | AnalyzeResult
+        | GenerateResult
+        | ValidateResult
+        | RankingCheckSummary
+        | RenderedCardSet
+    ):
         p = job.params
 
         if job.type == "pipeline":
@@ -277,6 +294,17 @@ class JobManager:
             return bulk_check_rankings(
                 publication_ids=p.get("publication_ids"),
                 reporter=reporter,
+            )
+
+        if job.type == "brand_card_render":
+            from application.brand_card_orchestrator import render_card_set
+
+            output_root_str = p.get("output_root")
+            return render_card_set(
+                p["reuse_group_id"],
+                output_root=Path(output_root_str) if output_root_str else None,
+                brand_name=p.get("brand_name"),
+                brand_url=p.get("brand_url"),
             )
 
         msg = f"Unknown job type: {job.type}"
