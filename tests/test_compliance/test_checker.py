@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from domain.compliance.checker import (
@@ -137,3 +138,162 @@ class TestCheckComplianceIntegration:
         text = "체질에 맞는 관리 방법을 선택하는 것이 중요합니다."
         violations = check_compliance(text, CompliancePolicy.SEO_STRICT)
         assert len(violations) == 0
+
+
+class TestCheckImagePrompts:
+    """check_image_prompts — image-specific 검증 (validate_prompt + regex)."""
+
+    def test_clean_prompt_passes(self) -> None:
+        from domain.compliance.checker import check_image_prompts
+
+        prompts = [
+            type(
+                "P",
+                (),
+                {
+                    "sequence": 1,
+                    "prompt": "Korean woman in modern clinic, no text, no letters",
+                },
+            )()
+        ]
+        violations = check_image_prompts(prompts, CompliancePolicy.SEO_STRICT)
+        assert violations == []
+
+    def test_missing_no_text_keyword_flagged(self) -> None:
+        from domain.compliance.checker import check_image_prompts
+
+        prompts = [{"sequence": 1, "prompt": "Korean clinic interior, soft natural light"}]
+        violations = check_image_prompts(prompts, CompliancePolicy.SEO_STRICT)
+        assert len(violations) >= 1
+        assert "이미지 prompt 위반" in violations[0].reason
+
+    def test_people_without_korean_flagged(self) -> None:
+        """사람 키워드가 있는데 Korean 명시 안 됨 → InvalidImagePromptError."""
+        from domain.compliance.checker import check_image_prompts
+
+        prompts = [
+            {
+                "sequence": 2,
+                "prompt": "A young woman walking in a park, no text, no letters",
+            }
+        ]
+        violations = check_image_prompts(prompts, CompliancePolicy.SEO_STRICT)
+        assert len(violations) >= 1
+
+    def test_forbidden_medical_keyword_flagged(self) -> None:
+        from domain.compliance.checker import check_image_prompts
+
+        prompts = [
+            {
+                "sequence": 3,
+                "prompt": "patient before/after photo comparison, no text",
+            }
+        ]
+        violations = check_image_prompts(prompts, CompliancePolicy.SEO_STRICT)
+        assert len(violations) >= 1
+
+    def test_dict_prompts_supported(self) -> None:
+        """dict 또는 Pydantic 양쪽 입력 지원."""
+        from domain.compliance.checker import check_image_prompts
+
+        prompts = [{"sequence": 1, "prompt": "abstract icon, no text"}]
+        violations = check_image_prompts(prompts, CompliancePolicy.SEO_STRICT)
+        # 깨끗한 prompt → 빈 결과
+        assert violations == []
+
+    def test_empty_prompts_returns_empty(self) -> None:
+        from domain.compliance.checker import check_image_prompts
+
+        assert check_image_prompts([], CompliancePolicy.SEO_STRICT) == []
+
+
+class TestCheckLlmDirect:
+    """_check_llm 단위 — Anthropic SDK mock."""
+
+    def _fake_response(self, raw_violations: list[dict]) -> Any:
+        block = MagicMock()
+        block.type = "tool_use"
+        block.name = "report_violations"
+        block.input = {"violations": raw_violations}
+        response = MagicMock()
+        response.content = [block]
+        response.usage.input_tokens = 50
+        response.usage.output_tokens = 30
+        return response
+
+    def test_parses_llm_violations(self) -> None:
+        from domain.compliance.checker import _check_llm
+
+        fake_resp = self._fake_response(
+            [
+                {
+                    "category": "cure_promise",
+                    "text_snippet": "완치 보장",
+                    "section_index": 2,
+                    "severity": "high",
+                    "reason": "암시적 완치 표현",
+                }
+            ]
+        )
+        with (
+            patch(
+                "domain.compliance.checker.messages_create_with_retry",
+                return_value=fake_resp,
+            ),
+            patch("domain.compliance.checker.build_client"),
+            patch("domain.compliance.checker.record_usage"),
+        ):
+            result = _check_llm("암시적 완치 표현 있음", CompliancePolicy.SEO_STRICT)
+        assert len(result) == 1
+        assert result[0].category == "cure_promise"
+        assert result[0].section_index == 2
+
+    def test_keyword_context_injected(self) -> None:
+        """keyword 인자가 user prompt 에 SEO 컨텍스트로 추가됨."""
+        from domain.compliance.checker import _check_llm
+
+        captured: dict[str, object] = {}
+
+        def fake_call(client: object, **kwargs: object) -> Any:
+            captured.update(kwargs)
+            return self._fake_response([])
+
+        with (
+            patch(
+                "domain.compliance.checker.messages_create_with_retry",
+                side_effect=fake_call,
+            ),
+            patch("domain.compliance.checker.build_client"),
+            patch("domain.compliance.checker.record_usage"),
+        ):
+            _check_llm("다이어트한의원 본문", CompliancePolicy.SEO_STRICT, keyword="다이어트한의원")
+        msgs = captured.get("messages")
+        assert isinstance(msgs, list)
+        user_content = msgs[0]["content"]
+        assert "SEO 키워드 컨텍스트" in user_content
+        assert "다이어트한의원" in user_content
+
+    def test_non_dict_violation_skipped(self) -> None:
+        """LLM 이 list of strings 등 잘못된 형식 반환 시 skip."""
+        from domain.compliance.checker import _check_llm
+
+        block = MagicMock()
+        block.type = "tool_use"
+        block.name = "report_violations"
+        # violations 가 dict 가 아닌 string 리스트 → 무시되어야
+        block.input = {"violations": ["not-a-dict", {"category": "ok", "reason": "x"}]}
+        response = MagicMock()
+        response.content = [block]
+        response.usage.input_tokens = 0
+        response.usage.output_tokens = 0
+        with (
+            patch(
+                "domain.compliance.checker.messages_create_with_retry",
+                return_value=response,
+            ),
+            patch("domain.compliance.checker.build_client"),
+            patch("domain.compliance.checker.record_usage"),
+        ):
+            result = _check_llm("text", CompliancePolicy.SEO_STRICT)
+        assert len(result) == 1  # dict 만 통과
+        assert result[0].category == "ok"
