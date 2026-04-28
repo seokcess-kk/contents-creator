@@ -532,8 +532,26 @@
 - [x] `tests/test_brand_card/test_asset_merge.py` 7 시나리오
 - [x] `tests/test_brand_card/test_reuse_guard.py` 13 시나리오 (블락/경고/override)
 
-### Phase 1 Day 3~4 (TODO)
-- [ ] `plan_generator.py` — LLM tool_use, BRAND_LENIENT 사전 주입, asset_merge + reuse_guard 통합 호출
+### Phase 1 Day 3 ✅ 완료 (plan_generator.py — Phase 1 마지막 핵심 모듈)
+- [x] `domain/brand_card/plan_generator.py` — LLM tool_use 카드 기획안 생성기
+- [x] `_build_system_prompt(level)` — BRAND_LENIENT 9 룰 description 자동 주입 + 표현 강도(safe/balanced/hooking) 가이드 + tool_use 강제 문구
+- [x] `_build_user_prompt(...)` — 키워드/전략/템플릿/표현강도 + asset_merge 5단계 우선순위 자산 단락 + reuse_guard 차단/경고 제약
+- [x] `_build_tool_schema()` — `submit_brand_card_plan` ToolParam (angle + blocks 4~6개 + 카드 타입 6 enum + recommended_position 4 enum)
+- [x] `_invoke()` — Sonnet 4.6 + tool_choice forced + ApiUsage 기록 (cache_control: ephemeral)
+- [x] `_extract_tool_input()` / `_parse_plan()` — 응답 검증 + Pydantic BrandCardPlan 인스턴스 생성 (status=draft)
+- [x] `tests/test_brand_card/test_plan_generator.py` — 26 시나리오 (system/compliance/expression/user/assets/reuse/schema/extract/parse + happy path mock)
+
+### Phase 1 종료 — 검증
+- [x] `bash .claude/hooks/build-check.sh` ✓ PASSED 모든 단계
+- [x] 테스트 634 → **660 passed** (+26)
+- [x] 커버리지 71.32% 유지
+
+### 다음 단계 (Phase 2 진입 가능)
+- [ ] `application/brand_card_orchestrator.py` — `generate_card_plan` + `render_card_set` 진입점 분리 (D3)
+- [ ] Phase 2.1 템플릿 1종 (`clinic_trust`) HTML/CSS prototyping (D4 — frontend-design 스킬)
+- [ ] Phase 2.2 Playwright PNG 렌더러 + overflow 검출 (M6)
+- [ ] Phase 2.3 AI 이미지 prefetch ([B8.5], `domain/image_generation` 재사용)
+- [ ] Phase 2.4 PNG metadata + manifest 저장
 
 ### Phase 1 검증
 - [x] `bash .claude/hooks/build-check.sh` ✓ PASSED
