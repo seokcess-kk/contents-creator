@@ -509,6 +509,41 @@
 - [x] U2.4 `UsageDashboard.tsx` — 기간선택+요약카드 1줄, 일별/작업별 `grid lg:grid-cols-12 (7+5)` 병렬 + sticky thead
 - [x] U2.5 캘린더 헬퍼 컴포넌트를 `components/CalendarTable.tsx` 로 분리 (300줄 한계 준수)
 
+## Phase U7: 미완 항목 일괄 처리 — 보강 엣지/cannibalization 다중 author/UI 인디케이터/정렬 (2026-04-28) ✅ 완료
+
+### body_quality_enforcer 보강 엣지 케이스 ✅
+- [x] 다중 약한 섹션 — index 별 issue 누적 검증
+- [x] 키워드 카운트 경계값 — 3회는 stuffing 아님 / 4회부터 stuffing
+- [x] 단일 섹션 다중 issue (too_short + no_keyword 동시)
+- [x] 빈 content_md
+- [x] build_section_fix_prompt keyword_stuffing 분기 문구 검증
+- [x] body_quality_enforcer 커버리지 → 99%
+
+### diagnosis cannibalization 다중 author 시나리오 ✅
+- [x] 같은 블로거 글 3건 Top10 → primary 는 최저 rank, same_author_count=3
+- [x] self URL 이 Top10 에 있어도 same_author_others 에서 제외 (정규화 비교)
+- [x] m.blog vs blog.naver.com cross-domain author 매칭
+- [x] publication.url=None (draft) 진단 미발생
+- [x] competing_section metric 보존 (인기글 vs VIEW 등)
+- [x] diagnosis rules 커버리지 → 82%
+
+### /rankings 정렬 옵션 ✅
+- [x] `SORT_OPTIONS` 5종 — 최근 진단순/순위 좋은순/순위 나쁜순/키워드 가나다/등록일 최신
+- [x] 클라이언트 sort 함수 `sortItems(items, sortBy)` — diagnosis_recent / rank_best / rank_worst / keyword_asc / registered_desc
+- [x] 검색 input 옆 select 드롭다운 추가 (기본값: diagnosis_recent)
+
+### 결과 페이지 원고 상태 5단계 인디케이터 ✅
+- [x] `PublicationStatusBadge.tsx` 신규 — 5 stages: 생성 완료 / URL 미등록 / 측정 대기 / 노출 중 / 미노출 진단 필요
+- [x] `determineStage()` — workflow_status + visibility_status 조합으로 판정
+- [x] 색상별 dot + N/5 인디케이터 + title 툴팁 hint
+- [x] `Publication` 타입에 `visibility_status`, `held_until` 옵셔널 추가
+- [x] `/results/[slug]` 헤더에 통합
+
+### 검증
+- 테스트 572 → 583 (+11 — body_quality 5 + cannibalization 5 + 기존 1 갱신)
+- 커버리지 70.69% → 70.82%
+- frontend typecheck 통과, build-check 모두 ✓
+
 ## Phase U6: build-check 사전 실패 정리 + mypy → pyright 전환 (2026-04-28) ✅ 완료
 
 ### build-check 사전 실패 3건

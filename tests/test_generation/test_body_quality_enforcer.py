@@ -72,6 +72,54 @@ class TestFindWeakSections:
         assert "too_short" in issue_types
 
 
+class TestEdgeCases:
+    """추가 엣지 케이스 — 경계값/혼합 이슈/빈 콘텐츠."""
+
+    def test_multiple_weak_sections_returns_per_section_issues(self) -> None:
+        """여러 섹션이 동시에 약하면 각 섹션별로 이슈 누적."""
+        sections = [
+            _make_section(index=2, subtitle="A", content="짧음"),
+            _make_section(index=3, subtitle="B", content="가" * 100),  # short + no kw
+        ]
+        issues = find_weak_sections(sections, "다이어트", 2800)
+        # 두 섹션 모두 too_short 발생
+        too_short_indices = {i.index for i in issues if i.issue == "too_short"}
+        assert too_short_indices == {2, 3}
+        # 두 섹션 모두 no_keyword 발생 ("다이어트" 미포함)
+        no_kw_indices = {i.index for i in issues if i.issue == "no_keyword"}
+        assert no_kw_indices == {2, 3}
+
+    def test_keyword_count_three_is_not_stuffing(self) -> None:
+        """경계값: kw_count == 3 은 stuffing 아님 (코드: >= 4)."""
+        kw = "다이어트"
+        content = (kw + " 본문. ") * 3 + "가" * 1000
+        sections = [_make_section(content=content)]
+        issues = find_weak_sections(sections, kw, 2800)
+        assert "keyword_stuffing" not in [i.issue for i in issues]
+
+    def test_keyword_count_four_is_stuffing(self) -> None:
+        """경계값: kw_count == 4 부터 stuffing."""
+        kw = "다이어트"
+        content = (kw + " 본문. ") * 4 + "가" * 1000
+        sections = [_make_section(content=content)]
+        issues = find_weak_sections(sections, kw, 2800)
+        assert "keyword_stuffing" in [i.issue for i in issues]
+
+    def test_mixed_issues_in_single_section(self) -> None:
+        """too_short + no_keyword 동시 발생 가능."""
+        sections = [_make_section(content="짧음")]  # 짧고 키워드 없음
+        issues = find_weak_sections(sections, "다이어트한의원", 2800)
+        types = {i.issue for i in issues}
+        assert "too_short" in types
+        assert "no_keyword" in types
+
+    def test_empty_content_section(self) -> None:
+        sections = [_make_section(content="")]
+        issues = find_weak_sections(sections, "키워드", 2800)
+        assert any(i.issue == "too_short" for i in issues)
+        assert any(i.issue == "no_keyword" for i in issues)
+
+
 class TestBuildSectionFixPrompt:
     def test_includes_issue_descriptions(self) -> None:
         from domain.generation.body_quality_enforcer import SectionIssue
@@ -122,3 +170,26 @@ class TestBuildSectionFixPrompt:
             intro_tone_hint="톤",
         )
         assert "글자수가 부족" not in prompt
+
+    def test_includes_keyword_stuffing_description(self) -> None:
+        """keyword_stuffing 분기 문구가 프롬프트에 정확히 포함."""
+        from domain.generation.body_quality_enforcer import SectionIssue
+
+        issues = [
+            SectionIssue(
+                index=2,
+                subtitle="소제목",
+                issue="keyword_stuffing",
+                detail="키워드 5회 (3회 이하 권장)",
+            ),
+        ]
+        prompt = build_section_fix_prompt(
+            section_index=2,
+            section_subtitle="소제목",
+            section_content="내용",
+            issues=issues,
+            keyword="다이어트",
+            intro_tone_hint="톤",
+        )
+        assert "키워드가 과도" in prompt
+        assert "자연스러운 표현으로 대체" in prompt

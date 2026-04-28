@@ -129,6 +129,94 @@ class TestCannibalization:
         result = diagnose(pub, snaps, top10, now=_NOW)
         assert "cannibalization" not in [d.reason for d in result]
 
+    # ── 다중 author 시나리오 (외부 검토 누락 지적) ──
+
+    def test_multiple_same_author_urls_picks_lowest_rank_as_primary(self) -> None:
+        """같은 블로거의 글이 Top10 에 3건 → primary 는 가장 높은 순위(낮은 rank).
+
+        same_author_count=3 metric 정확히 기록 + competing_rank 가 최저값.
+        """
+        pub = _pub(url="https://m.blog.naver.com/myuser/123456789")
+        snaps = [_snap(None, 0), _snap(None, 1), _snap(None, 2)]
+        top10 = [
+            _top10(7, "https://blog.naver.com/myuser/777777777", "blog:myuser"),
+            _top10(2, "https://blog.naver.com/myuser/222222222", "blog:myuser"),
+            _top10(5, "https://blog.naver.com/myuser/555555555", "blog:myuser"),
+            _top10(1, "https://blog.naver.com/other/111111111", "blog:other"),
+        ]
+        result = diagnose(pub, snaps, top10, now=_NOW)
+        d = next(d for d in result if d.reason == "cannibalization")
+        # 3건이 같은 author — primary 는 rank=2 (가장 높은 순위)
+        assert d.metrics["competing_rank"] == 2
+        assert d.metrics["competing_url"] == "https://blog.naver.com/myuser/222222222"
+        assert d.metrics["same_author_count"] == 3
+        # evidence 의 첫 줄에도 rank=2 반영
+        assert " 2위" in d.evidence[0]
+        assert "동일 블로거 노출 글 수: 3" in d.evidence[2]
+
+    def test_self_url_excluded_from_same_author_others(self) -> None:
+        """본인 URL 이 Top10 안에 있어도 other 카운트에서 제외 (정상 노출 케이스)."""
+        # 우리 URL 이 Top10 에 있는데 latest snap 은 미노출 — 데이터 모순이지만
+        # 본 테스트는 self URL 필터링 로직만 확인
+        pub = _pub(url="https://m.blog.naver.com/myuser/123456789")
+        snaps = [_snap(None, 0)]  # latest 미노출 — cannibal 진단 진입
+        top10 = [
+            # 같은 URL (정규화 후 동등) — 제외 대상
+            _top10(3, "https://blog.naver.com/myuser/123456789", "blog:myuser"),
+            _top10(5, "https://blog.naver.com/myuser/999999999", "blog:myuser"),
+        ]
+        result = diagnose(pub, snaps, top10, now=_NOW)
+        d = next(d for d in result if d.reason == "cannibalization")
+        # self URL 제외 → same_author_count == 1, primary rank=5
+        assert d.metrics["same_author_count"] == 1
+        assert d.metrics["competing_rank"] == 5
+
+    def test_cross_domain_author_match_m_blog_vs_blog(self) -> None:
+        """publication 은 m.blog 인데 Top10 은 blog.naver.com — 같은 작성자로 인식."""
+        pub = _pub(url="https://m.blog.naver.com/myuser/123456789")
+        snaps = [_snap(None, 0)]
+        top10 = [
+            _top10(4, "https://blog.naver.com/myuser/222222222", "blog:myuser"),
+        ]
+        result = diagnose(pub, snaps, top10, now=_NOW)
+        assert any(d.reason == "cannibalization" for d in result)
+
+    def test_publication_url_none_skips_diagnosis(self) -> None:
+        """draft publication (url=None) 은 cannibalization 진단 대상 아님."""
+        pub = _pub(url=None)
+        snaps = [_snap(None, 0)]
+        top10 = [_top10(3, "https://blog.naver.com/myuser/999999999", "blog:myuser")]
+        result = diagnose(pub, snaps, top10, now=_NOW)
+        assert "cannibalization" not in [d.reason for d in result]
+
+    def test_competing_section_preserved_in_metric(self) -> None:
+        """primary 의 section 이 metric 에 정확히 보존."""
+        pub = _pub(url="https://m.blog.naver.com/myuser/123456789")
+        snaps = [_snap(None, 0)]
+        # rank=2 가 인기글 섹션, rank=5 는 VIEW
+        top10 = [
+            Top10Snapshot(
+                keyword="kw",
+                captured_at=_NOW,
+                rank=2,
+                url="https://blog.naver.com/myuser/aaa",
+                section="인기글",
+                blog_id="blog:myuser",
+            ),
+            Top10Snapshot(
+                keyword="kw",
+                captured_at=_NOW,
+                rank=5,
+                url="https://blog.naver.com/myuser/bbb",
+                section="VIEW",
+                blog_id="blog:myuser",
+            ),
+        ]
+        result = diagnose(pub, snaps, top10, now=_NOW)
+        d = next(d for d in result if d.reason == "cannibalization")
+        # primary = rank=2 → section "인기글"
+        assert d.metrics["competing_section"] == "인기글"
+
 
 class TestPriority:
     def test_no_measurement_returned_alone(self) -> None:

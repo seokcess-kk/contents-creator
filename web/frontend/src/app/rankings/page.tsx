@@ -23,6 +23,51 @@ const TABS: { key: QueueTab; label: string }[] = [
   { key: "all", label: "전체" },
 ];
 
+type SortKey =
+  | "diagnosis_recent"
+  | "rank_best"
+  | "rank_worst"
+  | "keyword_asc"
+  | "registered_desc";
+
+const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+  { key: "diagnosis_recent", label: "최근 진단순" },
+  { key: "rank_best", label: "순위 좋은순" },
+  { key: "rank_worst", label: "순위 나쁜순" },
+  { key: "keyword_asc", label: "키워드 가나다" },
+  { key: "registered_desc", label: "등록일 최신" },
+];
+
+function sortItems(items: QueueItem[], sortBy: SortKey): QueueItem[] {
+  const copy = [...items];
+  switch (sortBy) {
+    case "diagnosis_recent":
+      return copy.sort((a, b) => {
+        const aTs = a.latest_diagnosis?.diagnosed_at ?? "";
+        const bTs = b.latest_diagnosis?.diagnosed_at ?? "";
+        return bTs.localeCompare(aTs); // desc, 빈 문자열은 뒤로
+      });
+    case "rank_best":
+      return copy.sort((a, b) => {
+        const aRank = a.latest_snapshot?.position ?? 999;
+        const bRank = b.latest_snapshot?.position ?? 999;
+        return aRank - bRank; // asc — 1위가 위로
+      });
+    case "rank_worst":
+      return copy.sort((a, b) => {
+        const aRank = a.latest_snapshot?.position ?? 0;
+        const bRank = b.latest_snapshot?.position ?? 0;
+        return bRank - aRank; // desc — 100위가 위로, 미측정(0)은 아래
+      });
+    case "keyword_asc":
+      return copy.sort((a, b) => a.keyword.localeCompare(b.keyword, "ko"));
+    case "registered_desc":
+      return copy.sort((a, b) =>
+        (b.created_at ?? "").localeCompare(a.created_at ?? ""),
+      );
+  }
+}
+
 /**
  * 운영 홈 — 키워드 포트폴리오 운영 OS 의 메인 진입점.
  * 사용자가 매일 처리할 작업 큐 중심 UI.
@@ -37,6 +82,7 @@ export default function OperationsHomePage() {
   const [filter, setFilter] = useState("");
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkCheckOpen, setBulkCheckOpen] = useState(false);
+  const [sortBy, setSortBy] = useState<SortKey>("diagnosis_recent");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -60,14 +106,17 @@ export default function OperationsHomePage() {
   }, [load]);
 
   const filterLower = filter.trim().toLowerCase();
-  const filtered = filterLower
-    ? items.filter(
-        (i) =>
-          i.keyword.toLowerCase().includes(filterLower) ||
-          (i.slug ?? "").toLowerCase().includes(filterLower) ||
-          (i.url ?? "").toLowerCase().includes(filterLower),
-      )
-    : items;
+  const filtered = sortItems(
+    filterLower
+      ? items.filter(
+          (i) =>
+            i.keyword.toLowerCase().includes(filterLower) ||
+            (i.slug ?? "").toLowerCase().includes(filterLower) ||
+            (i.url ?? "").toLowerCase().includes(filterLower),
+        )
+      : items,
+    sortBy,
+  );
 
   return (
     <div className="space-y-4">
@@ -159,7 +208,19 @@ export default function OperationsHomePage() {
           placeholder="키워드 / slug / URL 검색"
           className="flex-1 px-3 py-1 border border-gray-300 rounded text-sm"
         />
-        <span className="text-xs text-gray-500">{filtered.length}개</span>
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value as SortKey)}
+          className="px-2 py-1 border border-gray-300 rounded text-xs text-gray-700 bg-white"
+          title="정렬 기준"
+        >
+          {SORT_OPTIONS.map((o) => (
+            <option key={o.key} value={o.key}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <span className="text-xs text-gray-500 shrink-0">{filtered.length}개</span>
       </div>
 
       {loading && <div className="text-sm text-gray-500">로딩 중...</div>}
