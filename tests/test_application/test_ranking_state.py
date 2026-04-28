@@ -49,9 +49,7 @@ class TestRecalculateVisibility:
         with (
             patch.object(ranking_state.storage, "get_publication", return_value=pub),
             patch.object(ranking_state.storage, "list_snapshots", return_value=snaps),
-            patch.object(
-                ranking_state.storage, "update_publication_workflow_state"
-            ) as upd,
+            patch.object(ranking_state.storage, "update_publication_workflow_state") as upd,
         ):
             result = ranking_state.recalculate_visibility_after_measurement("p-1")
         assert result == "exposed"
@@ -64,9 +62,7 @@ class TestRecalculateVisibility:
         with (
             patch.object(ranking_state.storage, "get_publication", return_value=pub),
             patch.object(ranking_state.storage, "list_snapshots", return_value=snaps),
-            patch.object(
-                ranking_state.storage, "update_publication_workflow_state"
-            ) as upd,
+            patch.object(ranking_state.storage, "update_publication_workflow_state") as upd,
         ):
             result = ranking_state.recalculate_visibility_after_measurement("p-1")
         assert result == "recovered"
@@ -84,9 +80,7 @@ class TestRecalculateVisibility:
         with (
             patch.object(ranking_state.storage, "get_publication", return_value=pub),
             patch.object(ranking_state.storage, "list_snapshots", return_value=snaps),
-            patch.object(
-                ranking_state.storage, "update_publication_workflow_state"
-            ) as upd,
+            patch.object(ranking_state.storage, "update_publication_workflow_state") as upd,
         ):
             result = ranking_state.recalculate_visibility_after_measurement("p-1")
         assert result == "off_radar"
@@ -99,18 +93,14 @@ class TestRecalculateVisibility:
         with (
             patch.object(ranking_state.storage, "get_publication", return_value=pub),
             patch.object(ranking_state.storage, "list_snapshots", return_value=snaps),
-            patch.object(
-                ranking_state.storage, "update_publication_workflow_state"
-            ) as upd,
+            patch.object(ranking_state.storage, "update_publication_workflow_state") as upd,
         ):
             result = ranking_state.recalculate_visibility_after_measurement("p-1")
         assert result is None
         upd.assert_not_called()
 
     def test_publication_not_found_returns_none(self) -> None:
-        with patch.object(
-            ranking_state.storage, "get_publication", return_value=None
-        ):
+        with patch.object(ranking_state.storage, "get_publication", return_value=None):
             result = ranking_state.recalculate_visibility_after_measurement("p-x")
         assert result is None
 
@@ -127,12 +117,8 @@ class TestSweepWorkflowTransitions:
             held_until=now - timedelta(days=1),
         )
         with (
-            patch.object(
-                ranking_state.storage, "list_publications", return_value=[expired_pub]
-            ),
-            patch.object(
-                ranking_state, "_lookup_active_republish_job", return_value=None
-            ),
+            patch.object(ranking_state.storage, "list_publications", return_value=[expired_pub]),
+            patch.object(ranking_state, "_lookup_active_republish_job", return_value=None),
             patch.object(ranking_state.actions_orch, "auto_requeue") as requeue,
         ):
             counts = ranking_state.sweep_workflow_transitions(now=now)
@@ -150,12 +136,8 @@ class TestSweepWorkflowTransitions:
             held_until=now + timedelta(days=5),
         )
         with (
-            patch.object(
-                ranking_state.storage, "list_publications", return_value=[future_pub]
-            ),
-            patch.object(
-                ranking_state, "_lookup_active_republish_job", return_value=None
-            ),
+            patch.object(ranking_state.storage, "list_publications", return_value=[future_pub]),
+            patch.object(ranking_state, "_lookup_active_republish_job", return_value=None),
             patch.object(ranking_state.actions_orch, "auto_requeue") as requeue,
         ):
             counts = ranking_state.sweep_workflow_transitions(now=now)
@@ -177,12 +159,8 @@ class TestSweepWorkflowTransitions:
             "new_publication_id": None,
         }
         with (
-            patch.object(
-                ranking_state.storage, "list_publications", return_value=[stuck_pub]
-            ),
-            patch.object(
-                ranking_state, "_lookup_active_republish_job", return_value=active_job
-            ),
+            patch.object(ranking_state.storage, "list_publications", return_value=[stuck_pub]),
+            patch.object(ranking_state, "_lookup_active_republish_job", return_value=active_job),
             patch.object(ranking_state.actions_orch, "auto_requeue") as requeue,
         ):
             counts = ranking_state.sweep_workflow_transitions(now=now)
@@ -204,12 +182,8 @@ class TestSweepWorkflowTransitions:
             "new_publication_id": None,
         }
         with (
-            patch.object(
-                ranking_state.storage, "list_publications", return_value=[failed_pub]
-            ),
-            patch.object(
-                ranking_state, "_lookup_active_republish_job", return_value=active_job
-            ),
+            patch.object(ranking_state.storage, "list_publications", return_value=[failed_pub]),
+            patch.object(ranking_state, "_lookup_active_republish_job", return_value=active_job),
             patch.object(ranking_state.actions_orch, "auto_requeue") as requeue,
         ):
             counts = ranking_state.sweep_workflow_transitions(now=now)
@@ -233,12 +207,8 @@ class TestSweepWorkflowTransitions:
             "new_publication_url": None,  # URL 미등록
         }
         with (
-            patch.object(
-                ranking_state.storage, "list_publications", return_value=[pending_pub]
-            ),
-            patch.object(
-                ranking_state, "_lookup_active_republish_job", return_value=active_job
-            ),
+            patch.object(ranking_state.storage, "list_publications", return_value=[pending_pub]),
+            patch.object(ranking_state, "_lookup_active_republish_job", return_value=active_job),
             patch.object(ranking_state.actions_orch, "auto_requeue") as requeue,
         ):
             counts = ranking_state.sweep_workflow_transitions(now=now)
@@ -251,16 +221,12 @@ class TestSweepWorkflowTransitions:
         now = datetime(2026, 4, 28, 12, 0, tzinfo=UTC)
         with (
             patch.object(ranking_state.storage, "list_publications") as list_pubs,
-            patch.object(
-                ranking_state, "_lookup_active_republish_job", return_value=None
-            ),
+            patch.object(ranking_state, "_lookup_active_republish_job", return_value=None),
         ):
             list_pubs.return_value = []
             ranking_state.sweep_workflow_transitions(now=now)
         # list_publications 호출 시 workflow_status=["held","republishing"] 필터 사용
-        list_pubs.assert_called_once_with(
-            limit=10_000, workflow_status=["held", "republishing"]
-        )
+        list_pubs.assert_called_once_with(limit=10_000, workflow_status=["held", "republishing"])
 
 
 class TestLookupActiveRepublishJob:

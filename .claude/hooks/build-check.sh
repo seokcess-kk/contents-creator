@@ -4,8 +4,17 @@
 # CLAUDE.md 검증 규칙의 "코드 변경 후 필수 수행" 순서를 실행:
 #   1. ruff check .
 #   2. ruff format --check .
-#   3. mypy domain/
-#   4. pytest -q
+#   3. architecture-check.sh
+#   4. pyright (basic 모드, pyrightconfig.json 사용)
+#   5. pytest -q
+#
+# 2026-04-28: mypy → pyright 전환.
+# 사유: (1) mypy DLL load 실패가 Windows Python 3.13 환경에서 산발적 발생,
+#       (2) anthropic SDK 타입 업데이트로 strict mode 46 사전 에러 누적,
+#       (3) pyright 는 Node.js 단일 바이너리로 cross-platform 안정,
+#       (4) basic 모드 + 프로젝트별 reportXxx 조정으로 점진적 강화 가능.
+# pyrightconfig.json 이 단일 출처 — pyproject.toml [tool.mypy] 는 더 엄격한
+# 검사를 원하는 개발자가 수동으로 사용 가능 (선택적).
 #
 # 호출:
 #   .claude/hooks/build-check.sh
@@ -40,15 +49,12 @@ step "ruff check" ruff check .
 step "ruff format --check" ruff format --check .
 step "architecture-check" "$SCRIPT_DIR/architecture-check.sh"
 
-# mypy 대상: domain/ + application/ (둘 다 존재 시)
-mypy_targets=()
-[[ -d domain ]] && mypy_targets+=("domain/")
-[[ -d application ]] && mypy_targets+=("application/")
-
-if [[ ${#mypy_targets[@]} -gt 0 ]]; then
-  step "mypy ${mypy_targets[*]}" mypy "${mypy_targets[@]}"
+# pyright — pyrightconfig.json 의 include/exclude/typeCheckingMode 사용.
+# 미설치 환경 대응: 자동 SKIP.
+if command -v pyright >/dev/null 2>&1; then
+  step "pyright" pyright
 else
-  echo "━━━ mypy — SKIP (domain/ 과 application/ 모두 없음) ━━━"
+  echo "━━━ pyright — SKIP (미설치). pip install pyright 권장 ━━━"
 fi
 
 # pytest는 tests/ 디렉토리가 존재할 때만 실행

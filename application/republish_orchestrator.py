@@ -305,9 +305,7 @@ def recover_stuck_republish_jobs() -> int:
             _auto_requeue_failed_republish(pipeline_job_id)
             recovered += 1
         except Exception:
-            logger.exception(
-                "recover_stuck_republish.failed pipeline_job_id=%s", pipeline_job_id
-            )
+            logger.exception("recover_stuck_republish.failed pipeline_job_id=%s", pipeline_job_id)
     if recovered > 0:
         logger.warning("recover_stuck_republish.summary recovered=%d", recovered)
     return recovered

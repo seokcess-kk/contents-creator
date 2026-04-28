@@ -33,9 +33,7 @@ def storage_mock(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
 def check_mock(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     """check_rankings_for_publication 결과를 통제."""
     mock = MagicMock()
-    monkeypatch.setattr(
-        ranking_bulk_check, "check_rankings_for_publication", mock
-    )
+    monkeypatch.setattr(ranking_bulk_check, "check_rankings_for_publication", mock)
     return mock
 
 
@@ -54,9 +52,7 @@ class TestResolveTargets:
         result = ranking_bulk_check._resolve_targets(None)
         assert [p.id for p in result] == ["p2"]
 
-    def test_excludes_held_dismissed_republishing_draft(
-        self, storage_mock: MagicMock
-    ) -> None:
+    def test_excludes_held_dismissed_republishing_draft(self, storage_mock: MagicMock) -> None:
         storage_mock.list_publications.return_value = [
             _pub("p1", workflow_status="active"),
             _pub("p2", workflow_status="held"),

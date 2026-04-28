@@ -83,8 +83,8 @@ class TestRecoverStuckRepublishJobs:
             {"pipeline_job_id": "j-2", "source_publication_id": "p-2"},
         ]
         client = MagicMock()
-        client.table.return_value.select.return_value.in_.return_value.execute.return_value = SimpleNamespace(
-            data=rows
+        client.table.return_value.select.return_value.in_.return_value.execute.return_value = (
+            SimpleNamespace(data=rows)
         )
         with (
             patch.object(ro, "get_client", return_value=client),
@@ -98,8 +98,8 @@ class TestRecoverStuckRepublishJobs:
 
     def test_zero_stuck_returns_zero(self) -> None:
         client = MagicMock()
-        client.table.return_value.select.return_value.in_.return_value.execute.return_value = SimpleNamespace(
-            data=[]
+        client.table.return_value.select.return_value.in_.return_value.execute.return_value = (
+            SimpleNamespace(data=[])
         )
         with (
             patch.object(ro, "get_client", return_value=client),
@@ -116,8 +116,8 @@ class TestRecoverStuckRepublishJobs:
             {"pipeline_job_id": "j-2", "source_publication_id": "p-2"},
         ]
         client = MagicMock()
-        client.table.return_value.select.return_value.in_.return_value.execute.return_value = SimpleNamespace(
-            data=rows
+        client.table.return_value.select.return_value.in_.return_value.execute.return_value = (
+            SimpleNamespace(data=rows)
         )
         with (
             patch.object(ro, "get_client", return_value=client),

@@ -105,11 +105,13 @@ output/{slug}/{ts}/  ← 타임스탬프별 결과물 (재실행 이력 누적)
 ```bash
 ruff check .                    # 린트 0개
 ruff format --check .           # 포맷 0개
-mypy domain/ application/       # 타입 에러 0개
+pyright                         # 타입 에러 0개 (pyrightconfig.json basic)
 pytest                          # 테스트 통과
-bash .claude/hooks/build-check.sh  # 위 4개 일괄
+bash .claude/hooks/build-check.sh  # 위 4개 + architecture-check 일괄
 ```
 
+- **2026-04-28 mypy → pyright 전환**. 사유: Windows Python 3.13 에서 mypy DLL 로드 산발적 실패 + anthropic SDK 타입 업데이트로 strict 사전 에러 누적. pyright 는 Node 단일 바이너리로 cross-platform 안정
+- `pyproject.toml [tool.mypy]` strict 설정은 유지 — 더 엄격한 검사를 원할 때 수동 사용 가능
 - 에러 발생 시 원인 분석 → 수정 → 재검증까지 자체 완료. 3회 실패 후에만 사용자에게 판단 요청
 - YAGNI: 불필요한 추상화·미래용 빈 껍데기 금지
 

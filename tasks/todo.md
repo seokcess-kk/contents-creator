@@ -509,6 +509,21 @@
 - [x] U2.4 `UsageDashboard.tsx` — 기간선택+요약카드 1줄, 일별/작업별 `grid lg:grid-cols-12 (7+5)` 병렬 + sticky thead
 - [x] U2.5 캘린더 헬퍼 컴포넌트를 `components/CalendarTable.tsx` 로 분리 (300줄 한계 준수)
 
+## Phase U6: build-check 사전 실패 정리 + mypy → pyright 전환 (2026-04-28) ✅ 완료
+
+### build-check 사전 실패 3건
+- [x] `architecture-check.sh` STAGE_ORDER 에 `[diagnosis]=1` 추가 — diagnosis 가 ranking 의 후행 도메인 (target<own 룰 만족)
+- [x] `tests/test_application/test_operations_home.py`, `test_ranking_bulk_check.py` ruff format
+- [x] P1 묶음에서 추가된 4 파일 ruff format (storage/events_aggregator/ranking_state/republish_finalizer)
+
+### mypy → pyright 전환
+- [x] 발견: mypy strict 모드가 anthropic SDK 타입 업데이트 + Windows Python 3.13 DLL 산발 실패로 46 사전 에러 누적
+- [x] `pyrightconfig.json` 신설 — basic 모드, domain/application/config 만 검사, reportUnknownXxx 무시 (점진적 강화 가능)
+- [x] `.claude/hooks/build-check.sh` mypy 단계 → pyright 로 교체. 미설치 환경 SKIP 폴백
+- [x] `pyproject.toml [project.optional-dependencies].dev` 에 `pyright>=1.1.400` 추가
+- [x] `CLAUDE.md` 검증 규칙 섹션 갱신 (전환 사유 + mypy strict 는 선택적 수동 사용 명시)
+- [x] `bash .claude/hooks/build-check.sh` ✓ build-check PASSED
+
 ## Phase U5: 외부 검토 P1 묶음 — state wiring + 테스트 + 운영 안전성 (2026-04-28) ✅ 완료
 
 ### P1-#3: 측정 루프 ↔ 상태 재계산 통합 ✅

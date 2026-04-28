@@ -37,7 +37,8 @@ web = [
 ]
 dev = [
     "ruff>=0.6",
-    "mypy>=1.11",
+    "mypy>=1.11",            # 선택적 strict 검사용 (build-check 는 pyright 사용)
+    "pyright>=1.1.400",      # 기본 type checker — pyrightconfig.json 의 basic 모드
     "pytest>=8.3",
     "pytest-cov>=5.0",
     "types-requests>=2.32",

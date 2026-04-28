@@ -73,9 +73,7 @@ def sweep_workflow_transitions(now: datetime | None = None) -> dict[str, int]:
         if pub.id is None:
             continue
         active_job = _lookup_active_republish_job(pub.id)
-        new_status, reason = state_calculator.calculate_workflow_status(
-            pub, active_job, now
-        )
+        new_status, reason = state_calculator.calculate_workflow_status(pub, active_job, now)
         if new_status == pub.workflow_status:
             continue
         if reason is None:

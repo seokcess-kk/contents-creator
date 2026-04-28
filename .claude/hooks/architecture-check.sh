@@ -33,6 +33,9 @@ declare -A STAGE_ORDER=(
   # ranking 은 SEO 파이프라인 외부의 격리 보조 도메인.
   # crawler 직접 import 금지 (DI 패턴), 다른 도메인과도 교차 import 금지.
   [ranking]=0
+  # diagnosis 는 ranking 의 후행 도메인 — Publication/RankingSnapshot/Top10Snapshot
+  # 모델만 입력으로 받음. ranking → diagnosis 역방향은 차단 (target>=own 룰).
+  [diagnosis]=1
 )
 
 violations=0

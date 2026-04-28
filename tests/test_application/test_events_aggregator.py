@@ -212,16 +212,8 @@ class TestMixedSourcesTimeOrder:
     def test_same_timestamp_keeps_both_events(self) -> None:
         """같은 occurred_at 도 누락 없이 보존 (정렬 안정성은 미보장이지만 둘 다 존재)."""
         ts = _at(2026, 4, 26, 12)
-        snaps = [
-            RankingSnapshot(
-                publication_id="p-1", position=5, section="VIEW", captured_at=ts
-            )
-        ]
-        actions = [
-            PublicationAction(
-                publication_id="p-1", created_at=ts, action="url_registered"
-            )
-        ]
+        snaps = [RankingSnapshot(publication_id="p-1", position=5, section="VIEW", captured_at=ts)]
+        actions = [PublicationAction(publication_id="p-1", created_at=ts, action="url_registered")]
         with (
             patch.object(events_aggregator.ranking_storage, "list_snapshots", return_value=snaps),
             patch.object(

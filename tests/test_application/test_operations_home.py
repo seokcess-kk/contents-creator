@@ -105,9 +105,7 @@ class TestListPublicationsForTab:
 
 
 class TestSummary:
-    def test_returns_workflow_counts_with_total(
-        self, ranking_storage_mock: MagicMock
-    ) -> None:
+    def test_returns_workflow_counts_with_total(self, ranking_storage_mock: MagicMock) -> None:
         # P0-3: __exposed 가상 키가 active 카운트 (workflow=active AND visibility 노출).
         ranking_storage_mock.count_publications_by_workflow_status.return_value = {
             "active": 30,
@@ -127,9 +125,7 @@ class TestSummary:
         # total 은 workflow 합계 (__exposed 제외) = 52
         assert s["total"] == 52
 
-    def test_active_count_zero_when_no_exposed(
-        self, ranking_storage_mock: MagicMock
-    ) -> None:
+    def test_active_count_zero_when_no_exposed(self, ranking_storage_mock: MagicMock) -> None:
         """workflow=active 인데 모두 visibility=not_measured 면 active 카운트=0."""
         ranking_storage_mock.count_publications_by_workflow_status.return_value = {
             "active": 10,

@@ -138,9 +138,7 @@ def count_publications_by_workflow_status() -> dict[str, int]:
     카운트를 채워 운영 홈 "노출 중" 카드가 실제 노출 의미를 반영하도록 한다.
     """
     client = get_client()
-    result = (
-        client.table(_PUB_TABLE).select("workflow_status,visibility_status").execute()
-    )
+    result = client.table(_PUB_TABLE).select("workflow_status,visibility_status").execute()
     counts: dict[str, int] = {}
     exposed_active = 0
     for row in result.data or []:
