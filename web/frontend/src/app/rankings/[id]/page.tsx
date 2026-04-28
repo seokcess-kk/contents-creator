@@ -78,14 +78,18 @@ export default function PublicationDetailPage({
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
               <div className="text-xs text-gray-500 mb-1">URL</div>
-              <a
-                href={publication.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-700 hover:underline truncate block"
-              >
-                {publication.url}
-              </a>
+              {publication.url ? (
+                <a
+                  href={publication.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-700 hover:underline truncate block"
+                >
+                  {publication.url}
+                </a>
+              ) : (
+                <div className="text-gray-500">URL 미등록 초안</div>
+              )}
               <div className="text-xs text-gray-500 mt-2 grid grid-cols-2 gap-x-4 gap-y-1">
                 <span>키워드: {publication.keyword}</span>
                 <span>
@@ -98,9 +102,13 @@ export default function PublicationDetailPage({
                   slug:{" "}
                   {publication.slug ? (
                     publication.slug
-                  ) : (
+                  ) : publication.url ? (
                     <span className="px-1.5 py-0.5 text-[10px] rounded bg-emerald-100 text-emerald-800">
                       외부
+                    </span>
+                  ) : (
+                    <span className="px-1.5 py-0.5 text-[10px] rounded bg-purple-100 text-purple-800">
+                      초안
                     </span>
                   )}
                 </span>

@@ -27,7 +27,9 @@ export default function PublicationForm({
   const [publishedAt, setPublishedAt] = useState(
     existingPublication?.published_at?.slice(0, 10) ?? "",
   );
-  const [isEditing, setIsEditing] = useState(!existingPublication);
+  const [isEditing, setIsEditing] = useState(
+    !existingPublication || !existingPublication.url,
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -52,7 +54,7 @@ export default function PublicationForm({
     }
   }
 
-  if (existingPublication && !isEditing) {
+  if (existingPublication?.url && !isEditing) {
     return (
       <div className="border border-blue-200 bg-blue-50 rounded p-3 text-sm">
         <div className="flex items-start justify-between gap-2">

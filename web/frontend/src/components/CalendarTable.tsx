@@ -27,11 +27,14 @@ export function CalendarRow({
 }) {
   const cellW = compact ? "w-[22px]" : "w-[28px]";
   const cellH = compact ? "h-[20px]" : "h-[28px]";
-  const isExternal = !row.publication.slug;
-  const sourceLabel = isExternal ? "외부" : "자체";
-  const sourceClass = isExternal
-    ? "bg-emerald-100 text-emerald-800"
-    : "bg-blue-100 text-blue-800";
+  const isDraft = !row.publication.url;
+  const isExternal = !isDraft && !row.publication.slug;
+  const sourceLabel = isDraft ? "초안" : isExternal ? "외부" : "자체";
+  const sourceClass = isDraft
+    ? "bg-purple-100 text-purple-800"
+    : isExternal
+      ? "bg-emerald-100 text-emerald-800"
+      : "bg-blue-100 text-blue-800";
   return (
     <tr className="border-t border-gray-100">
       <td
@@ -40,7 +43,7 @@ export function CalendarRow({
         <Link
           href={`/rankings/${encodeURIComponent(row.publication.id)}`}
           className="flex items-center gap-1.5 min-w-0"
-          title={row.publication.slug ?? row.publication.url}
+          title={row.publication.slug ?? row.publication.url ?? "URL 미등록 초안"}
         >
           <span
             className={`shrink-0 px-1 py-px rounded text-[10px] ${sourceClass}`}

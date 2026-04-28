@@ -67,7 +67,7 @@ export default function RankingCalendarPage() {
     (r) =>
       !filterLower ||
       r.publication.keyword.toLowerCase().includes(filterLower) ||
-      r.publication.url.toLowerCase().includes(filterLower) ||
+      (r.publication.url ?? "").toLowerCase().includes(filterLower) ||
       (r.publication.slug ?? "").toLowerCase().includes(filterLower),
   );
 

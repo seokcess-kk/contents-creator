@@ -20,7 +20,7 @@ export default function PublicationEditDialog({
   onUpdated,
 }: PublicationEditDialogProps) {
   const [keyword, setKeyword] = useState(publication.keyword);
-  const [url, setUrl] = useState(publication.url);
+  const [url, setUrl] = useState(publication.url ?? "");
   const [publishedAt, setPublishedAt] = useState(
     publication.published_at?.slice(0, 10) ?? "",
   );
@@ -43,7 +43,7 @@ export default function PublicationEditDialog({
       // 변경된 필드만 patch — 백엔드도 부분 수정 지원
       const patch: Parameters<typeof updatePublication>[1] = {};
       if (keyword.trim() !== publication.keyword) patch.keyword = keyword.trim();
-      if (url.trim() !== publication.url) patch.url = url.trim();
+      if (url.trim() !== (publication.url ?? "")) patch.url = url.trim();
       const newPubAt = publishedAt
         ? new Date(publishedAt).toISOString()
         : null;

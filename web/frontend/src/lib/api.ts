@@ -122,7 +122,7 @@ export interface Publication {
   job_id: string | null;
   keyword: string;
   slug: string | null;
-  url: string;
+  url: string | null;
   published_at: string | null;
   created_at: string;
   parent_publication_id?: string | null;
@@ -157,7 +157,7 @@ export function listPublications(
 
 export function createPublication(params: {
   keyword: string;
-  url: string;
+  url: string | null;
   slug?: string | null;
   job_id?: string | null;
   published_at?: string | null;
@@ -247,7 +247,7 @@ export function updatePublication(
   publicationId: string,
   patch: {
     keyword?: string;
-    url?: string;
+    url?: string | null;
     slug?: string | null;
     published_at?: string | null;
   },
