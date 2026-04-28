@@ -36,6 +36,10 @@ declare -A STAGE_ORDER=(
   # diagnosis 는 ranking 의 후행 도메인 — Publication/RankingSnapshot/Top10Snapshot
   # 모델만 입력으로 받음. ranking → diagnosis 역방향은 차단 (target>=own 룰).
   [diagnosis]=1
+  # brand_card 는 SEO 트랙과 격리된 별도 트랙. order=0 (격리) 으로 두고
+  # compliance/rules import 만 아래 특별 예외 블록에서 허용한다. AI 이미지
+  # 생성은 application/brand_card_orchestrator 가 image_generation 합성.
+  [brand_card]=0
 )
 
 violations=0
@@ -56,6 +60,9 @@ while IFS= read -r line; do
   [[ -z "$target_domain" || -z "$own_domain" ]] && continue
   [[ "$target_domain" == "$own_domain" ]] && continue
   [[ "$target_domain" == "common" || "$target_domain" == "profile" ]] && continue
+  # brand_card → compliance 는 SPEC-BRAND-CARD §10 의 명시적 허용.
+  # rules.py 의 CompliancePolicy/RULES 단일 출처를 직접 참조하기 위함.
+  [[ "$own_domain" == "brand_card" && "$target_domain" == "compliance" ]] && continue
 
   own_order="${STAGE_ORDER[$own_domain]:-}"
   target_order="${STAGE_ORDER[$target_domain]:-}"

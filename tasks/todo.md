@@ -509,6 +509,39 @@
 - [x] U2.4 `UsageDashboard.tsx` — 기간선택+요약카드 1줄, 일별/작업별 `grid lg:grid-cols-12 (7+5)` 병렬 + sticky thead
 - [x] U2.5 캘린더 헬퍼 컴포넌트를 `components/CalendarTable.tsx` 로 분리 (300줄 한계 준수)
 
+## Phase U9: 브랜드 카드 트랙 Phase 0 + Phase 1 Day 1 (2026-04-28) ✅ 진행 중
+
+### Phase 0: 결정 게이트 (1시간) ✅
+- [x] `architecture-check.sh` `[brand_card]=0` 격리 도메인 등록
+- [x] `brand_card → compliance` 만 허용하는 특별 예외 블록 추가 (SPEC §10)
+- [x] architecture-check 통과 확인
+
+### Phase 1 Day 1 ✅ 완료 (마이그레이션 + 모델 + CLAUDE.md + 검증 게이트)
+- [x] `config/migrations/2026-04-28_brand_card_v2_1.sql` — brand_message_sources, card_campaign_inputs 신규 + brand_cards ALTER 6 컬럼 + 검증/롤백 SQL 주석
+- [x] `domain/brand_card/__init__.py` — 도메인 격리 docstring
+- [x] `domain/brand_card/model.py` — Pydantic 모델 + Enum 6종 (CardStrategy/ExpressionLevel/BrandCardStatus/CardType/MessageSourceType + 모델 8종)
+- [x] `domain/brand_card/CLAUDE.md` — 격리 원칙·진입점 분리·파일 책임·다양화 정의·BRAND_LENIENT 정책·명명 규칙
+- [x] `tests/test_brand_card/test_model.py` — 19 시나리오 (Enum 5 + 모델 14)
+- [x] `tests/test_brand_card/test_brand_lenient_coverage.py` — Phase 1 검증 게이트 (R3): SPEC §7 항상 차단 9종 vs 현재 7종 catch + 갭 2종(부작용 없음/가격 할인 과장) xfail 마킹
+
+### Phase 1 Day 2~4 (TODO)
+- [ ] `source_parser.py` — txt/docx/pdf/html 텍스트 추출 (BC-3·BC-4 lessons 참조)
+- [ ] `asset_merge.py` — 5단계 입력 우선순위 병합
+- [ ] `reuse_guard.py` 골격 — 차단/경고 룰 인터페이스
+- [ ] `plan_generator.py` — LLM tool_use, BRAND_LENIENT 사전 주입
+- [ ] `storage.py` — Supabase CRUD
+
+### Phase 1 검증
+- [x] `bash .claude/hooks/build-check.sh` ✓ PASSED
+- [x] 테스트 583 → **611 passed + 2 xfailed** (+30, 새 카테고리 결정 게이트 가시화)
+- [x] 커버리지 70.82% → **71.31%**
+
+### 사용자 결정 게이트 (Phase 1 Day 2 진입 전)
+- [ ] **G1**: SPEC §7 #7 "부작용 없음" / #8 "가격 할인 과장" 처리 방식
+  - 옵션 A) 신규 ViolationCategory 2개 추가 (`compliance/CLAUDE.md` "카테고리 임의 추가 금지" 룰 예외 승인)
+  - 옵션 B) SPEC §7 9종 → 7종으로 축소 (현재 룰에 맞춤)
+  - 옵션 C) ABSOLUTE_GUARANTEE 패턴 확장으로 부분 커버 (불완전)
+
 ## Phase U8: 브랜드 카드 SPEC v2.1 패치 — 결정 D1~D7 반영 (2026-04-28) ✅ 완료
 
 > 두 문서(`SPEC-BRAND-CARD.md` v2 + `docs/brand-card-redesign.md`) 검토 후 7개 결정 위임 일괄 처리.
