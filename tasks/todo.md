@@ -126,17 +126,19 @@
 
 ---
 
-## 🚧 Phase 1 — 크롤러 도메인 (SEO 트랙, SPEC-SEO-TEXT.md §3 [1][2])
+## ✅ Phase 1 — 크롤러 도메인 (SEO 트랙, SPEC-SEO-TEXT.md §3 [1][2])
 
-- [ ] `domain/crawler/model.py` — `SerpResult`, `BlogPage`, `InsufficientCollectionError`
-- [ ] `domain/crawler/brightdata_client.py` — 공통 HTTP, 재시도, 타임아웃
-- [ ] `domain/crawler/serp_collector.py` — 네이버 블로그 URL 필터, 최소 7개
-- [ ] `domain/crawler/page_scraper.py` — Web Unlocker 호출 (C1 결과 반영)
-- [ ] `application/stage_runner.py` 에 `run_stage_serp_collection`, `run_stage_page_scraping` 추가
-- [ ] `tests/test_crawler/` 단위 테스트 (mock 기반)
-- [ ] 실제 키워드 1개로 end-to-end 수집 검증
-- [ ] `bash .claude/hooks/build-check.sh` 통과
-- [ ] `tasks/lessons.md` 에 수집 결과 기록
+> 본 체크박스는 stale 이었음. `domain/crawler/` + `tests/test_crawler/` 모두
+> 이미 구현·검증되어 후속 Phase 2~U12 에서 활용 중. 2026-04-29 갱신.
+
+- [x] `domain/crawler/model.py` — `SerpResult`, `BlogPage`, `InsufficientCollectionError`
+- [x] `domain/crawler/brightdata_client.py` — 공통 HTTP, 재시도, 타임아웃
+- [x] `domain/crawler/serp_collector.py` — 네이버 블로그 URL 필터, 최소 7개
+- [x] `domain/crawler/page_scraper.py` — Web Unlocker 호출 (C1 결과 반영)
+- [x] `application/stage_runner.py` 에 `run_stage_serp_collection`, `run_stage_page_scraping`
+- [x] `tests/test_crawler/` 단위 테스트 — `test_brightdata_client.py`, `test_page_scraper.py`, `test_serp_collector.py`
+- [x] 실제 키워드 end-to-end 수집 검증 (Phase U10~U12 흐름에서 활용)
+- [x] `bash .claude/hooks/build-check.sh` 통과 (855 passed)
 
 ## 🚨 Phase 2 실측 이슈 (2026-04-16 발견, 후속 조치 대기)
 

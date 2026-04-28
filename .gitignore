@@ -47,3 +47,6 @@ dev/active/hook-debug.log
 # Phase 0.6 실측 산출물 — 스크립트·HTML만 커밋, 생성된 PNG 는 재현 가능
 dev/active/bc-tests/*.png
 dev/active/bc-tests/fixtures/
+# 로컬 uvicorn 실행 로그
+uvicorn.out.log
+uvicorn.err.log
