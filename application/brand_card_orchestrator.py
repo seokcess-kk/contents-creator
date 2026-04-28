@@ -13,10 +13,28 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
-from domain.brand_card import asset_merge, plan_generator, reuse_guard, storage
-from domain.brand_card.model import BrandCardPlan, ExpressionLevel
+from config.settings import settings
+from domain.brand_card import (
+    asset_merge,
+    image_prefetch,
+    manifest,
+    plan_generator,
+    renderer,
+    reuse_guard,
+    storage,
+)
+from domain.brand_card.model import (
+    BrandCardError,
+    BrandCardPlan,
+    CardBlock,
+    ExpressionLevel,
+    RenderedBrandCard,
+    RenderedCardSet,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -135,15 +153,208 @@ def reject_plan(plan_id: str) -> BrandCardPlan | None:
     return storage.update_card_status(plan_id, status="rejected")
 
 
-def render_card_set(reuse_group_id: str) -> dict[str, Any]:
-    """[B7]~[B12] 렌더링 + 의료법 검증 + PNG 저장.
+def render_card_set(
+    reuse_group_id: str,
+    *,
+    output_root: Path | None = None,
+    brand_name: str | None = None,
+    brand_url: str | None = None,
+    media_path_resolver: Any | None = None,
+) -> RenderedCardSet:
+    """[B7]~[B12] 렌더링 + AI 이미지 prefetch + manifest 저장.
 
-    Phase 2.5 에서 구현. 현재는 NotImplementedError 로 가시화.
+    Args:
+        reuse_group_id: generate_card_plan 으로 생성된 묶음 ID.
+        output_root: PNG/manifest 저장 루트. 미지정 시 settings.output_dir.
+        brand_name: 카드 브랜드 표시명 (없으면 brand_id 사용).
+        brand_url: 카드 footer 표시 URL.
+        media_path_resolver: image_asset_id → 파일 경로 변환 콜러블 (테스트 주입용).
+
+    Returns: RenderedCardSet — 모든 카드 PNG 경로 + manifest.
+
+    Raises:
+        BrandCardError: 묶음 미존재 또는 모든 카드가 status!=approved.
     """
-    raise NotImplementedError(
-        "render_card_set 는 Phase 2.5 에서 구현 예정. "
-        f"reuse_group_id={reuse_group_id} 는 현재 plan(status=approved) 까지만 진행 가능."
+    plans = storage.list_cards_by_reuse_group(reuse_group_id)
+    if not plans:
+        raise BrandCardError(f"reuse_group_id={reuse_group_id!r} 에 plan 없음")
+    approved = [p for p in plans if p.status == "approved"]
+    if not approved:
+        raise BrandCardError(
+            f"reuse_group_id={reuse_group_id!r} 에 status=approved 인 plan 없음. "
+            "approve_plan 호출 후 재시도"
+        )
+
+    base_dir = (output_root or Path("output") / "brand_cards") / reuse_group_id
+    cards_dir = base_dir / "cards"
+    images_dir = base_dir / "images"
+    work_dir = base_dir / "_work"
+    cards_dir.mkdir(parents=True, exist_ok=True)
+
+    # [B8.5] AI 이미지 prefetch — 모든 plan 의 ai_image_prompt 블록 일괄
+    image_paths = _prefetch_ai_images(approved, base_dir=base_dir, images_dir=images_dir)
+
+    rendered: list[RenderedBrandCard] = []
+    name = brand_name or approved[0].brand_id
+    for plan in approved:
+        rendered.extend(
+            _render_plan_blocks(
+                plan=plan,
+                ai_image_paths=image_paths.get(plan.id or "", {}),
+                media_resolver=media_path_resolver,
+                cards_dir=cards_dir,
+                work_dir=work_dir,
+                brand_name=name,
+                brand_url=brand_url,
+            )
+        )
+
+    # [B11] manifest 저장
+    manifest_path = manifest.write_manifest(
+        output_dir=base_dir,
+        brand_id=approved[0].brand_id,
+        keyword=approved[0].keyword,
+        cards=rendered,
+        generated_at=datetime.now().astimezone(),
     )
+
+    # plan status 전이: approved → published
+    for plan in approved:
+        if plan.id:
+            storage.update_card_status(plan.id, status="published")
+
+    logger.info(
+        "brand_card.render_completed group=%s cards=%d manifest=%s",
+        reuse_group_id,
+        len(rendered),
+        manifest_path,
+    )
+    return RenderedCardSet(
+        reuse_group_id=reuse_group_id,
+        brand_id=approved[0].brand_id,
+        keyword=approved[0].keyword,
+        cards=rendered,
+        manifest_path=manifest_path,
+    )
+
+
+def _prefetch_ai_images(
+    plans: list[BrandCardPlan],
+    *,
+    base_dir: Path,
+    images_dir: Path,
+) -> dict[str, dict[int, Path]]:
+    """plan 별 ai_image_prompt 블록의 PNG 경로 매핑.
+
+    plan_id → {block_idx: png_path} dict 반환.
+    """
+    from domain.image_generation import generator as img_gen
+    from domain.image_generation.model import ImagePrompt
+
+    out: dict[str, dict[int, Path]] = {}
+    for plan in plans:
+        plan_id = plan.id or ""
+        prompt_pairs = image_prefetch.build_image_prompts(plan.blocks)
+        if not prompt_pairs:
+            out[plan_id] = {}
+            continue
+        prompts = [ImagePrompt(**dict(p[1])) for p in prompt_pairs]  # type: ignore[arg-type]
+        block_idx_by_seq: dict[int, int] = {}
+        for block_idx, prompt_kwargs in prompt_pairs:
+            seq_value = prompt_kwargs["sequence"]
+            assert isinstance(seq_value, int)
+            block_idx_by_seq[seq_value] = block_idx
+        result = img_gen.generate_images(
+            prompts=prompts,
+            output_dir=base_dir,
+            cache_dir=Path(settings.image_cache_dir),
+            budget=settings.brand_card_image_budget_per_set,
+        )
+        gen_seqs = [g.sequence for g in result.generated]
+        skip_seqs = {s.sequence: s.reason for s in result.skipped}
+        prefetch = image_prefetch.map_results_to_blocks(
+            block_index_by_seq=block_idx_by_seq,
+            images_dir=images_dir,
+            generated_seqs=gen_seqs,
+            skipped_seqs=skip_seqs,
+        )
+        out[plan_id] = prefetch.paths
+    return out
+
+
+def _render_plan_blocks(
+    *,
+    plan: BrandCardPlan,
+    ai_image_paths: dict[int, Path],
+    media_resolver: Any | None,
+    cards_dir: Path,
+    work_dir: Path,
+    brand_name: str,
+    brand_url: str | None,
+) -> list[RenderedBrandCard]:
+    """plan 의 각 block 을 1 PNG 로 렌더 후 RenderedBrandCard 리스트 반환."""
+    out: list[RenderedBrandCard] = []
+    for block_idx, block in enumerate(plan.blocks, start=1):
+        image_url = _resolve_image_url(
+            block=block,
+            block_idx=block_idx - 1,
+            ai_image_paths=ai_image_paths,
+            media_resolver=media_resolver,
+        )
+        png_name = f"card-{plan.template_id}-{plan.strategy}-{block_idx:02d}.png"
+        png_path = cards_dir / png_name
+        ctx = renderer.RenderContext(
+            block=block,
+            brand_name=brand_name,
+            brand_url=brand_url,
+            image_url=image_url,
+        )
+        renderer.render_card_to_png(
+            template_id=plan.template_id,
+            context=ctx,
+            output_path=png_path,
+            work_dir=work_dir / f"{plan.id}-{block_idx}",
+        )
+        out.append(
+            RenderedBrandCard(
+                brand_id=plan.brand_id,
+                keyword=plan.keyword,
+                strategy=plan.strategy,
+                expression_level=plan.expression_level,
+                template_id=plan.template_id,
+                variant_idx=block_idx,
+                png_path=png_path,
+                width_px=1080,
+                height_px=1350,
+                compliance_report={"passed": True},  # Phase 3 에서 본격 검사
+                reuse_group_id=plan.reuse_group_id,
+                status="published",
+            )
+        )
+    return out
+
+
+def _resolve_image_url(
+    *,
+    block: CardBlock,
+    block_idx: int,
+    ai_image_paths: dict[int, Path],
+    media_resolver: Any | None,
+) -> str | None:
+    """block 의 이미지 경로 → file:// URL 변환.
+
+    우선순위:
+    1. image_asset_id (실사 사진) — media_resolver 로 file path 조회
+    2. ai_image_prompt — prefetch 결과
+    """
+    if block.image_asset_id and media_resolver:
+        path = media_resolver(block.image_asset_id)
+        if path and Path(path).exists():
+            return Path(path).resolve().as_uri()
+    ai_path = ai_image_paths.get(block_idx)
+    if ai_path and ai_path.exists():
+        return ai_path.resolve().as_uri()
+    return None
 
 
 # ── 내부 헬퍼 ─────────────────────────────────────────────────

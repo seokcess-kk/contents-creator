@@ -91,6 +91,9 @@ class Settings(BaseSettings):
     image_max_width: int = 720  # 네이버 블로그 본문 폭 기준 리사이즈
     image_jpeg_quality: int = 85  # JPEG 변환 품질 (1~100)
 
+    # 브랜드 카드 — AI 이미지 예산 (R1 카드 세트당 호출 상한)
+    brand_card_image_budget_per_set: int = 6  # 카드 세트당 Gemini 호출 상한
+
     # 순위 추적 (SPEC-RANKING.md). False 면 스케줄러 비활성 (테스트·디버깅용)
     ranking_scheduler_enabled: bool = True
     ranking_scheduler_hour: int = 9  # KST 매일 실행 시각

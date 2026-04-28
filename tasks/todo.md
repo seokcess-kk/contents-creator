@@ -573,15 +573,30 @@
 - [x] `cleanup_work_dir` — 디버깅 후 임시 정리
 - [x] `tests/test_brand_card/test_renderer.py` — 11 시나리오 (HTML/CSS 작성 / 폰트 placeholder 치환 / 이미지 URL 임베드 / placeholder / card_type class / data-text-block / subcopy 생략 / overflow raise / mock screenshot / cleanup)
 
-### Phase 2.3 (TODO) — AI 이미지 prefetch ([B8.5])
-- [ ] `application/brand_card_orchestrator` 에 [B8.5] 단계 추가
-- [ ] `domain/image_generation` 재사용. SHA256 캐시 + brand_card_image_budget_per_set 가드
+### Phase 2.3 ✅ AI 이미지 prefetch ([B8.5])
+- [x] `domain/brand_card/image_prefetch.py` — CardBlock → ImagePrompt dict 변환 어댑터 (build_image_prompts + map_results_to_blocks)
+- [x] block index ↔ sequence 양방향 매핑으로 generate_images 결과를 block 단위로 재배포
+- [x] `image_type` card_type 기반 추론 (hero/trust=photo, process=diagram, 그외=illustration)
+- [x] `application/brand_card_orchestrator._prefetch_ai_images` — domain/image_generation 합성 호출
+- [x] `settings.brand_card_image_budget_per_set = 6` 가드 추가
+- [x] `tests/test_brand_card/test_image_prefetch.py` — 8 시나리오
 
-### Phase 2.4 (TODO) — manifest + 보관함
-- [ ] `cards-manifest.json` 생성
-- [ ] `output/{slug}/{ts}/cards/` 저장 경로
+### Phase 2.4 ✅ manifest + 보관함 경로
+- [x] `domain/brand_card/manifest.py` — build_manifest + write_manifest. SPEC §3 형식 (brand_id/keyword/generated_at/cards[])
+- [x] 카드 entry: template_id/strategy/expression_level/variant_idx/path/compliance_passed
+- [x] 한글 보존 (`ensure_ascii=False`)
+- [x] `output_root/{reuse_group_id}/cards-manifest.json` 저장 경로
+- [x] `tests/test_brand_card/test_manifest.py` — 5 시나리오
 
-### Phase 2.5 (TODO) — render_card_set 본격 구현 (Phase 2.1~2.4 통합)
+### Phase 2.5 ✅ render_card_set 본격 구현
+- [x] `application/brand_card_orchestrator.render_card_set(reuse_group_id, output_root, brand_name, brand_url, media_path_resolver)` 진입점
+- [x] approved plan 만 진행 (BrandCardError 명시 raise)
+- [x] [B8.5] AI 이미지 prefetch → block 별 PNG 경로 매핑
+- [x] block 별 renderer.render_card_to_png 호출 (variant_idx 1-based)
+- [x] SPEC §3 파일명: `card-{template_id}-{strategy}-{NN}.png`
+- [x] `_resolve_image_url`: image_asset_id (실사) 우선 → ai_image_paths 폴백 → None
+- [x] manifest 저장 + plan status 전이 (approved → published)
+- [x] `tests/test_application/test_brand_card_orchestrator.py` Phase 2.5 케이스 +3 (no plans/no approved/renders+manifest/filename)
 
 ### Phase 1 검증
 - [x] `bash .claude/hooks/build-check.sh` ✓ PASSED

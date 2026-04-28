@@ -137,6 +137,128 @@ class TestApproveAndReject:
 
 
 class TestRenderCardSet:
-    def test_not_implemented_phase_2_5(self) -> None:
-        with pytest.raises(NotImplementedError, match="Phase 2.5"):
+    """Phase 2.5: render_card_set — 통합 흐름 검증 (renderer/image_gen mock)."""
+
+    def _approved_plan(self, plan_id: str = "p-1") -> BrandCardPlan:
+        return BrandCardPlan(
+            id=plan_id,
+            brand_id="b-1",
+            keyword="kw",
+            strategy="trust_first",
+            expression_level="balanced",
+            template_id="clinic_trust",
+            angle="...",
+            blocks=[
+                CardBlock(
+                    card_type="hero",
+                    headline="제목 1",
+                    recommended_position="after_intro",
+                ),
+                CardBlock(
+                    card_type="problem",
+                    headline="고민 2",
+                    recommended_position="after_problem",
+                ),
+            ],
+            reuse_group_id="g-1",
+            status="approved",
+        )
+
+    def test_no_plans_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from domain.brand_card.model import BrandCardError
+
+        mock_storage = MagicMock()
+        mock_storage.list_cards_by_reuse_group.return_value = []
+        monkeypatch.setattr(orch, "storage", mock_storage)
+        with pytest.raises(BrandCardError, match="plan 없음"):
+            orch.render_card_set("g-missing")
+
+    def test_no_approved_plans_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from domain.brand_card.model import BrandCardError
+
+        draft = self._approved_plan()
+        draft.status = "draft"  # type: ignore[misc]
+        mock_storage = MagicMock()
+        mock_storage.list_cards_by_reuse_group.return_value = [draft]
+        monkeypatch.setattr(orch, "storage", mock_storage)
+        with pytest.raises(BrandCardError, match="approved"):
             orch.render_card_set("g-1")
+
+    def test_renders_each_block_and_writes_manifest(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: object
+    ) -> None:
+        from pathlib import Path  # noqa: N814
+
+        plan = self._approved_plan()
+        mock_storage = MagicMock()
+        mock_storage.list_cards_by_reuse_group.return_value = [plan]
+        monkeypatch.setattr(orch, "storage", mock_storage)
+
+        # renderer mock — 호출 시 PNG 파일 생성 흉내
+        def fake_render(**kwargs: object) -> Path:
+            output = kwargs["output_path"]
+            assert isinstance(output, Path)
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_bytes(b"\x89PNG fake")
+            return output
+
+        mock_renderer = MagicMock()
+        mock_renderer.render_card_to_png.side_effect = fake_render
+        mock_renderer.RenderContext = orch.renderer.RenderContext
+        monkeypatch.setattr(orch, "renderer", mock_renderer)
+
+        # image prefetch mock — AI 이미지 없는 케이스 (모든 block 이 image_asset_id 도 없음)
+        monkeypatch.setattr(
+            orch,
+            "_prefetch_ai_images",
+            lambda plans, **k: {p.id or "": {} for p in plans},
+        )
+
+        result = orch.render_card_set(
+            "g-1",
+            output_root=Path(str(tmp_path)),
+            brand_name="대구한의원",
+        )
+
+        # 2 block × 1 plan = 2 PNG 호출
+        assert mock_renderer.render_card_to_png.call_count == 2
+        assert len(result.cards) == 2
+        # variant_idx 가 1, 2 로 부여됨
+        assert {c.variant_idx for c in result.cards} == {1, 2}
+        # manifest 파일 작성됨
+        assert result.manifest_path.exists()
+        # status 전이 호출 — approved → published
+        mock_storage.update_card_status.assert_called_with("p-1", status="published")
+
+    def test_filename_pattern(self, monkeypatch: pytest.MonkeyPatch, tmp_path: object) -> None:
+        """SPEC §3 파일명: card-{template_id}-{strategy}-{NN}.png."""
+        from pathlib import Path  # noqa: N814
+
+        plan = self._approved_plan()
+        mock_storage = MagicMock()
+        mock_storage.list_cards_by_reuse_group.return_value = [plan]
+        monkeypatch.setattr(orch, "storage", mock_storage)
+        captured: list[Path] = []
+
+        def fake_render(**kwargs: object) -> Path:
+            output = kwargs["output_path"]
+            assert isinstance(output, Path)
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_bytes(b"x")
+            captured.append(output)
+            return output
+
+        mock_renderer = MagicMock()
+        mock_renderer.render_card_to_png.side_effect = fake_render
+        mock_renderer.RenderContext = orch.renderer.RenderContext
+        monkeypatch.setattr(orch, "renderer", mock_renderer)
+        monkeypatch.setattr(
+            orch,
+            "_prefetch_ai_images",
+            lambda plans, **k: {p.id or "": {} for p in plans},
+        )
+
+        orch.render_card_set("g-1", output_root=Path(str(tmp_path)), brand_name="b")
+        names = [p.name for p in captured]
+        assert "card-clinic_trust-trust_first-01.png" in names
+        assert "card-clinic_trust-trust_first-02.png" in names
