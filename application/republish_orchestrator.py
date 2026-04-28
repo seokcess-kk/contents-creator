@@ -1,17 +1,18 @@
-"""재발행 use case — 파이프라인 트리거 + DB 잠금 + 부모 상태 전이.
+"""재발행 use case — 파이프라인 트리거 + DB 잠금. 부모 상태는 active 유지.
 
-흐름 (P0-1 재정렬: 액션 기록을 부모 상태 전이 앞으로 이동):
+흐름:
 1. 부모 publication 의 active republish job 존재 시 RuntimeError (DB unique 제약)
 2. draft publication 자동 생성 (url=None, parent 연결, workflow=draft)
 3. job_manager 에 pipeline job 제출 (12-hex job_id)
 4. republish_jobs row INSERT — 위 두 단계 연결
-5. publication_actions.republished 히스토리 기록 (실패 시 raise — 부모 상태 미전이)
-6. 부모 publication.workflow_status = republishing, republishing_started_at = now
+5. publication_actions.republished 히스토리 기록 (실패 시 raise)
+
+부모는 별도 URL 로 계속 추적되어야 하므로 workflow_status 를 변경하지 않는다.
+재발행 진행 컨텍스트는 republish_jobs 테이블 + 자식 draft + parent_publication_id
+조합으로 표현된다.
 
 🔴 데이터 정합성:
 - 같은 source_publication_id 에 active(queued/running) job 1개만 — DB partial unique
-- 액션 기록(5) 실패 시 부모 상태(6) 는 그대로 active → 사용자 재시도 시 unique
-  위반으로 "이미 진행 중" 에러 (기존 draft + republish_jobs 유지)
 - republish_jobs INSERT 실패 → draft publication cleanup (구현됨)
 - 진정한 atomicity 는 Supabase RPC 로만 가능 — P1 에서 RPC 도입 검토
 """
@@ -88,7 +89,7 @@ def start_republish(
             ) from exc
         raise
 
-    # 5) publication_actions 히스토리 — 실패 시 raise → 부모 status 미전이
+    # 5) publication_actions 히스토리 — 실패 시 raise
     _record_republished_action(
         source_publication_id=source_publication_id,
         diagnosis_id=diagnosis_id,
@@ -97,14 +98,7 @@ def start_republish(
         strategy=strategy,
     )
 
-    # 6) 부모 status 전이 + republishing_started_at 기록
     started_at = datetime.now(tz=UTC)
-    ranking_storage.update_publication_workflow_state(
-        source_publication_id,
-        workflow_status="republishing",
-        republishing_started_at=started_at,
-    )
-
     logger.info(
         "republish.started source=%s new=%s job=%s strategy=%s",
         source_publication_id,

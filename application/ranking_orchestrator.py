@@ -208,6 +208,10 @@ def update_publication(
 
     URL 이 제공되면 normalize 후 저장. 정규화 실패 시 ValueError.
     멱등 처리는 storage 레이어가 담당 (UNIQUE 충돌은 RankingDuplicateUrlError).
+
+    draft → active 자동 전이: url 등록 시 현재 workflow_status="draft" 면
+    `url_registered` 액션 기록 + workflow_status="active" 로 전이해 측정 대상화.
+    재발행 자식 publication 이 URL 등록 후 측정에서 빠지지 않도록 하기 위함.
     """
     normalized_url: str | None = None
     if url is not None:
@@ -215,12 +219,44 @@ def update_publication(
         if normalized_url is None:
             raise ValueError(f"URL 형식이 유효하지 않습니다: {url!r}")
 
-    return storage.update_publication(
+    needs_activation = False
+    if normalized_url is not None:
+        current = storage.get_publication(publication_id)
+        if current is not None and current.workflow_status == "draft":
+            needs_activation = True
+
+    updated = storage.update_publication(
         publication_id,
         keyword=keyword,
         url=normalized_url,
         slug=slug,
         published_at=published_at,
+    )
+    if updated is None:
+        return None
+
+    if needs_activation and normalized_url is not None:
+        _activate_after_url_registration(publication_id, normalized_url)
+        refreshed = storage.update_publication_workflow_state(
+            publication_id, workflow_status="active"
+        )
+        if refreshed is not None:
+            updated = refreshed
+    return updated
+
+
+def _activate_after_url_registration(publication_id: str, url: str) -> None:
+    """url_registered 액션 기록 — INSERT 실패 시 raise (status 전이 차단)."""
+    from domain.ranking import publication_actions as actions_storage
+    from domain.ranking.publication_actions import PublicationAction
+
+    actions_storage.insert_action(
+        PublicationAction(
+            publication_id=publication_id,
+            action="url_registered",
+            note="URL 등록 (draft → active)",
+            metadata={"url": url},
+        )
     )
 
 

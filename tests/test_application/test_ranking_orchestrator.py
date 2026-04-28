@@ -171,6 +171,60 @@ class TestUpdatePublication:
             ranking_orchestrator.update_publication("pub-1", url="")
         storage_mock.update_publication.assert_not_called()
 
+    def test_draft_auto_activates_on_url_registration(
+        self, storage_mock: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """재발행 자식 draft 가 URL 등록 시 active 로 자동 전이 + 액션 기록."""
+        storage_mock.get_publication.return_value = _publication(
+            url=None, workflow_status="draft"
+        )
+        storage_mock.update_publication.return_value = _publication(
+            workflow_status="draft"
+        )
+        storage_mock.update_publication_workflow_state.return_value = _publication(
+            workflow_status="active"
+        )
+        actions_mock = MagicMock()
+        monkeypatch.setattr(
+            "domain.ranking.publication_actions.insert_action",
+            actions_mock,
+        )
+
+        result = ranking_orchestrator.update_publication(
+            "pub-1", url="https://blog.naver.com/u/123456789"
+        )
+
+        assert result is not None and result.workflow_status == "active"
+        actions_mock.assert_called_once()
+        action_arg = actions_mock.call_args.args[0]
+        assert action_arg.action == "url_registered"
+        storage_mock.update_publication_workflow_state.assert_called_once_with(
+            "pub-1", workflow_status="active"
+        )
+
+    def test_active_publication_url_change_keeps_status(
+        self, storage_mock: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """이미 active 인 publication 의 URL 변경은 status 전이·액션 기록 없음."""
+        storage_mock.get_publication.return_value = _publication(
+            workflow_status="active"
+        )
+        storage_mock.update_publication.return_value = _publication(
+            workflow_status="active"
+        )
+        actions_mock = MagicMock()
+        monkeypatch.setattr(
+            "domain.ranking.publication_actions.insert_action",
+            actions_mock,
+        )
+
+        ranking_orchestrator.update_publication(
+            "pub-1", url="https://blog.naver.com/u/999999999"
+        )
+
+        actions_mock.assert_not_called()
+        storage_mock.update_publication_workflow_state.assert_not_called()
+
 
 class TestDeletePublication:
     def test_returns_storage_result(self, storage_mock: MagicMock) -> None:
