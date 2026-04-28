@@ -524,12 +524,16 @@
 - [x] `tests/test_brand_card/test_model.py` — 19 시나리오 (Enum 5 + 모델 14)
 - [x] `tests/test_brand_card/test_brand_lenient_coverage.py` — Phase 1 검증 게이트 (R3): SPEC §7 항상 차단 9종 vs 현재 7종 catch + 갭 2종(부작용 없음/가격 할인 과장) xfail 마킹
 
-### Phase 1 Day 2~4 (TODO)
-- [ ] `source_parser.py` — txt/docx/pdf/html 텍스트 추출 (BC-3·BC-4 lessons 참조)
-- [ ] `asset_merge.py` — 5단계 입력 우선순위 병합
-- [ ] `reuse_guard.py` 골격 — 차단/경고 룰 인터페이스
-- [ ] `plan_generator.py` — LLM tool_use, BRAND_LENIENT 사전 주입
-- [ ] `storage.py` — Supabase CRUD
+### Phase 1 Day 2 ✅ 완료 (storage + source_parser + asset_merge + reuse_guard)
+- [x] `storage.py` — Supabase CRUD 11 함수 (brand_message_sources / card_campaign_inputs / brand_cards). 신규 컬럼만 read/write, 기존 컬럼은 호환성 유지 (deprecate)
+- [x] `source_parser.py` — txt/docx/pdf/html 텍스트 추출. BC-3 lessons (pypdf → pdfplumber fallback) + BC-4 lessons (python-docx) 반영
+- [x] `asset_merge.py` — SPEC §6 5단계 우선순위 병합. MergedAssets 데이터클래스. 1) brief 2) attached 3) brand_common 4) other_references
+- [x] `reuse_guard.py` — 차단(headline 30일) + 경고(template 5회/strategy 5회/photo 3 키워드) + override 옵션 (D5)
+- [x] `tests/test_brand_card/test_asset_merge.py` 7 시나리오
+- [x] `tests/test_brand_card/test_reuse_guard.py` 13 시나리오 (블락/경고/override)
+
+### Phase 1 Day 3~4 (TODO)
+- [ ] `plan_generator.py` — LLM tool_use, BRAND_LENIENT 사전 주입, asset_merge + reuse_guard 통합 호출
 
 ### Phase 1 검증
 - [x] `bash .claude/hooks/build-check.sh` ✓ PASSED
