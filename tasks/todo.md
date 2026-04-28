@@ -509,6 +509,43 @@
 - [x] U2.4 `UsageDashboard.tsx` — 기간선택+요약카드 1줄, 일별/작업별 `grid lg:grid-cols-12 (7+5)` 병렬 + sticky thead
 - [x] U2.5 캘린더 헬퍼 컴포넌트를 `components/CalendarTable.tsx` 로 분리 (300줄 한계 준수)
 
+## Phase U8: 브랜드 카드 SPEC v2.1 패치 — 결정 D1~D7 반영 (2026-04-28) ✅ 완료
+
+> 두 문서(`SPEC-BRAND-CARD.md` v2 + `docs/brand-card-redesign.md`) 검토 후 7개 결정 위임 일괄 처리.
+
+### 결정 D1~D7 반영
+- [x] D1: brand_cards 컬럼 통합 — 신규 ALTER + 기존 점진 deprecate (SPEC §9 deprecate 매핑 표)
+- [x] D2: AI 이미지 도메인 — `domain/image_generation` 재사용 (SPEC §12 [B8.5])
+- [x] D3: 진입점 분리 — `generate_card_plan` + `render_card_set` 2개 (SPEC §12)
+- [x] D4: 템플릿 작성 도구 — Claude `frontend-design` 스킬 (SPEC §13)
+- [x] D5: reuse_guard — 차단 룰 + 사용자 override 옵션 (SPEC §5 차단 vs 경고 분리)
+- [x] D6: 두 문서 단일 출처 — `docs/brand-card-redesign.md` → `docs/_archive/`
+- [x] D7: redesign 통찰 SPEC promote — SEO↔카드 매트릭스(§1), 좋은 다양화(§5), 결과 화면 표시 항목(§14)
+
+### SPEC v2.1 추가 섹션
+- [x] §1 한 줄 정의 + 역할 분리 매트릭스
+- [x] §5 다양화 의미 (나쁜/좋은) + 차단 vs 경고 분리
+- [x] §9 brand_cards 신구 컬럼 deprecation 정책 + status 전이도
+- [x] §12 진입점 2개 + AI 이미지 도메인 재사용 명시
+- [x] §13 Overflow 검출 (Playwright `page.evaluate()`) + 템플릿 작성 도구
+- [x] §14 결과 화면 표시 항목 8개
+- [x] §16 우선순위 재정렬 (Phase 0 결정 게이트 + Phase 5 배포)
+- [x] §17 수용 기준 보강 (BRAND_LENIENT 회귀, AI 이미지 가드, deploy 가이드)
+- [x] §19 위험·완화 R1~R8 (R6 단가 압박 / R7 시각 과장 / R8 명명 충돌 신규)
+- [x] §20 명명 규칙 (brand_card vs pattern_card 분리)
+
+### 정리
+- [x] `docs/brand-card-redesign.md` → `docs/_archive/brand-card-redesign.md` 이동
+- [x] `docs/_archive/README.md` archive 정책 + 대체 문서 명시
+- [x] `CLAUDE.md` 참조 문서 라인 갱신 (v2.1 + archive 위치 표기)
+- [x] SPEC 본문 685 → 911 줄, 18 → 20 섹션
+
+### 다음 단계 (Phase 1 착수 시)
+- [ ] B0: SPEC v2.1 의 결정 사항을 `tasks/todo.md` 에 Phase 1~5 체크리스트로 분해
+- [ ] `architecture-check.sh` STAGE_ORDER `[brand_card]=2` 등록
+- [ ] Phase 1 마이그레이션 + model.py + reuse_guard 골격 + plan_generator 구현
+- [ ] Phase 1 검증 게이트: BRAND_LENIENT §7 9종 회귀 테스트
+
 ## Phase U7: 미완 항목 일괄 처리 — 보강 엣지/cannibalization 다중 author/UI 인디케이터/정렬 (2026-04-28) ✅ 완료
 
 ### body_quality_enforcer 보강 엣지 케이스 ✅

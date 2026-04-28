@@ -124,7 +124,7 @@ bash .claude/hooks/build-check.sh  # 위 4개 + architecture-check 일괄
 ## 참조 문서
 
 - SPEC-SEO-TEXT.md — 전체 기획서 (10단계 파이프라인, 스키마, 모델 매핑)
-- SPEC-BRAND-CARD.md — 브랜드 카드 트랙 (병행, BRAND_LENIENT 프로필)
+- SPEC-BRAND-CARD.md — 브랜드 카드 트랙 v2.1 (병행, BRAND_LENIENT 프로필, 단일 출처). `docs/_archive/brand-card-redesign.md` 는 v2 narrative archive
 - SPEC-RANKING.md — 순위 추적 시스템 (병행 보조 트랙, 실측 피드백 루프 MVP)
 - application/CLAUDE.md — Application 레이어 오케스트레이션 규칙
 - domain/analysis/CLAUDE.md — [3][4a][4b][5] 분석 규칙 + DIA+ + 물리 파싱
