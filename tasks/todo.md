@@ -690,7 +690,7 @@
 - [x] 검증: `npx tsc --noEmit` 0 errors / `npx next build` 통과 / 회귀 테스트 통과
 
 ### Phase 4.2 — 본 차수 외 (후속)
-- [ ] PNG 정적 다운로드 라우트 (`GET /brand-studio/cards/{group}/files/{name}`)
+- [x] PNG 정적 다운로드 라우트 — `GET /brand-studio/cards/{group}/files/{name}` (path traversal 방어 + FileResponse) + archive 페이지 썸네일·다운로드 링크 (2026-04-29)
 - [ ] 브랜드 등록 UI + `POST /brands` 백엔드
 - [ ] `brand_media_assets` 미디어 라이브러리 UI
 - [ ] approve/reject 외 3 액션(문구 수정 / 사진 교체 / 전략 변경) 백엔드 PATCH 라우트

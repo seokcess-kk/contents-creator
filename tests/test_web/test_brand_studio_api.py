@@ -455,6 +455,87 @@ class TestArchive:
         assert len(item["png_paths"]) == 1
 
 
+# ── 10. GET /cards/{group_id}/files/{filename} — PNG 다운로드 ──
+
+
+class TestDownloadCardPng:
+    def _setup_png(self, brand_studio: Any, tmp_path: Any) -> Any:
+        cards_dir = tmp_path / "brand_cards" / "g-1" / "cards"
+        cards_dir.mkdir(parents=True)
+        png_path = cards_dir / "card-clinic_trust-trust_first-01.png"
+        png_path.write_bytes(b"\x89PNG\r\n\x1a\nfake-png-data")
+        return png_path
+
+    def test_returns_png_file(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+    ) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(
+            brand_studio,
+            "_resolve_output_root",
+            lambda: tmp_path / "brand_cards",
+        )
+        self._setup_png(brand_studio, tmp_path)
+        resp = client.get("/api/brand-studio/cards/g-1/files/card-clinic_trust-trust_first-01.png")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "image/png"
+        assert b"fake-png-data" in resp.content
+        assert "attachment" in resp.headers.get("content-disposition", "")
+
+    def test_missing_file_404(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+    ) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(
+            brand_studio,
+            "_resolve_output_root",
+            lambda: tmp_path / "brand_cards",
+        )
+        resp = client.get("/api/brand-studio/cards/g-1/files/nope.png")
+        assert resp.status_code == 404
+
+    def test_path_traversal_in_filename_400(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+    ) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(
+            brand_studio,
+            "_resolve_output_root",
+            lambda: tmp_path / "brand_cards",
+        )
+        # `..` 인코딩 (`%2E%2E`) 으로 전송 — httpx 클라이언트의 path normalization 회피
+        resp = client.get("/api/brand-studio/cards/g-1/files/%2E%2E")
+        assert resp.status_code == 400
+
+    def test_slash_in_filename_blocked(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+    ) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(
+            brand_studio,
+            "_resolve_output_root",
+            lambda: tmp_path / "brand_cards",
+        )
+        # encoded slash (`%2F`) 는 starlette 라우터가 segment 분리 → 404
+        # (라우트 미매칭). 헬퍼 함수가 추가 방어선 역할.
+        resp = client.get("/api/brand-studio/cards/g-1/files/sub%2Fevil.png")
+        assert resp.status_code in (400, 404)
+
+    def test_helper_is_safe_path_segment(self) -> None:
+        from web.api.routers.brand_studio import _is_safe_path_segment
+
+        assert _is_safe_path_segment("card-01.png") is True
+        assert _is_safe_path_segment("g-1") is True
+        assert _is_safe_path_segment("a_b.c-d") is True
+        # 차단 케이스
+        for bad in ("", ".", "..", "a/b", "a\\b", "a\x00b"):
+            assert _is_safe_path_segment(bad) is False, bad
+
+
 # ── 인증 ────────────────────────────────────────────────────
 
 

@@ -209,3 +209,19 @@ export function submitRender(
 export function getCardArchive(groupId: string): Promise<CardArchiveResponse> {
   return request(`/cards/${encodeURIComponent(groupId)}`);
 }
+
+/**
+ * PNG 다운로드 URL — same-origin BFF 경유. <a download> 또는 <img src> 에 사용.
+ * 백엔드 `GET /cards/{group_id}/files/{filename}` 와 매핑.
+ *
+ * absPathOrFilename 은 백엔드 `png_paths` 의 디스크 경로 또는 그 basename.
+ * basename 만 추출해 라우트에 전달 (path traversal 은 백엔드가 추가 검증).
+ */
+export function buildPngDownloadUrl(
+  groupId: string,
+  absPathOrFilename: string,
+): string {
+  const cleaned = absPathOrFilename.replace(/\\/g, "/");
+  const base = cleaned.substring(cleaned.lastIndexOf("/") + 1);
+  return `${API_BASE}/cards/${encodeURIComponent(groupId)}/files/${encodeURIComponent(base)}`;
+}

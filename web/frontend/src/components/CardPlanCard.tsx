@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import ComplianceRiskBadge from "@/components/ComplianceRiskBadge";
-import type { BrandCardPlan } from "@/lib/brand-studio-api";
+import { buildPngDownloadUrl, type BrandCardPlan } from "@/lib/brand-studio-api";
 
 /**
  * 1 plan variant 표시 — SPEC §14 결과 화면 8 항목.
@@ -179,21 +179,36 @@ export default function CardPlanCard({
         </span>
       </div>
 
-      {/* archive 모드: PNG 경로 */}
-      {readOnly && pngPaths.length > 0 && (
-        <div className="border-t border-gray-100 pt-2 space-y-1">
-          <div className="text-[11px] text-gray-500">생성 PNG ({pngPaths.length})</div>
-          {pngPaths.map((p) => (
-            <div
-              key={p}
-              className="font-mono text-[10px] text-gray-700 truncate"
-              title={p}
-            >
-              {p}
-            </div>
-          ))}
-          <div className="text-[10px] text-amber-700">
-            ※ 정적 다운로드 라우트는 후속 차수에서 추가 — 현재는 경로만 표시
+      {/* archive 모드: PNG 썸네일 + 다운로드 */}
+      {readOnly && pngPaths.length > 0 && plan.reuse_group_id && (
+        <div className="border-t border-gray-100 pt-2 space-y-2">
+          <div className="text-[11px] text-gray-500">
+            생성 PNG ({pngPaths.length})
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {pngPaths.map((p) => {
+              const filename = p.replace(/\\/g, "/").split("/").pop() ?? p;
+              const url = buildPngDownloadUrl(plan.reuse_group_id ?? "", p);
+              return (
+                <div key={p} className="space-y-1">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={url}
+                    alt={filename}
+                    loading="lazy"
+                    className="w-full h-auto border border-gray-200 rounded bg-gray-50"
+                  />
+                  <a
+                    href={url}
+                    download={filename}
+                    className="block text-[10px] text-blue-700 hover:underline truncate"
+                    title={filename}
+                  >
+                    📥 {filename}
+                  </a>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
