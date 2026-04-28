@@ -175,12 +175,8 @@ class TestUpdatePublication:
         self, storage_mock: MagicMock, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """재발행 자식 draft 가 URL 등록 시 active 로 자동 전이 + 액션 기록."""
-        storage_mock.get_publication.return_value = _publication(
-            url=None, workflow_status="draft"
-        )
-        storage_mock.update_publication.return_value = _publication(
-            workflow_status="draft"
-        )
+        storage_mock.get_publication.return_value = _publication(url=None, workflow_status="draft")
+        storage_mock.update_publication.return_value = _publication(workflow_status="draft")
         storage_mock.update_publication_workflow_state.return_value = _publication(
             workflow_status="active"
         )
@@ -206,21 +202,15 @@ class TestUpdatePublication:
         self, storage_mock: MagicMock, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """이미 active 인 publication 의 URL 변경은 status 전이·액션 기록 없음."""
-        storage_mock.get_publication.return_value = _publication(
-            workflow_status="active"
-        )
-        storage_mock.update_publication.return_value = _publication(
-            workflow_status="active"
-        )
+        storage_mock.get_publication.return_value = _publication(workflow_status="active")
+        storage_mock.update_publication.return_value = _publication(workflow_status="active")
         actions_mock = MagicMock()
         monkeypatch.setattr(
             "domain.ranking.publication_actions.insert_action",
             actions_mock,
         )
 
-        ranking_orchestrator.update_publication(
-            "pub-1", url="https://blog.naver.com/u/999999999"
-        )
+        ranking_orchestrator.update_publication("pub-1", url="https://blog.naver.com/u/999999999")
 
         actions_mock.assert_not_called()
         storage_mock.update_publication_workflow_state.assert_not_called()
