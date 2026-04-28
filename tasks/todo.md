@@ -509,6 +509,31 @@
 - [x] U2.4 `UsageDashboard.tsx` — 기간선택+요약카드 1줄, 일별/작업별 `grid lg:grid-cols-12 (7+5)` 병렬 + sticky thead
 - [x] U2.5 캘린더 헬퍼 컴포넌트를 `components/CalendarTable.tsx` 로 분리 (300줄 한계 준수)
 
+## Phase U5: 외부 검토 P1 묶음 — state wiring + 테스트 + 운영 안전성 (2026-04-28) ✅ 완료
+
+### P1-#3: 측정 루프 ↔ 상태 재계산 통합 ✅
+- [x] 발견: `state_calculator` 의 `calculate_visibility_status`/`calculate_workflow_status` 가 호출자 0개 — dead code
+- [x] `application/ranking_state.py` 신규 — `recalculate_visibility_after_measurement`, `sweep_workflow_transitions`, `_lookup_active_republish_job`
+- [x] `ranking_orchestrator.check_rankings_for_publication` 에 visibility 재계산 통합 (snapshot 저장 직후)
+- [x] `ranking_orchestrator.check_all_active_rankings` 에 workflow sweep 통합 (측정 사이클 종료 후)
+- [x] `tests/test_application/test_ranking_state.py` 13 시나리오 — exposed/recovered/off_radar/no_change/not_found/hold_expired×2/job_stuck/job_failed/url_pending/active_skip/job_lookup×2
+
+### P1-#7: events_aggregator 시나리오 테스트 ✅
+- [x] `tests/test_application/test_events_aggregator.py` 8 시나리오 — empty/snapshot_only/null_captured_skip/3-way_merge/diagnosis_payload/action_metadata/same_timestamp/null_position
+
+### P1-#6: Pretendard 로컬 폰트 전환 ✅
+- [x] `web/frontend/public/fonts/PretendardVariable.woff2` 다운로드 (npm CDN 1회) — 2MB
+- [x] `layout.tsx` `next/font/local` 로 전환 — `localFont({src, weight: "45 920"})`
+- [x] `globals.css` @font-face CDN 제거. preconnect link 제거
+- [x] `npx next build` 성공 — 모든 라우트 정상 빌드
+- [x] egress 제한 환경에서도 폰트 로드 보장
+
+### P1-#5: 마이그레이션 배포 체크리스트 ✅
+- [x] `config/migrations/CHECKLIST.md` 신설 — 8섹션
+- [x] 사전 준비 (백업·영향 분석·row count) / dry-run / 단계 적용 / 사후 검증 / 롤백 / 위험 명령 카탈로그
+- [x] 위험 명령 카탈로그 6종 (drop cascade / not null / type / delete / truncate / mass update)
+- [x] 마이그레이션 작성 가이드 5조건 (idempotent / 분리 / 검증쿼리 / 롤백SQL / 이름규칙)
+
 ## Phase U4: 외부 검토 P0 묶음 — invariant + job durability (2026-04-28) ✅ 완료
 
 > 외부 검토(High #1·#2·Med #4) 반영. 운영 들어가기 전 데이터 부패·job 고착·탭 의미 차이 잠금.

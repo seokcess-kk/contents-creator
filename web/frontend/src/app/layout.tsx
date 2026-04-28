@@ -1,10 +1,20 @@
 import type { Metadata } from "next";
 import { Geist_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+// P1-#6: CDN 의존 제거. egress 제한 환경(Render/Vercel private)에서도 폰트 로드 보장.
+// Pretendard Variable woff2 (45-920 가변 weight) 를 public/fonts/ 에서 로컬 서빙.
+const pretendard = localFont({
+  src: "../../public/fonts/PretendardVariable.woff2",
+  display: "swap",
+  variable: "--font-pretendard",
+  weight: "45 920",
 });
 
 export const metadata: Metadata = {
@@ -20,15 +30,8 @@ export default function RootLayout({
   return (
     <html
       lang="ko"
-      className={`${geistMono.variable} h-full antialiased`}
+      className={`${pretendard.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <head>
-        <link
-          rel="preconnect"
-          href="https://cdn.jsdelivr.net"
-          crossOrigin="anonymous"
-        />
-      </head>
       <body className="min-h-full bg-gray-50 text-gray-900">
         <header className="sticky top-0 z-30 bg-white border-b border-gray-200 px-6 py-2 flex items-center justify-between shadow-sm">
           <div className="flex items-baseline">

@@ -1,21 +1,11 @@
 @import "tailwindcss";
 
-/* Pretendard Variable — 한글 가독성 우선 본문 폰트 (jsdelivr CDN). */
-@font-face {
-  font-family: "Pretendard Variable";
-  font-weight: 45 920;
-  font-style: normal;
-  font-display: swap;
-  src: url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/woff2/PretendardVariable.woff2")
-    format("woff2-variations");
-}
+/* P1-#6: 로컬 Pretendard Variable 사용 — next/font/local 이 layout.tsx 에서 로드.
+   --font-pretendard CSS 변수는 next/font 가 자동 주입한다. */
 
 :root {
   --background: #f9fafb;
   --foreground: #111827;
-  --font-pretendard: "Pretendard Variable", "Pretendard", -apple-system,
-    BlinkMacSystemFont, system-ui, "Apple SD Gothic Neo", "Malgun Gothic",
-    "Noto Sans KR", "Helvetica Neue", Arial, sans-serif;
   color-scheme: light;
 }
 
@@ -30,7 +20,9 @@ html,
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-pretendard);
+  font-family: var(--font-pretendard), -apple-system, BlinkMacSystemFont,
+    system-ui, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR",
+    "Helvetica Neue", Arial, sans-serif;
   font-feature-settings: "ss03", "tnum"; /* 등폭 숫자 + 한글 자형 보정 */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;

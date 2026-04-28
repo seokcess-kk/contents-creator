@@ -273,6 +273,19 @@ def check_rankings_for_publication(publication_id: str) -> RankingSnapshot:
     except Exception:
         logger.warning("diagnosis.run_failed publication_id=%s", publication_id, exc_info=True)
 
+    # P1-#3: 측정 결과로 visibility_status 재산출 + 변경 시 update.
+    # state_calculator 의 순수 함수가 dead code 였던 사전 상태 해소.
+    try:
+        from application.ranking_state import recalculate_visibility_after_measurement
+
+        recalculate_visibility_after_measurement(publication_id)
+    except Exception:
+        logger.warning(
+            "state.visibility_recalc_failed publication_id=%s",
+            publication_id,
+            exc_info=True,
+        )
+
     return saved
 
 
@@ -343,6 +356,15 @@ def check_all_active_rankings() -> RankingCheckSummary:
                 exc,
             )
         time.sleep(settings.ranking_check_sleep_seconds)
+
+    # P1-#3: 측정 사이클 종료 후 workflow 자동 전이 일괄 처리.
+    # held_until 만료 + republishing 타임아웃 4종을 state_calculator 에 위임.
+    try:
+        from application.ranking_state import sweep_workflow_transitions
+
+        sweep_workflow_transitions()
+    except Exception:
+        logger.warning("state.sweep_workflow_failed", exc_info=True)
 
     duration = time.monotonic() - started
     summary = RankingCheckSummary(
