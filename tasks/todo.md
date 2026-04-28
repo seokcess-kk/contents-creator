@@ -704,8 +704,7 @@
   - 카드 생성 폼 ⑦ 통합은 별도 차수 (CardCampaignInput 필드 추가 + plan_generator image_asset_id 사용)
 - [x] approve/reject 외 액션 PATCH (문구 수정 + 사진 교체) — `PATCH /plans/{plan_id}` (draft/reviewed 만, 자동 reviewed 전이) + `PlanEditNotAllowedError` (409) + PlanEditModal (블록별 헤드라인/부제/bullets/image_asset_id 편집 + 미디어 자산 dropdown + 썸네일 미리보기) (2026-04-29)
   - 전략 변경은 우회 deep link 유지 (재기획 = /new?prefill)
-- [ ] approve/reject 외 3 액션(문구 수정 / 사진 교체 / 전략 변경) 백엔드 PATCH 라우트
-- [ ] frontend 테스트 프레임워크 (vitest + Testing Library)
+- [x] frontend 테스트 프레임워크 (vitest + Testing Library) — vitest 4.1.5 + @testing-library/react 16.3 + jsdom + @vitejs/plugin-react. vitest.config.ts(alias) + setup. 3 핵심 컴포넌트 18 테스트 (ComplianceRiskBadge × 7 / BrandRegisterDialog × 5 / CardPlanCard × 6). build-check.sh 통합 (2026-04-29)
 
 ## Phase U8: 브랜드 카드 SPEC v2.1 패치 — 결정 D1~D7 반영 (2026-04-28) ✅ 완료
 
