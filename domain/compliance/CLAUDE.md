@@ -25,8 +25,14 @@
 
 ## 핵심 규칙
 
-- 8개 카테고리는 사용자 확정 전까지 `rules.py` 의 `ViolationCategory` enum 에 placeholder 로 예약
-- **카테고리 임의 추가·삭제 금지**. 변경은 SPEC-SEO-TEXT.md §5 수정 동반 필요
+- **10개 카테고리** (2026-04-28 v2 — 8개 → 10개 확장. SPEC-BRAND-CARD §7 9종 항상 차단 정합)는 `rules.py` 의 `ViolationCategory` enum 에 정의
+- **카테고리 임의 추가·삭제 금지**. 변경은 SPEC-SEO-TEXT.md §5 + SPEC-BRAND-CARD.md §7 동시 수정 동반 필요
+- 카테고리 변경 시 의무 절차:
+  1. SPEC 두 파일 갱신
+  2. `rules.py` 의 enum + 새 Rule 정의 + RULES dict 매핑
+  3. `tests/test_compliance/test_rules.py` 의 카운트 어서션 갱신
+  4. `tests/test_brand_card/test_brand_lenient_coverage.py` 의 §7 매핑 회귀 테스트 갱신
+  5. `compliance/CLAUDE.md` 본 파일 갱신
 - 재시도는 최대 2회. `while True:` 무한 루프 금지
 - 검증 결과는 `ComplianceReport` Pydantic 모델로 반환. 실패를 `raise` 가 아닌 `ComplianceReport(passed=False)` 로 처리
 - 태그(`suggested_tags`)도 검증 대상. 위반 태그는 유사어 교체 또는 목록에서 제거

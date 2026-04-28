@@ -536,11 +536,14 @@
 - [x] 테스트 583 → **611 passed + 2 xfailed** (+30, 새 카테고리 결정 게이트 가시화)
 - [x] 커버리지 70.82% → **71.31%**
 
-### 사용자 결정 게이트 (Phase 1 Day 2 진입 전)
-- [ ] **G1**: SPEC §7 #7 "부작용 없음" / #8 "가격 할인 과장" 처리 방식
-  - 옵션 A) 신규 ViolationCategory 2개 추가 (`compliance/CLAUDE.md` "카테고리 임의 추가 금지" 룰 예외 승인)
-  - 옵션 B) SPEC §7 9종 → 7종으로 축소 (현재 룰에 맞춤)
-  - 옵션 C) ABSOLUTE_GUARANTEE 패턴 확장으로 부분 커버 (불완전)
+### 사용자 결정 게이트 G1 ✅ 완료 (옵션 A 선택, 2026-04-28)
+- [x] `ViolationCategory.NO_SIDE_EFFECTS_CLAIM` 신규 — `_NO_SIDE_EFFECTS_CLAIM` Rule
+- [x] `ViolationCategory.PRICE_DISCOUNT_HYPE` 신규 — `_PRICE_DISCOUNT_HYPE` Rule
+- [x] 양 정책(SEO_STRICT 8→10, BRAND_LENIENT 7→9) 매핑
+- [x] SPEC-SEO-TEXT.md §5 의료법 10개 카테고리 표 갱신 (도입 시점 명시)
+- [x] domain/compliance/CLAUDE.md 카테고리 변경 시 의무 절차 5단계 명시
+- [x] tests/test_compliance/test_rules.py 카운트 어서션 갱신 (8→10, 7→9)
+- [x] tests/test_brand_card/test_brand_lenient_coverage.py xfail 제거, §7 9/9 매핑 검증
 
 ## Phase U8: 브랜드 카드 SPEC v2.1 패치 — 결정 D1~D7 반영 (2026-04-28) ✅ 완료
 

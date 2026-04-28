@@ -1,19 +1,15 @@
 """Phase 1 검증 게이트 (R3): BRAND_LENIENT 룰이 SPEC §7 항상 차단 9종을 모두 catch 하는지 회귀.
 
-SPEC-BRAND-CARD §7 항상 차단:
-1. 효과 보장
-2. 수치 감량
-3. 최고/유일/1위
-4. 전후 비교
-5. 환자 후기
-6. 타 병원 비교
-7. 부작용 없음                      ← 미매핑 (현재 갭)
-8. 가격 할인 과장                   ← 미매핑 (현재 갭)
-9. 검증되지 않은 의료진 경력/인증
-
-7종은 기존 RULES[BRAND_LENIENT] 로 catch. 2종은 신규 카테고리 또는 패턴 추가
-필요. CLAUDE.md "카테고리 임의 추가 금지" 룰에 따라 SPEC-BRAND-CARD §7 와
-domain/compliance/rules.py 동시 수정 필요 (사용자 결정 게이트).
+SPEC-BRAND-CARD §7 항상 차단 (2026-04-28 결정 G1 옵션 A 적용 후 9/9 매핑):
+1. 효과 보장 → ABSOLUTE_GUARANTEE
+2. 수치 감량 → PATIENT_TESTIMONIAL
+3. 최고/유일/1위 → UNIQUE_SUPERLATIVE
+4. 전후 비교 → BEFORE_AFTER
+5. 환자 후기 → PATIENT_TESTIMONIAL
+6. 타 병원 비교 → DIRECT_COMPARISON
+7. 부작용 없음 → NO_SIDE_EFFECTS_CLAIM (2026-04-28 신규)
+8. 가격 할인 과장 → PRICE_DISCOUNT_HYPE (2026-04-28 신규)
+9. 검증되지 않은 의료진 경력/인증 → UNVERIFIED_CREDENTIAL
 """
 
 from __future__ import annotations
@@ -42,13 +38,15 @@ class TestBrandLenientCoverage:
     @pytest.mark.parametrize(
         "spec_label,trigger_text,expected_category",
         [
-            ("효과 보장", "100% 보장합니다", "absolute_guarantee"),
-            ("수치 감량", "한 달에 5kg 빠졌습니다", "patient_testimonial"),
-            ("최고/유일/1위", "대구 최고의 한의원입니다", "unique_superlative"),
-            ("전후 비교", "시술 전후 사진 보세요", "before_after"),
-            ("환자 후기", "효과 봤어요 너무 좋아요", "patient_testimonial"),
-            ("타 병원 비교", "다른 병원보다 효과적", "direct_comparison"),
-            ("미검증 자격", "Best Doctor 수상 경력", "unverified_credential"),
+            ("§7 #1 효과 보장", "100% 보장합니다", "absolute_guarantee"),
+            ("§7 #2 수치 감량", "한 달에 5kg 빠졌습니다", "patient_testimonial"),
+            ("§7 #3 최고/유일/1위", "대구 최고의 한의원입니다", "unique_superlative"),
+            ("§7 #4 전후 비교", "시술 전후 사진 보세요", "before_after"),
+            ("§7 #5 환자 후기", "효과 봤어요 너무 좋아요", "patient_testimonial"),
+            ("§7 #6 타 병원 비교", "다른 병원보다 효과적", "direct_comparison"),
+            ("§7 #7 부작용 없음", "부작용 없는 안전한 시술", "no_side_effects_claim"),
+            ("§7 #8 가격 할인", "단 하루 90% 할인 이벤트", "price_discount_hype"),
+            ("§7 #9 미검증 자격", "Best Doctor 수상 경력", "unverified_credential"),
         ],
     )
     def test_covered_categories_caught(
@@ -57,10 +55,10 @@ class TestBrandLenientCoverage:
         trigger_text: str,
         expected_category: str,
     ) -> None:
-        """SPEC §7 9종 중 7종이 BRAND_LENIENT 로 차단됨."""
+        """SPEC §7 9종 모두 BRAND_LENIENT 로 차단됨 (G1 옵션 A 적용 후)."""
         matched = _check_violations(trigger_text, CompliancePolicy.BRAND_LENIENT)
         assert expected_category in matched, (
-            f"§7 {spec_label!r} 항목이 BRAND_LENIENT 로 차단되지 않음. matched={matched}"
+            f"{spec_label!r} 항목이 BRAND_LENIENT 로 차단되지 않음. matched={matched}"
         )
 
     def test_first_person_promotion_allowed_in_brand_lenient(self) -> None:
@@ -72,36 +70,18 @@ class TestBrandLenientCoverage:
         assert "first_person_promotion" not in brand, "BRAND_LENIENT 는 1인칭 허용"
 
 
-class TestBrandLenientGaps:
-    """SPEC §7 9종 중 현재 미커버 2종 — SPEC-BRAND-CARD 와 rules.py 동기화 필요.
+class TestBrandLenientCounts:
+    """카테고리 수 정합성 — SPEC §7 와 RULES 동기화 검증."""
 
-    이 테스트는 현재 갭을 명시적으로 마킹한다. 룰 추가 후 expected_failure 제거.
-    """
-
-    @pytest.mark.xfail(
-        reason="SPEC §7 #7 '부작용 없음' 매핑 미완. 카테고리 추가 또는 "
-        "ABSOLUTE_GUARANTEE 패턴 확장 필요 (사용자 결정 게이트)",
-        strict=True,
-    )
-    def test_gap_no_side_effects_claim(self) -> None:
-        text = "부작용 없음을 자신합니다"
-        matched = _check_violations(text, CompliancePolicy.BRAND_LENIENT)
-        assert len(matched) > 0, "SPEC §7 '부작용 없음' 미차단"
-
-    @pytest.mark.xfail(
-        reason="SPEC §7 #8 '가격 할인 과장' 매핑 미완. 카테고리 추가 필요 (사용자 결정 게이트)",
-        strict=True,
-    )
-    def test_gap_price_discount_hype(self) -> None:
-        text = "단 하루 90% 할인 이벤트"
-        matched = _check_violations(text, CompliancePolicy.BRAND_LENIENT)
-        assert len(matched) > 0, "SPEC §7 '가격 할인 과장' 미차단"
-
-    def test_brand_lenient_has_seven_rules(self) -> None:
-        """현재 BRAND_LENIENT 룰 7종 — §7 9종 vs 갭 2종 일치 검증."""
+    def test_brand_lenient_has_nine_rules(self) -> None:
+        """BRAND_LENIENT 룰 9종 — SPEC §7 9종 모두 catch (1인칭 promotion 제외)."""
         rules = get_rules(CompliancePolicy.BRAND_LENIENT)
-        # SPEC §7 항상 차단 9종 - 갭 2종 = 7종 catch 가능
-        assert len(rules) == 7, (
-            f"BRAND_LENIENT 룰 수 변경 감지: {len(rules)} (예상 7). "
+        assert len(rules) == 9, (
+            f"BRAND_LENIENT 룰 수 변경 감지: {len(rules)} (예상 9). "
             "SPEC §7 또는 rules.py 갱신이 동기화되지 않은 가능성 — 본 테스트 갱신 필요."
         )
+
+    def test_seo_strict_has_ten_rules(self) -> None:
+        """SEO_STRICT 룰 10종 — BRAND_LENIENT 9종 + FIRST_PERSON_PROMOTION."""
+        rules = get_rules(CompliancePolicy.SEO_STRICT)
+        assert len(rules) == 10, f"SEO_STRICT 룰 수 변경 감지: {len(rules)} (예상 10)."

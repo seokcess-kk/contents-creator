@@ -20,10 +20,14 @@ from domain.compliance.rules import (
 
 
 class TestViolationCategory:
-    """ViolationCategory enum 이 정확히 8개 멤버를 가진다."""
+    """ViolationCategory enum 이 10개 멤버를 가진다 (2026-04-28 v2 — SPEC §7 정합).
 
-    def test_has_8_categories(self) -> None:
-        assert len(ViolationCategory) == 8
+    1~8: SEO_STRICT 기본. 9~10 (NO_SIDE_EFFECTS_CLAIM, PRICE_DISCOUNT_HYPE) 는
+    SPEC-BRAND-CARD §7 9종 항상 차단 정합성 위해 추가.
+    """
+
+    def test_has_10_categories(self) -> None:
+        assert len(ViolationCategory) == 10
 
     def test_category_values(self) -> None:
         expected = {
@@ -35,6 +39,8 @@ class TestViolationCategory:
             "patient_testimonial",
             "unverified_credential",
             "first_person_promotion",
+            "no_side_effects_claim",
+            "price_discount_hype",
         }
         actual = {c.value for c in ViolationCategory}
         assert actual == expected
@@ -56,13 +62,15 @@ class TestCompliancePolicy:
 class TestRulesMapping:
     """RULES dict 이 두 프로필 모두 매핑한다."""
 
-    def test_seo_strict_has_8_rules(self) -> None:
+    def test_seo_strict_has_10_rules(self) -> None:
+        # 2026-04-28: SPEC §7 정합 위해 NO_SIDE_EFFECTS_CLAIM + PRICE_DISCOUNT_HYPE 추가.
         rules = RULES[CompliancePolicy.SEO_STRICT]
-        assert len(rules) == 8
+        assert len(rules) == 10
 
-    def test_brand_lenient_has_7_rules(self) -> None:
+    def test_brand_lenient_has_9_rules(self) -> None:
+        # SEO_STRICT 10종 - FIRST_PERSON_PROMOTION = 9종.
         rules = RULES[CompliancePolicy.BRAND_LENIENT]
-        assert len(rules) == 7
+        assert len(rules) == 9
 
     def test_brand_lenient_excludes_first_person(self) -> None:
         rules = RULES[CompliancePolicy.BRAND_LENIENT]
@@ -142,7 +150,7 @@ class TestGetFunctions:
 
     def test_get_rules_default_is_strict(self) -> None:
         rules = get_rules()
-        assert len(rules) == 8
+        assert len(rules) == 10
 
     def test_get_all_patterns_returns_compiled(self) -> None:
         patterns = get_all_patterns()

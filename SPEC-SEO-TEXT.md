@@ -566,7 +566,7 @@ HTML 파싱으로 정량 데이터 추출. LLM 불필요.
 - 업체명/브랜드명 언급 금지
 - "저희", "우리 병원" 등 1인칭 금지
 - CTA (예약, 전화, 상담) 표현 금지
-- 의료법 금지 표현: {8개 카테고리 목록}
+- 의료법 금지 표현: {10개 카테고리 목록}
 ```
 
 **출력 형식:**
@@ -584,9 +584,9 @@ HTML 파싱으로 정량 데이터 추출. LLM 불필요.
 
 ### [8] 의료법 검증 + 자동 수정 (LLM, Sonnet 4.6)
 
-생성된 원고를 의료법 8개 카테고리 기준으로 검증하고 위반 시 자동 수정.
+생성된 원고를 의료법 10개 카테고리 (v2) 기준으로 검증하고 위반 시 자동 수정.
 
-> **컴플라이언스 정책 프로필**: `domain/compliance/rules.py` 는 `CompliancePolicy` enum 으로 복수 프로필을 동시 관리한다. SEO 트랙은 기본값 `SEO_STRICT` (8개 카테고리 전부). 브랜드 카드 트랙은 `BRAND_LENIENT` (법적 risk 만). `checker(text, policy=CompliancePolicy.SEO_STRICT)` 형태로 호출한다. 프로필 상세·매핑 규칙은 `SPEC-BRAND-CARD.md` §7 참조.
+> **컴플라이언스 정책 프로필**: `domain/compliance/rules.py` 는 `CompliancePolicy` enum 으로 복수 프로필을 동시 관리한다. SEO 트랙은 기본값 `SEO_STRICT` (10개 카테고리 전부). 브랜드 카드 트랙은 `BRAND_LENIENT` (법적 risk 만). `checker(text, policy=CompliancePolicy.SEO_STRICT)` 형태로 호출한다. 프로필 상세·매핑 규칙은 `SPEC-BRAND-CARD.md` §7 참조.
 
 **3중 방어:**
 1. **1차 (생성 시)** — [6][7] 프롬프트에 의료법 규칙 사전 주입 ✅
@@ -629,8 +629,24 @@ LLM 검증 (Sonnet, tool_use로 구조화 출력) — 본문/태그/이미지 pr
 2. **폴백 — 해당 문단만 재생성**: 구절 치환 결과가 LLM 자연스러움 검사에서 실패하면, 해당 문단만 재생성한다. 단, **도입부는 재생성 대상 아님** (M2 톤 락 원칙 유지). 도입부가 위반이면 치환만 시도하고, 실패 시 파이프라인 실패 종료.
 3. **전체 본문 재생성 금지**. 항상 위반 부위만 국소 수정.
 
-**의료법 8개 위반 카테고리:** (사용자 제공 대기, `rules.py`에 정의)
-- 카테고리 상세는 1~4단계 구현 후 5단계 착수 전 확정 주입
+**의료법 10개 위반 카테고리** (`domain/compliance/rules.py` 단일 출처):
+
+| # | 카테고리 | 의료법 근거 | 도입 시점 |
+|---|---------|-----------|---------|
+| 1 | `absolute_guarantee` (효과 보장) | 시행령 §23 | v1 |
+| 2 | `unique_superlative` (최고/유일/1위) | §56 | v1 |
+| 3 | `direct_comparison` (타 의료기관 비교) | §56 | v1 |
+| 4 | `before_after` (전후 비교) | §56 | v1 |
+| 5 | `cure_promise` (완치/근본치료 약속) | §56 | v1 |
+| 6 | `patient_testimonial` (환자 후기/수치) | §56 | v1 |
+| 7 | `unverified_credential` (미검증 자격) | §56 | v1 |
+| 8 | `first_person_promotion` (1인칭 홍보) | 운영 룰 — SEO 트랙 한정 | v1 |
+| 9 | `no_side_effects_claim` (부작용 없음) | §56 | **2026-04-28 v2 추가** |
+| 10 | `price_discount_hype` (가격 할인 과장) | §56·시행령 §23 | **2026-04-28 v2 추가** |
+
+- 1~7, 9, 10 은 **양 정책(SEO_STRICT + BRAND_LENIENT) 공통 적용**
+- 8 (`first_person_promotion`) 은 **SEO_STRICT 전용** (브랜드 카드는 1인칭 허용 — `SPEC-BRAND-CARD.md` §7~§8 참조)
+- 9, 10 추가 사유: SPEC-BRAND-CARD §7 "항상 차단" 9종 정합성 확보 (회귀 테스트 `tests/test_brand_card/test_brand_lenient_coverage.py`)
 
 **검증 결과 출력:**
 
@@ -874,7 +890,7 @@ contents-creator/
 │   │   ├── CLAUDE.md
 │   │   ├── checker.py                 ← 의료법 검증 (본문+태그+이미지 prompt)
 │   │   ├── fixer.py                   ← 자동 수정
-│   │   └── rules.py                   ← 8개 카테고리 규칙 (사용자 제공 예정)
+│   │   └── rules.py                   ← 10개 카테고리 규칙 (사용자 제공 예정)
 │   ├── image_generation/              ← 🆕 [9] AI 이미지 생성
 │   │   ├── CLAUDE.md
 │   │   ├── model.py                   ← ImagePrompt, GeneratedImage Pydantic
@@ -997,7 +1013,7 @@ mypy domain/
   ├─ outline_writer.py ([6])
   └─ body_writer.py ([7], intro 받지 않는 시그니처)
 
-5단계: 의료법 검증 (※ 시작 전 8개 카테고리 주입 필요)
+5단계: 의료법 검증 (※ 시작 전 10개 카테고리 주입 필요)
   ├─ rules.py — 본문/태그/이미지 prompt 검증 규칙
   ├─ checker.py
   └─ fixer.py
@@ -1034,7 +1050,7 @@ mypy domain/
 | 패턴 카드 | 임계값 통계가 수동 집계와 일치 |
 | 아웃라인 | 필수 섹션 포함, 차별화 섹션 ≤2, 도입부 200~300자, 상위글 구조 비복제 |
 | 본문 | 도입부 재생성 없음, 키워드 밀도 목표 범위, DIA+ 요소 반영, 업체 홍보 없음 |
-| 의료법 | 8개 카테고리 감지, 자동 수정 후 재검증 통과 |
+| 의료법 | 10개 카테고리 감지, 자동 수정 후 재검증 통과 |
 | HTML 출력 | 화이트리스트 태그만 포함, 네이버 에디터 실측 통과 |
 | 블로그 태그 추출 | 상위 글 각각에서 해시태그 리스트 정확 추출 (수동 검증 5개) |
 | 태그 집계 | 공통/빈출 태그 비율 계산이 수동 집계와 일치 |
@@ -1064,7 +1080,7 @@ mypy domain/
 
 ## 11. 현재 보류 사항
 
-- **의료법 8개 카테고리 내용**: 1~4단계 구현 후 5단계 착수 전 사용자 제공
+- **의료법 10개 카테고리 (v2) 내용**: 1~4단계 구현 후 5단계 착수 전 사용자 제공
 - **네이버 HTML 호환성 실측**: 1단계 착수 직전 수행
 - **Bright Data iframe 재요청 필요 여부**: 1단계 착수 직전 실측
 - **Claude Code 훅 환경 변수 이름**: 1단계 착수 시 실측 확인

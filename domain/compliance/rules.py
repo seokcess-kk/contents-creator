@@ -12,11 +12,17 @@ import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-# ── 위반 카테고리 (SEO_STRICT: 8개) ──
+# ── 위반 카테고리 (SEO_STRICT: 10개) ──
+# 2026-04-28 v2: SPEC-BRAND-CARD §7 9종 항상 차단 정합성 위해 NO_SIDE_EFFECTS_CLAIM
+# 와 PRICE_DISCOUNT_HYPE 추가. 두 카테고리는 SEO_STRICT + BRAND_LENIENT 양쪽 적용.
 
 
 class ViolationCategory(StrEnum):
-    """의료광고법 8개 위반 카테고리."""
+    """의료광고법 10개 위반 카테고리.
+
+    - 1~8: SEO_STRICT 기본 8종
+    - 9~10 (2026-04-28 추가): SPEC-BRAND-CARD §7 항상 차단 정합 — 부작용 없음 + 가격 할인 과장
+    """
 
     ABSOLUTE_GUARANTEE = "absolute_guarantee"
     UNIQUE_SUPERLATIVE = "unique_superlative"
@@ -26,6 +32,8 @@ class ViolationCategory(StrEnum):
     PATIENT_TESTIMONIAL = "patient_testimonial"
     UNVERIFIED_CREDENTIAL = "unverified_credential"
     FIRST_PERSON_PROMOTION = "first_person_promotion"
+    NO_SIDE_EFFECTS_CLAIM = "no_side_effects_claim"
+    PRICE_DISCOUNT_HYPE = "price_discount_hype"
 
 
 # ── 컴플라이언스 정책 프로필 ──
@@ -172,6 +180,43 @@ _FIRST_PERSON_PROMOTION = Rule(
     safe_alternatives=["3인칭 서술"],
 )
 
+_NO_SIDE_EFFECTS_CLAIM = Rule(
+    category=ViolationCategory.NO_SIDE_EFFECTS_CLAIM,
+    description="부작용 없음 단언 금지 (의료법 §56) — 모든 의료행위는 잠재 부작용 가능성 표기 의무",
+    patterns=[
+        r"부작용\s*없",
+        r"부작용\s*걱정\s*없",
+        r"안전성\s*100",
+        r"무\s*부작용",
+        r"부작용\s*전혀\s*없",
+        r"안전\s*보장",
+    ],
+    safe_alternatives=[
+        "검증된 안전성",
+        "임상적으로 확인된 안전 범위",
+        "안전성 데이터 기반",
+    ],
+)
+
+_PRICE_DISCOUNT_HYPE = Rule(
+    category=ViolationCategory.PRICE_DISCOUNT_HYPE,
+    description="과장 가격 할인 금지 (의료법 §56·시행령 §23) — 의료행위 가격 비교/할인 광고 제한",
+    patterns=[
+        r"\d{2,}\s*%\s*할인",
+        r"단\s*하루.{0,5}할인",
+        r"파격\s*할인",
+        r"최저가\s*보장",
+        r"\d{2,}%\s*세일",
+        r"반값\s*이벤트",
+        r"이벤트가\s*\d{1,3}원",
+    ],
+    safe_alternatives=[
+        "정상 가격 안내",
+        "상담 시 안내",
+        "별도 가격 정책",
+    ],
+)
+
 
 # ── 프로필별 규칙 매핑 ──
 
@@ -182,6 +227,8 @@ RULES: dict[CompliancePolicy, list[Rule]] = {
         _DIRECT_COMPARISON,
         _BEFORE_AFTER,
         _CURE_PROMISE,
+        _NO_SIDE_EFFECTS_CLAIM,  # 2026-04-28 추가
+        _PRICE_DISCOUNT_HYPE,  # 2026-04-28 추가
         _PATIENT_TESTIMONIAL,
         _UNVERIFIED_CREDENTIAL,
         _FIRST_PERSON_PROMOTION,
@@ -192,6 +239,8 @@ RULES: dict[CompliancePolicy, list[Rule]] = {
         _DIRECT_COMPARISON,
         _BEFORE_AFTER,
         _CURE_PROMISE,
+        _NO_SIDE_EFFECTS_CLAIM,  # 2026-04-28 추가 (SPEC §7 #7)
+        _PRICE_DISCOUNT_HYPE,  # 2026-04-28 추가 (SPEC §7 #8)
         _PATIENT_TESTIMONIAL,
         _UNVERIFIED_CREDENTIAL,
         # first_person_promotion 제외 — 브랜드 카드는 1인칭/CTA 허용
