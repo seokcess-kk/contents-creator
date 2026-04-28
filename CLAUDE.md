@@ -19,7 +19,8 @@ python scripts/run_pipeline.py --keyword "<키워드>"   # 전체 [1]~[10]
 python scripts/analyze.py --keyword "<키워드>"        # [1]~[5]
 python scripts/generate.py --keyword "<키워드>"       # [6]~[10] (DB 최신 패턴 카드)
 python scripts/validate.py --content <경로>           # [8] 의료법 검증만
-bash .claude/hooks/build-check.sh                     # 린트+포맷+타입+테스트 일괄
+bash .claude/hooks/build-check.sh                     # 린트+포맷+타입+테스트 일괄 (PR 직전)
+bash .claude/hooks/build-check-fast.sh                # 변경 파일만 검사, pytest 생략 (개발 중 빠른 피드백)
 ```
 
 ## 디렉터리 구조
