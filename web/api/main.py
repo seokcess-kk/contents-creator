@@ -84,3 +84,13 @@ app.include_router(rankings.router, prefix="/api")
 app.include_router(brand_studio.router, prefix="/api")
 
 # /output 정적 마운트는 인증 우회 통로가 되어 제거. 결과물은 인증된 /api/results/* 로만 접근.
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    """Render health check / UptimeRobot ping 용. 인증 없이 200 OK.
+
+    DB·외부 API 상태는 의도적으로 확인하지 않는다 — 일시적 외부 장애로 컨테이너가
+    재시작되면 in-memory job 상태와 republish 라이프사이클이 끊기므로 liveness 만 본다.
+    """
+    return {"status": "ok"}
