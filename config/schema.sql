@@ -417,6 +417,36 @@ end $$;
 create index if not exists idx_publication_actions_pub
     on publication_actions (publication_id, created_at desc);
 
+-- ============================================================
+-- 13. keyword_difficulty_snapshots (2026-04-29 추가)
+--   참조: tasks/todo.md Phase K3
+--   네이버 SERP 분석 → 블로그 진입 난이도 등급 보관. 사용자 수동 트리거 (정기 cron X).
+-- ============================================================
+create table if not exists keyword_difficulty_snapshots (
+    id uuid primary key default gen_random_uuid(),
+    keyword text not null,
+    score real not null,
+    grade text not null,
+    total_cards int not null,
+    blog_slots int not null,
+    spam_cards int not null,
+    sections_json jsonb not null default '{}'::jsonb,
+    checked_at timestamptz not null default now()
+);
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'keyword_difficulty_grade_check') then
+    alter table keyword_difficulty_snapshots add constraint keyword_difficulty_grade_check
+      check (grade in ('missing', 'high', 'medium', 'low'));
+  end if;
+end $$;
+
+create index if not exists idx_keyword_difficulty_kw
+    on keyword_difficulty_snapshots (keyword, checked_at desc);
+create index if not exists idx_keyword_difficulty_grade
+    on keyword_difficulty_snapshots (grade, checked_at desc);
+
 create index if not exists idx_publication_actions_action
     on publication_actions (action, created_at desc);
 

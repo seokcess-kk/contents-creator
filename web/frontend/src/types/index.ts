@@ -52,3 +52,17 @@ export type WsMessage =
   | { type: "pipeline_complete"; status: "succeeded" }
   | { type: "pipeline_error"; stage: string; error: string }
   | { type: "job_status"; status: JobStatus };
+
+// 키워드 노출 난이도 분석 (Phase K)
+export type DifficultyGrade = "missing" | "high" | "medium" | "low";
+
+export interface KeywordDifficulty {
+  keyword: string;
+  grade: DifficultyGrade;
+  score: number;
+  total_cards: number;
+  blog_slots: number;
+  spam_cards: number;
+  sections: Record<string, number>;
+  checked_at: string | null;
+}

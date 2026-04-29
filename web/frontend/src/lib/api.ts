@@ -460,3 +460,42 @@ export function listRankingSnapshots(
 ): Promise<{ publication_id: string; count: number; items: RankingSnapshot[] }> {
   return fetchJson(`/rankings/${encodeURIComponent(publicationId)}?limit=${limit}`);
 }
+
+// 키워드 노출 난이도 분석 (Phase K)
+import type { DifficultyGrade, KeywordDifficulty } from "@/types";
+
+export function analyzeKeywordDifficulty(keyword: string): Promise<KeywordDifficulty> {
+  return fetchJson(`/keyword-difficulty/analyze`, {
+    method: "POST",
+    body: JSON.stringify({ keyword }),
+  });
+}
+
+export function batchAnalyzeKeywordDifficulty(
+  keywords: string[],
+  parallel = 3,
+): Promise<KeywordDifficulty[]> {
+  return fetchJson(`/keyword-difficulty/batch`, {
+    method: "POST",
+    body: JSON.stringify({ keywords, parallel }),
+  });
+}
+
+export function listKeywordDifficultySnapshots(
+  keyword: string,
+  limit = 30,
+): Promise<KeywordDifficulty[]> {
+  return fetchJson(
+    `/keyword-difficulty/snapshots?keyword=${encodeURIComponent(keyword)}&limit=${limit}`,
+  );
+}
+
+export function listKeywordDifficulty(
+  grade?: DifficultyGrade,
+  limit = 100,
+): Promise<KeywordDifficulty[]> {
+  const params = new URLSearchParams();
+  if (grade) params.set("grade", grade);
+  params.set("limit", String(limit));
+  return fetchJson(`/keyword-difficulty/list?${params.toString()}`);
+}

@@ -40,6 +40,9 @@ declare -A STAGE_ORDER=(
   # compliance/rules import 만 아래 특별 예외 블록에서 허용한다. AI 이미지
   # 생성은 application/brand_card_orchestrator 가 image_generation 합성.
   [brand_card]=0
+  # keyword_difficulty 는 SERP 파싱 → 등급 산출 격리 도메인. crawler 직접
+  # import 금지 (DI 패턴, ranking 과 동일). 다른 도메인 import 금지.
+  [keyword_difficulty]=0
 )
 
 violations=0

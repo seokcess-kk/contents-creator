@@ -242,6 +242,54 @@
 
 ---
 
+## 🔍 Phase K1~K6 — 키워드 노출 난이도 분석 (2026-04-29 착수)
+
+> 새 키워드 등록 전 SERP 1페이지 구성을 분석해 블로그 진입 난이도를 자동 판정하는 도구.
+> 정기 수집 X, 사용자 수동 트리거. 단일/대량 분석 가능. 별도 `/keywords` 페이지.
+> 등급 산출 공식 (대화 기반 합의):
+> - `B`=블로그 슬롯 (VIEW+인플루언서+블로그통합), `D`=도배 카드 (광고+플레이스+쇼핑+위젯), `T`=총 카드
+> - 점수 = `D × 1.5 - B × 3` (낮을수록 유리)
+> - 등급: `T<8 OR B==0` → 미노출 / `B≤2 AND D/T≥0.5` → 상 / `B≥5` → 하 / 그 외 → 중
+
+### Phase K1 — 도메인 + 파서 골격 ✅ 완료 (2026-04-29)
+- [x] K1.1 `domain/keyword_difficulty/__init__.py` + `CLAUDE.md`
+- [x] K1.2 `model.py` — `SerpSection` Enum (10종), `SerpComposition`, `DifficultyGrade` Enum, `KeywordDifficulty`
+- [x] K1.3 `parser.py` — 네이버 SERP HTML → SerpComposition (sc_new 섹션 분류 + URL 패턴 카드 카운트)
+- [x] K1.4 `scorer.py` — `score = D × 1.5 - B × 3`, 4단계 등급 (MISSING/HIGH/MEDIUM/LOW)
+- [x] K1.5 `tests/test_keyword_difficulty/` (test_parser + test_scorer 22 tests)
+- [x] K1.6 `architecture-check.sh` `[keyword_difficulty]=0` 등록
+
+### Phase K2 — PoC 실측 ✅ 완료 (2026-04-29)
+- [x] K2.1 fixture HTML 8개 fetch 완료 (다이어트약/다이어트보조제/다이어트운동/살빼는방법/천안다이어트한의원/부평다이어트한의원/BMI계산하기/감비정)
+- [x] K2.2 파서 결과 검증 — 등급이 합리적으로 매핑 (광역 정보성 → low/medium, 광고도배+블로그4슬롯 → medium, 롱테일 → low)
+- [x] K2.3 네이버 SERP 구조 (React 디자인 시스템 + 동적 해시 클래스) 대응 휴리스틱 적용
+- [x] K2.4 `tasks/lessons.md` K2 섹션에 셀렉터 + PoC 결과 + 한계점(위젯 식별 강화 / 광고 가중치 / 인플루언서 분리) 기록
+
+### Phase K3 — Supabase + storage + application ✅ 코드 완료, ⏸ Supabase 스키마 적용 대기
+- [x] K3.1 `config/schema.sql` 13번 섹션에 `keyword_difficulty_snapshots` 테이블 SQL 추가
+- [x] K3.1.b Supabase 대시보드 SQL Editor 적용 완료 — 2026-04-29 (rows=0 확인)
+- [x] K3.2 `domain/keyword_difficulty/storage.py` — `insert_snapshot`, `get_latest`, `list_recent`, `list_by_grade`, `list_keyword_history`
+- [x] K3.3 `application/keyword_difficulty_orchestrator.py` — `analyze_keyword`, `batch_analyze_keywords` (ThreadPool max=3, 1초 rate limit)
+- [x] K3.4 단위 테스트 (mock Bright Data + Supabase) — 7건 통과
+
+### Phase K4 — CLI ✅ 완료
+- [x] K4.1 `scripts/analyze_keyword_difficulty.py` — `--keyword` 또는 `--file`, `--no-persist`, 결과 표 출력
+- [ ] K4.2 ~~`tests/test_scripts/test_keyword_difficulty_cli.py`~~ — argparse 단위 테스트는 실 SERP 호출이 필요해 skip
+
+### Phase K5 — Web UI ✅ 완료
+- [x] K5.1+K5.2 `web/api/routers/keyword_difficulty.py` — 4 엔드포인트 (analyze/batch/snapshots/list) + Pydantic 스키마 인라인 정의
+- [x] K5.3 `web/api/main.py` 에 라우터 등록 (`/api/keyword-difficulty/*`)
+- [x] K5.4 frontend `types/index.ts` (`DifficultyGrade`, `KeywordDifficulty`) + `lib/api.ts` 4 함수
+- [x] K5.5 `web/frontend/src/app/keywords/page.tsx` — 단일/대량 입력 + 등급 필터 + 검색 + 정렬 표
+- [x] K5.6 nav 에 `/keywords` 링크 추가
+
+### Phase K6 — 검증 + 커밋
+- [x] K6.1 `bash .claude/hooks/build-check.sh` 그린 — 952 passed, 75.49% cov
+- [ ] K6.2 수동 smoke (Supabase 스키마 적용 후) — 단일 분석 + 10개 대량 → /keywords 페이지에서 등급 표시 확인
+- [ ] K6.3 commit + push
+
+---
+
 ## 📦 P2 이후 — long-form 확장 트랙 (보류)
 
 > SPEC §2 "P1 제외" 항목. 인스타 표준 1080×1350/1920 카드를 넘어서는 상세페이지형 long-form PNG 가 필요한 시점에 진입.

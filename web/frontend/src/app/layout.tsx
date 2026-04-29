@@ -43,6 +43,7 @@ export default function RootLayout({
           <nav className="flex items-center gap-5 text-sm font-medium">
             <a href="/" className="text-gray-700 hover:text-blue-700">대시보드</a>
             <a href="/rankings" className="text-gray-700 hover:text-blue-700">순위 추적</a>
+            <a href="/keywords" className="text-gray-700 hover:text-blue-700">키워드 난이도</a>
             <a href="/brand-studio" className="text-gray-700 hover:text-blue-700">브랜드 스튜디오</a>
             <a href="/usage" className="text-gray-700 hover:text-blue-700">API 사용량</a>
           </nav>

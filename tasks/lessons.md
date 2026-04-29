@@ -133,6 +133,56 @@
 4. `[class*=logo]` 하위 img — 클래스 명명 관례
 5. `img[src*=logo]` — 파일명 관례
 
+### [K2] 키워드 난이도 SERP 셀렉터 실측 (2026-04-29)
+
+**네이버 SERP 구조 (Bright Data Web Unlocker fetch)**:
+- `<section data-module>` 식 마크업 X. 대신 `<div id="main_pack">` 안의
+  `<div class="sc_new">` 21개가 진짜 섹션 컨테이너
+- React 디자인 시스템 (`sds-comps-*`, `fender-ui_*`) + 동적 해시 클래스 (`gfibyuTWlNnE9GG1RzEo` 등)
+  로 카드 마크업 → 정적 셀렉터로 카드 단위 식별 어려움
+
+**채택 휴리스틱 (`domain/keyword_difficulty/parser.py`)**:
+1. 섹션 컨테이너 = `div#main_pack > div.sc_new`
+2. 섹션 분류:
+   - 보조 클래스 `ad_section`/`_pl_section` → AD
+   - 제목(h2/h3) 키워드 매칭 (광고/쇼핑/플레이스/지식백과/지식iN/뉴스/인플루언서/카페/블로그)
+   - 도메인 비중 (anchor href 의 40% 이상 단일 도메인)
+3. 카드 수 추정:
+   - **광고**: `ul.lst_type > li`, `ul.img_list > li` (일반 광고 + 이미지 광고)
+   - **블로그/카페/지식iN**: 게시물 URL 패턴 (`{domain}/{user}/{post_id}`) unique 카운트
+     — 작성자 프로필 링크는 제외 (path 1단)
+   - **뉴스**: news.naver.com unique URL
+   - **인플루언서**: 인증 작성자 unique
+   - **쇼핑/플레이스/위젯/기타**: `_SLOT_WEIGHT` 가중치 (3/3/3/1)
+
+**PoC 8개 키워드 결과**:
+
+| 라벨 | 키워드 | 등급 | 점수 | B | D | T |
+|---|---|---|---|---|---|---|
+| 광고도배 | 다이어트약 | medium | 12.0 | 4 | 16 | 39 |
+| 쇼핑도배 | 다이어트보조제 | medium | 6.0 | 3 | 10 | 19 |
+| 광역정보 | 다이어트운동 | medium | 3.0 | 4 | 10 | 32 |
+| 광역정보 | 살빼는방법 | low | 3.0 | 7 | 16 | 37 |
+| 롱테일 | 천안다이어트한의원 | low | 10.5 | 6 | 19 | 26 |
+| 롱테일 | 부평다이어트한의원 | low | 6.0 | 6 | 16 | 24 |
+| 위젯 | BMI계산하기 | low | -21.0 | 7 | 0 | 19 |
+| 상품 | 감비정 | medium | 7.5 | 4 | 13 | 33 |
+
+**핵심 발견**:
+- **거의 모든 키워드에서 블로그 슬롯이 4~7개 노출** — 추정과 달리 "미노출" 키워드는 매우 드뭄
+- 광고 도배 키워드도 블로그 슬롯이 4개 이상이라 등급이 medium (HIGH 까지 안 떨어짐)
+- BMI계산하기처럼 위젯 키워드도 블로그 7슬롯 노출. 단 위젯 자체는 div/span 마크업이라 anchor 도메인 카운트로 잡히지 않아 D=0 (위젯 식별 강화 필요, 후속 작업)
+- 감비정은 cafe 도메인이 많이 나오고 블로그 4슬롯 노출 → MEDIUM
+
+**한계 / 후속 보강 항목**:
+1. 위젯 식별 — terms.naver.com 외의 BMI 계산기 같은 시각 위젯은 div 안의 input/계산식 시그널로 보강 필요
+2. 광고 카드 수 — 컨테이너 1개에 16개 항목이 있어도 시각적으로는 "광고 1 슬롯". 광고 가중치 운영 데이터 보고 조정
+3. 인플루언서/VIEW 분리 — 현재 둘 다 view_blog 로 잡힘. 인플루언서 인증 마크 셀렉터 추가 검토
+
+**참조**: `domain/keyword_difficulty/parser.py`, `tests/test_keyword_difficulty/test_parser.py`, fixture 8개 (`dev/active/keyword-difficulty/fixtures/`)
+
+---
+
 **Phase 2 — 실존 한의원 홈페이지 7곳 실측 (2026-04-29)** ✅ 7/7 성공
 
 | URL | 매칭 셀렉터 | 추출 로고 |
