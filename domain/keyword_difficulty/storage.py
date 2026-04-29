@@ -13,6 +13,7 @@ from config.supabase import get_client
 from domain.keyword_difficulty.model import (
     DifficultyGrade,
     KeywordDifficulty,
+    SearchVolume,
     SerpComposition,
     SerpSection,
 )
@@ -35,6 +36,11 @@ def insert_snapshot(diff: KeywordDifficulty) -> KeywordDifficulty:
         "sections_json": {s.value: c for s, c in diff.composition.section_counts.items()},
         "checked_at": (diff.checked_at or datetime.now()).isoformat(),
     }
+    if diff.search_volume is not None:
+        payload["monthly_pc_search"] = diff.search_volume.monthly_pc
+        payload["monthly_mobile_search"] = diff.search_volume.monthly_mobile
+        payload["monthly_total_search"] = diff.search_volume.monthly_total
+        payload["competition_idx"] = diff.search_volume.competition_idx
     result = client.table(_TABLE).insert(payload).execute()
     rows = result.data or []
     if not rows:
@@ -115,10 +121,21 @@ def _row_to_diff(row: dict[str, Any]) -> KeywordDifficulty:
         except ValueError:
             checked_at = None
 
+    search_volume: SearchVolume | None = None
+    pc = row.get("monthly_pc_search")
+    mobile = row.get("monthly_mobile_search")
+    if pc is not None or mobile is not None:
+        search_volume = SearchVolume(
+            monthly_pc=int(pc or 0),
+            monthly_mobile=int(mobile or 0),
+            competition_idx=row.get("competition_idx"),
+        )
+
     return KeywordDifficulty(
         keyword=row["keyword"],
         score=float(row["score"]),
         grade=DifficultyGrade(row["grade"]),
         composition=composition,
+        search_volume=search_volume,
         checked_at=checked_at,
     )

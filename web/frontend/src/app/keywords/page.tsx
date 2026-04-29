@@ -232,6 +232,9 @@ export default function KeywordsPage() {
               <th className="px-3 py-2">키워드</th>
               <th className="px-3 py-2">등급</th>
               <th className="px-3 py-2 text-right">점수</th>
+              <th className="px-3 py-2 text-right">월 검색량</th>
+              <th className="px-3 py-2 text-right">PC / 모바일</th>
+              <th className="px-3 py-2">경쟁</th>
               <th className="px-3 py-2 text-right">블로그 슬롯</th>
               <th className="px-3 py-2 text-right">도배 카드</th>
               <th className="px-3 py-2 text-right">총 카드</th>
@@ -241,7 +244,7 @@ export default function KeywordsPage() {
           <tbody>
             {visible.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-gray-500">
+                <td colSpan={10} className="px-3 py-6 text-center text-gray-500">
                   분석된 키워드 없음
                 </td>
               </tr>
@@ -257,6 +260,19 @@ export default function KeywordsPage() {
                     </span>
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{row.score}</td>
+                  <td className="px-3 py-2 text-right font-semibold tabular-nums">
+                    {row.monthly_total_search != null
+                      ? row.monthly_total_search.toLocaleString()
+                      : "—"}
+                  </td>
+                  <td className="px-3 py-2 text-right text-xs text-gray-600 tabular-nums">
+                    {row.monthly_pc_search != null && row.monthly_mobile_search != null
+                      ? `${row.monthly_pc_search.toLocaleString()} / ${row.monthly_mobile_search.toLocaleString()}`
+                      : "—"}
+                  </td>
+                  <td className="px-3 py-2 text-xs text-gray-600">
+                    {row.competition_idx ?? "—"}
+                  </td>
                   <td className="px-3 py-2 text-right tabular-nums">{row.blog_slots}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{row.spam_cards}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{row.total_cards}</td>

@@ -30,3 +30,10 @@ services:
       # 단일 job 최대 실행 시간(초). 초과 시 soft timeout (상태만 timed_out 으로 전환).
       - key: JOB_TIMEOUT_SECONDS
         value: "3600"
+      # 네이버 검색광고 API (키워드도구 - 월간 검색량). 미설정 시 검색량 None 폴백, 분석 자체는 진행.
+      - key: NAVER_AD_API_KEY
+        sync: false
+      - key: NAVER_AD_SECRET_KEY
+        sync: false
+      - key: NAVER_AD_CUSTOMER_ID
+        sync: false

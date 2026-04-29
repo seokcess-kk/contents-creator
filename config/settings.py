@@ -41,6 +41,13 @@ class Settings(BaseSettings):
     supabase_url: str | None = Field(default=None, description="Supabase project URL")
     supabase_key: str | None = Field(default=None, description="Supabase service role key")
 
+    # 네이버 검색광고 API (키워드도구 - 월간 검색량 조회)
+    # 발급: searchad.naver.com → 도구 → API 사용 관리. HMAC SHA256 서명 필요.
+    # 무료 + 분 60회 호출 한도. 비용 0 이지만 호출 횟수는 record_usage 로 추적.
+    naver_ad_api_key: str | None = Field(default=None, description="검색광고 라이선스 키")
+    naver_ad_secret_key: str | None = Field(default=None, description="HMAC 서명용 시크릿")
+    naver_ad_customer_id: str | None = Field(default=None, description="광고주 ID (Customer ID)")
+
     # LLM 모델 식별자 (SPEC-SEO-TEXT.md §5 — 역할별 매핑)
     # 창작 — [6] 아웃라인·도입부·image_prompts 는 Opus 유지.
     # [7] 본문 초안은 Sonnet 으로 내리고 약한 섹션만 Opus 로 보정 (하이브리드).

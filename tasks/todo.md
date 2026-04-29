@@ -288,6 +288,20 @@
 - [ ] K6.2 수동 smoke (Supabase 스키마 적용 후) — 단일 분석 + 10개 대량 → /keywords 페이지에서 등급 표시 확인
 - [ ] K6.3 commit + push
 
+### Phase K7 — 네이버 검색광고 API 통합 (월 검색량 표시) ✅ 코드 완료, ⏸ 사용자 작업 2건
+- [x] K7.1 `domain/keyword_difficulty/naver_ad_client.py` — HMAC SHA256 서명 + `get_search_volume(keyword)` (실패 시 None)
+- [x] K7.2 `model.py` 에 `SearchVolume` + `KeywordDifficulty.search_volume`
+- [x] K7.3 `config/settings.py` 에 `naver_ad_api_key/secret_key/customer_id` 3개 추가
+- [x] K7.4 `application/keyword_difficulty_orchestrator.analyze_keyword` — SERP + 검색량 순차 호출 (병렬은 contextvars 격리로 usage 추적 누락)
+- [x] K7.5 `config/schema.sql` 에 `monthly_pc_search/monthly_mobile_search/monthly_total_search/competition_idx` 칼럼 추가 (idempotent ALTER 포함)
+- [ ] K7.5.b **사용자 작업**: Supabase SQL Editor 에서 ALTER TABLE 실행 (또는 schema.sql 13번 섹션 재실행 — IF NOT EXISTS 라 안전)
+- [x] K7.6 `storage.py` insert/조회 갱신
+- [x] K7.7 `web/api/routers/keyword_difficulty.py` 응답 4 필드 추가
+- [x] K7.8 Frontend `/keywords` 페이지 — "월 검색량" / "PC / 모바일" / "경쟁" 3 컬럼 추가
+- [x] K7.9 `naver_ad_client` 가 `record_usage(provider="naver_searchad", model="keywordstool")` 자동 호출
+- [x] K7.10 단위 테스트 — `test_naver_ad_client.py` 14건 (HMAC 서명 / 응답 파싱 / 인증 누락 / HTTP 에러 / 네트워크 예외)
+- [ ] K7.11 **사용자 작업**: Render 환경 변수 추가 — `NAVER_AD_API_KEY`, `NAVER_AD_SECRET_KEY`, `NAVER_AD_CUSTOMER_ID`
+
 ---
 
 ## ☁️ Phase D1~D5 — 클라우드 배포 (Vercel + Render, 2026-04-29 착수)

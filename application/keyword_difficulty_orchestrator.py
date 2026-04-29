@@ -16,7 +16,8 @@ from config.settings import settings
 from domain.common.usage import collect_usage, reset_usage
 from domain.crawler.brightdata_client import BrightDataClient, BrightDataError
 from domain.keyword_difficulty import storage
-from domain.keyword_difficulty.model import KeywordDifficulty, SerpFetchError
+from domain.keyword_difficulty.model import KeywordDifficulty, SearchVolume, SerpFetchError
+from domain.keyword_difficulty.naver_ad_client import get_search_volume
 from domain.keyword_difficulty.parser import parse_serp
 from domain.keyword_difficulty.scorer import score_difficulty
 
@@ -32,6 +33,15 @@ def _build_client() -> BrightDataClient:
         api_key=settings.bright_data_api_key,
         zone=settings.bright_data_web_unlocker_zone,
     )
+
+
+def _safe_get_volume(keyword: str) -> SearchVolume | None:
+    """검색량 fetch 의 모든 예외를 None 으로 흡수 (분석 본 흐름 비차단)."""
+    try:
+        return get_search_volume(keyword)
+    except Exception:
+        logger.warning("keyword_difficulty.search_volume_failed keyword=%s", keyword, exc_info=True)
+        return None
 
 
 def analyze_keyword(
@@ -55,13 +65,18 @@ def analyze_keyword(
     cli = client or _build_client()
     url = _SERP_URL.format(query=quote(keyword))
 
-    # contextvars 격리: ThreadPool 워커 등에서도 부모 컨텍스트와 분리 누적.
-    # BrightDataClient.fetch 가 record_usage 자동 호출 → 직후 Supabase 에 저장.
+    # 순차 호출: ThreadPool 병렬은 contextvars 격리로 record_usage 가 부모로 전파되지 않아
+    # api_usage 추적이 누락된다. 검색량 API 가 수백ms 라 직렬 손실 작음.
+    # BrightDataClient.fetch + get_search_volume 모두 record_usage 자동 호출.
     reset_usage()
+    search_volume: SearchVolume | None = None
     try:
-        html = cli.fetch(url)
-    except BrightDataError as exc:
-        raise SerpFetchError(f"SERP fetch 실패: {keyword}") from exc
+        try:
+            html = cli.fetch(url)
+        except BrightDataError as exc:
+            raise SerpFetchError(f"SERP fetch 실패: {keyword}") from exc
+        # 검색량 fetch — 실패해도 분석은 계속 (정책 b)
+        search_volume = _safe_get_volume(keyword)
     finally:
         usages = collect_usage()
         if usages:
@@ -69,6 +84,8 @@ def analyze_keyword(
 
     composition = parse_serp(html)
     diff = score_difficulty(keyword, composition)
+    if search_volume is not None:
+        diff = diff.model_copy(update={"search_volume": search_volume})
 
     if persist:
         try:

@@ -31,8 +31,11 @@ _FAKE_HTML = """
 
 
 class TestAnalyzeKeyword:
+    @patch("application.keyword_difficulty_orchestrator._safe_get_volume", return_value=None)
     @patch("application.keyword_difficulty_orchestrator.storage.insert_snapshot")
-    def test_returns_keyword_difficulty(self, mock_insert: MagicMock) -> None:
+    def test_returns_keyword_difficulty(
+        self, mock_insert: MagicMock, mock_volume: MagicMock
+    ) -> None:
         client = MagicMock()
         client.fetch.return_value = _FAKE_HTML
         mock_insert.side_effect = lambda diff: diff

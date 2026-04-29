@@ -52,10 +52,15 @@ class _DifficultyResponse(BaseModel):
     blog_slots: int
     spam_cards: int
     sections: dict[str, int]
+    monthly_pc_search: int | None = None
+    monthly_mobile_search: int | None = None
+    monthly_total_search: int | None = None
+    competition_idx: str | None = None
     checked_at: datetime | None
 
 
 def _to_response(diff: KeywordDifficulty) -> _DifficultyResponse:
+    sv = diff.search_volume
     return _DifficultyResponse(
         keyword=diff.keyword,
         grade=diff.grade.value,
@@ -64,6 +69,10 @@ def _to_response(diff: KeywordDifficulty) -> _DifficultyResponse:
         blog_slots=diff.composition.blog_slots,
         spam_cards=diff.composition.spam_cards,
         sections={s.value: c for s, c in diff.composition.section_counts.items()},
+        monthly_pc_search=sv.monthly_pc if sv else None,
+        monthly_mobile_search=sv.monthly_mobile if sv else None,
+        monthly_total_search=sv.monthly_total if sv else None,
+        competition_idx=sv.competition_idx if sv else None,
         checked_at=diff.checked_at,
     )
 

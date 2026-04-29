@@ -64,5 +64,9 @@ export interface KeywordDifficulty {
   blog_slots: number;
   spam_cards: number;
   sections: Record<string, number>;
+  monthly_pc_search: number | null;
+  monthly_mobile_search: number | null;
+  monthly_total_search: number | null;
+  competition_idx: string | null;
   checked_at: string | null;
 }

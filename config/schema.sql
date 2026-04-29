@@ -431,8 +431,20 @@ create table if not exists keyword_difficulty_snapshots (
     blog_slots int not null,
     spam_cards int not null,
     sections_json jsonb not null default '{}'::jsonb,
+    -- 2026-04-29 추가: 네이버 검색광고 API 월간 검색량 (없으면 NULL)
+    monthly_pc_search int,
+    monthly_mobile_search int,
+    monthly_total_search int,
+    competition_idx text,
     checked_at timestamptz not null default now()
 );
+
+-- 기존 테이블이 이미 존재할 때를 위한 ALTER 보강 (idempotent)
+alter table keyword_difficulty_snapshots
+    add column if not exists monthly_pc_search int,
+    add column if not exists monthly_mobile_search int,
+    add column if not exists monthly_total_search int,
+    add column if not exists competition_idx text;
 
 do $$
 begin

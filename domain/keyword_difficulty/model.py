@@ -79,6 +79,22 @@ class DifficultyGrade(StrEnum):
     LOW = "low"
 
 
+class SearchVolume(BaseModel):
+    """네이버 검색광고 API 의 월간 검색량 — `naver_ad_client.get_search_volume` 반환값.
+
+    한 자릿수 검색량은 네이버 응답이 `< 10` 같은 문자열로 오므로 `monthly_pc_qc/monthly_mobile_qc`
+    는 정수 0~N. 응답이 비숫자면 0 으로 정규화.
+    """
+
+    monthly_pc: int = 0
+    monthly_mobile: int = 0
+    competition_idx: str | None = None  # "낮음" / "중간" / "높음" 또는 미수신 시 None
+
+    @property
+    def monthly_total(self) -> int:
+        return self.monthly_pc + self.monthly_mobile
+
+
 class KeywordDifficulty(BaseModel):
     """단일 키워드 난이도 분석 결과 — `scorer.score_difficulty` 의 반환값."""
 
@@ -86,6 +102,7 @@ class KeywordDifficulty(BaseModel):
     score: float
     grade: DifficultyGrade
     composition: SerpComposition
+    search_volume: SearchVolume | None = None
     checked_at: datetime | None = None
 
 
