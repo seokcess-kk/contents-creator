@@ -13,9 +13,10 @@ from urllib.parse import quote
 
 from application.usage_tracker import save_usage_to_supabase
 from config.settings import settings
-from domain.common.usage import collect_usage, reset_usage
+from domain.common.usage import collect_usage, record_usage, reset_usage, run_in_isolated_usage_ctx
 from domain.crawler.brightdata_client import BrightDataClient, BrightDataError
 from domain.keyword_difficulty import storage
+from domain.keyword_difficulty.cache import get_cached, put_cached
 from domain.keyword_difficulty.model import KeywordDifficulty, SearchVolume, SerpFetchError
 from domain.keyword_difficulty.naver_ad_client import get_search_volume
 from domain.keyword_difficulty.parser import parse_serp
@@ -24,8 +25,11 @@ from domain.keyword_difficulty.scorer import score_difficulty
 logger = logging.getLogger(__name__)
 
 _SERP_URL = "https://search.naver.com/search.naver?query={query}"
-_BATCH_RATE_LIMIT_SEC = 1.0  # Bright Data rate 보호: 키워드당 최소 간격
-_BATCH_DEFAULT_PARALLEL = 3
+# Bright Data rate 보호: 키워드당 최소 간격. 분당 60~100 호출 한도 안에서 안전.
+# 2026-04-29 F1: 1.0 → 0.3 으로 단축 (병렬 8과 함께 50 키워드 ~50초 목표)
+_BATCH_RATE_LIMIT_SEC = 0.3
+# 2026-04-29 F1: 3 → 8 로 상향. 배치 처리 시간 약 4배 단축
+_BATCH_DEFAULT_PARALLEL = 8
 
 
 def _build_client() -> BrightDataClient:
@@ -65,18 +69,34 @@ def analyze_keyword(
     cli = client or _build_client()
     url = _SERP_URL.format(query=quote(keyword))
 
-    # 순차 호출: ThreadPool 병렬은 contextvars 격리로 record_usage 가 부모로 전파되지 않아
-    # api_usage 추적이 누락된다. 검색량 API 가 수백ms 라 직렬 손실 작음.
-    # BrightDataClient.fetch + get_search_volume 모두 record_usage 자동 호출.
+    # 2026-04-29 F3: SERP 캐시 hit 시 Bright Data 호출 우회. 검색량은 캐시 안 함
+    # (검색량 API 자체가 빠르고 신선도 영향 작음).
+    cached_html = get_cached(keyword)
+
+    # 2026-04-29 F2: SERP fetch + 검색량 fetch 를 ThreadPool(2) 로 병렬.
+    # 캐시 hit 시 SERP fetch 는 즉시 반환 → 검색량 fetch 만 실제 외부 호출.
     reset_usage()
     search_volume: SearchVolume | None = None
     try:
-        try:
-            html = cli.fetch(url)
-        except BrightDataError as exc:
-            raise SerpFetchError(f"SERP fetch 실패: {keyword}") from exc
-        # 검색량 fetch — 실패해도 분석은 계속 (정책 b)
-        search_volume = _safe_get_volume(keyword)
+        if cached_html is not None:
+            html = cached_html
+            # 검색량만 호출 (격리 ctx 불필요 — 단일 호출)
+            search_volume = _safe_get_volume(keyword)
+        else:
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                html_future = executor.submit(run_in_isolated_usage_ctx, cli.fetch, url)
+                vol_future = executor.submit(run_in_isolated_usage_ctx, _safe_get_volume, keyword)
+                try:
+                    html, html_usages = html_future.result()
+                except BrightDataError as exc:
+                    raise SerpFetchError(f"SERP fetch 실패: {keyword}") from exc
+                search_volume, vol_usages = vol_future.result()
+
+            # 부모 컨텍스트에 usage 머지
+            for u in html_usages + vol_usages:
+                record_usage(u)
+            # 성공 시 캐시 put
+            put_cached(keyword, html)
     finally:
         usages = collect_usage()
         if usages:

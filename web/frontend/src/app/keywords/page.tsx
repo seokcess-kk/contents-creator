@@ -77,10 +77,14 @@ export default function KeywordsPage() {
   const [bulkInput, setBulkInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
   const [snapshots, setSnapshots] = useState<KeywordDifficulty[]>([]);
   const [filter, setFilter] = useState<DifficultyGrade | "all">("all");
   const [search, setSearch] = useState("");
+
+  // F4: 청크 분할 — 한 번의 batch 호출 = 8 키워드. 청크 단위 결과를 즉시 표에 반영.
+  const CHUNK_SIZE = 8;
 
   const reload = useCallback(async () => {
     try {
@@ -124,14 +128,27 @@ export default function KeywordsPage() {
     }
     setBusy(true);
     setError(null);
+    setProgress({ done: 0, total: keywords.length });
+
     try {
-      await batchAnalyzeKeywordDifficulty(keywords);
+      // F4: 8개 청크로 나눠 순차 호출. 청크 완료 즉시 부분 결과 표 갱신.
+      const chunks: string[][] = [];
+      for (let i = 0; i < keywords.length; i += CHUNK_SIZE) {
+        chunks.push(keywords.slice(i, i + CHUNK_SIZE));
+      }
+      let done = 0;
+      for (const chunk of chunks) {
+        await batchAnalyzeKeywordDifficulty(chunk);
+        done += chunk.length;
+        setProgress({ done, total: keywords.length });
+        await reload();  // 부분 결과 즉시 반영
+      }
       setBulkInput("");
-      await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
+      setProgress(null);
     }
   };
 
@@ -197,7 +214,22 @@ export default function KeywordsPage() {
             className="w-full rounded border px-3 py-2 text-sm"
             disabled={busy}
           />
-          <div className="mt-2 flex justify-end">
+          <div className="mt-2 flex items-center justify-between">
+            {progress ? (
+              <div className="flex items-center gap-2 text-sm text-gray-600">
+                <div className="h-2 w-32 overflow-hidden rounded bg-gray-200">
+                  <div
+                    className="h-full bg-blue-600 transition-all"
+                    style={{ width: `${(progress.done / progress.total) * 100}%` }}
+                  />
+                </div>
+                <span className="tabular-nums">
+                  {progress.done} / {progress.total}
+                </span>
+              </div>
+            ) : (
+              <span className="text-xs text-gray-500">8개씩 청크로 분할 처리</span>
+            )}
             <button
               type="button"
               onClick={() => void handleBulk()}

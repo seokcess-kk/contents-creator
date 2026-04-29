@@ -41,7 +41,8 @@ class _AnalyzeRequest(BaseModel):
 
 class _BatchRequest(BaseModel):
     keywords: list[str] = Field(min_length=1, max_length=_BATCH_MAX)
-    parallel: int = Field(default=3, ge=1, le=5)
+    # 2026-04-29 F1: 상한 5 → 10. 기본 8 (orchestrator 와 동일).
+    parallel: int = Field(default=8, ge=1, le=10)
 
 
 class _DifficultyResponse(BaseModel):

@@ -4,11 +4,23 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from application.keyword_difficulty_orchestrator import (
     analyze_keyword,
     batch_analyze_keywords,
 )
+from domain.keyword_difficulty.cache import clear_cache
 from domain.keyword_difficulty.model import DifficultyGrade
+
+
+@pytest.fixture(autouse=True)
+def _clear_serp_cache() -> None:
+    """각 테스트 전후 SERP 캐시 비우기 (테스트 간 격리)."""
+    clear_cache()
+    yield
+    clear_cache()
+
 
 _FAKE_HTML = """
 <html><body>

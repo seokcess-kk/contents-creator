@@ -304,6 +304,43 @@
 
 ---
 
+## ⚡ Phase F1~F5 — 키워드 분석 속도 개선 (2026-04-29 착수)
+
+> 현재 단일 6~12초 / 배치 50개 약 200초. 사용자 결정: 1~5번 모두 순차 적용.
+
+### Phase F1 — 배치 병렬도 상향 ✅ 완료 (2026-04-29)
+- [x] F1.1 `_BATCH_DEFAULT_PARALLEL` 3 → 8, `_BATCH_RATE_LIMIT_SEC` 1.0 → 0.3
+- [x] F1.2 `_BatchRequest.parallel` 상한 5 → 10, 기본 8
+
+### Phase F2 — 단일 분석 검색량 병렬화 ✅ 완료 (2026-04-29)
+- [x] F2.1 `analyze_keyword` 가 `run_in_isolated_usage_ctx` + ThreadPool(2) 로 SERP + 검색량 병렬 호출. 워커 usage 를 부모로 머지해 추적 보존
+- [x] F2.2 캐시 hit 시 검색량만 단일 호출 (격리 ctx 불필요)
+
+### Phase F3 — SERP 캐싱 ✅ 완료 (2026-04-29)
+- [x] F3.1 `domain/keyword_difficulty/cache.py` — TTL 30분 LRU, 스레드 안전 (`threading.Lock`), max 256 entries
+- [x] F3.2 orchestrator 가 캐시 hit 시 Bright Data 호출 우회. record_usage 안 됨
+- [x] F3.3 단위 테스트 8건 (TTL 만료 / LRU evict / hits·misses / clear)
+
+### Phase F4 — 사용자 체감 개선 ✅ 완료 (2026-04-29)
+> Backend 진짜 비동기(job_manager) 대신 Frontend 청크 분할 채택. 인프라 추가 없이 체감 개선 동등.
+- [x] F4.1 `/keywords` 페이지 — 50개 입력을 8개 청크로 분할 후 순차 호출
+- [x] F4.2 청크 완료 시점에 부분 결과 즉시 표 갱신 (`reload()` 청크별 호출)
+- [x] F4.3 진행률 바 표시 (`done / total`) — 완료마다 시각화
+- [x] F4.4 단일 분석은 동기 유지 (병렬화로 6~10초 내 응답)
+
+### Phase F5 — 모바일 SERP 전환 (파서 재작성 — 신중) ⏸ PoC 대기
+- [ ] F5.1 `m.search.naver.com` SERP HTML fetch + 구조 분석 (PoC fixture 8개)
+- [ ] F5.2 PC SERP 와 동일 등급 판정 일치도 검증 (5/8 이상이면 채택 검토)
+- [ ] F5.3 파서 분기 또는 신규 모듈 작성
+- [ ] F5.4 fetch 시간 비교 — 1~2초 단축 시 채택, 정확도 손실 시 보류
+
+> 결과 (F1~F4 적용 후 추정):
+> - 단일 분석: 6~12초 → **5~10초** (검색량 병렬화 + 캐시 hit 시 1초 미만)
+> - 배치 50개: 200초 → **약 50초** (parallel 8 + sleep 0.3, 4배 ↑)
+> - 사용자 체감: 진행률 바 + 부분 결과 즉시 표시로 "기다림" 인식 약화
+
+---
+
 ## ☁️ Phase D1~D5 — 클라우드 배포 (Vercel + Render, 2026-04-29 착수)
 
 > 노트북 의존성 0. 어디서든 `*.vercel.app` 접속 시 항상 응답.
