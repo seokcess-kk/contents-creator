@@ -131,3 +131,37 @@ def list_recent(
     else:
         snapshots = storage.list_recent(limit=limit)
     return [_to_response(s) for s in snapshots]
+
+
+@router.get("/diagnose")
+def diagnose() -> dict[str, object]:
+    """검색광고 API 환경 변수 + 라이브 호출 진단.
+
+    민감 정보(키 전체)는 반환하지 않고 prefix 4자 + 길이 + 호출 결과만 반환.
+    실제 호출도 1건 수행해 응답 코드를 확인한다.
+    """
+    from config.settings import settings as _s
+    from domain.keyword_difficulty.naver_ad_client import get_search_volume
+
+    info: dict[str, object] = {
+        "naver_ad_api_key_set": bool(_s.naver_ad_api_key),
+        "naver_ad_api_key_len": len(_s.naver_ad_api_key) if _s.naver_ad_api_key else 0,
+        "naver_ad_api_key_head": (_s.naver_ad_api_key[:4] + "...") if _s.naver_ad_api_key else None,
+        "naver_ad_secret_key_set": bool(_s.naver_ad_secret_key),
+        "naver_ad_secret_key_len": len(_s.naver_ad_secret_key) if _s.naver_ad_secret_key else 0,
+        "naver_ad_customer_id": _s.naver_ad_customer_id,
+    }
+    try:
+        result = get_search_volume("다이어트한의원")
+        info["live_call_result"] = (
+            {
+                "monthly_pc": result.monthly_pc,
+                "monthly_mobile": result.monthly_mobile,
+                "competition_idx": result.competition_idx,
+            }
+            if result is not None
+            else None
+        )
+    except Exception as exc:
+        info["live_call_error"] = f"{type(exc).__name__}: {exc}"
+    return info
