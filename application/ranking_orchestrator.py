@@ -14,7 +14,9 @@ import time
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
+from application.usage_tracker import save_usage_to_supabase
 from config.settings import require, settings
+from domain.common.usage import collect_usage, reset_usage
 from domain.crawler.brightdata_client import BrightDataClient
 from domain.crawler.serp_collector import build_main_search_url
 from domain.ranking import storage, tracker
@@ -286,10 +288,16 @@ def check_rankings_for_publication(publication_id: str) -> RankingSnapshot:
         api_key=require("bright_data_api_key"),
         zone=require("bright_data_web_unlocker_zone"),
     )
+    # SERP fetch usage 를 격리 컨텍스트에서 수확 → Supabase api_usage 저장.
+    # ThreadPool/스케줄러 호출에서도 부모 컨텍스트와 누적기 분리.
+    reset_usage()
     try:
         html = client.fetch(build_main_search_url(publication.keyword))
     finally:
         client.close()
+        usages = collect_usage()
+        if usages:
+            save_usage_to_supabase(usages, keyword=publication.keyword, stage="ranking_check")
 
     snapshot = _parse_and_match(html, publication, publication_id)
     saved = storage.insert_snapshot(snapshot)

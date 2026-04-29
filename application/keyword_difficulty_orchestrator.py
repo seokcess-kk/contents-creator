@@ -11,7 +11,9 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import quote
 
+from application.usage_tracker import save_usage_to_supabase
 from config.settings import settings
+from domain.common.usage import collect_usage, reset_usage
 from domain.crawler.brightdata_client import BrightDataClient, BrightDataError
 from domain.keyword_difficulty import storage
 from domain.keyword_difficulty.model import KeywordDifficulty, SerpFetchError
@@ -52,10 +54,18 @@ def analyze_keyword(
     """
     cli = client or _build_client()
     url = _SERP_URL.format(query=quote(keyword))
+
+    # contextvars 격리: ThreadPool 워커 등에서도 부모 컨텍스트와 분리 누적.
+    # BrightDataClient.fetch 가 record_usage 자동 호출 → 직후 Supabase 에 저장.
+    reset_usage()
     try:
         html = cli.fetch(url)
     except BrightDataError as exc:
         raise SerpFetchError(f"SERP fetch 실패: {keyword}") from exc
+    finally:
+        usages = collect_usage()
+        if usages:
+            save_usage_to_supabase(usages, keyword=keyword, stage="keyword_difficulty")
 
     composition = parse_serp(html)
     diff = score_difficulty(keyword, composition)

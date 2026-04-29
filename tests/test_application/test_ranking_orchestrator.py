@@ -329,6 +329,39 @@ class TestCheckRankingsForPublication:
             ranking_orchestrator.check_rankings_for_publication("pub-1")
         brightdata_mock.close.assert_called_once()
 
+    def test_records_brightdata_usage(
+        self,
+        storage_mock: MagicMock,
+        brightdata_mock: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """SERP fetch 시 BrightData usage 가 Supabase api_usage 에 저장된다."""
+        from domain.common.usage import ApiUsage, record_usage
+
+        storage_mock.get_publication.return_value = _publication()
+        snap = RankingSnapshot(publication_id="pub-1", position=3, total_results=10)
+        monkeypatch.setattr(
+            ranking_orchestrator.tracker,
+            "find_position",
+            lambda **_: snap,
+        )
+        storage_mock.insert_snapshot.return_value = snap
+
+        # fetch 가 record_usage 를 호출하도록 모방 (find_position 이 monkeypatch 되어 html 내용 무관)
+        def fetch_with_usage(url: str) -> str:
+            record_usage(ApiUsage(provider="brightdata", model="web_unlocker"))
+            return "<html></html>"
+
+        brightdata_mock.fetch.side_effect = fetch_with_usage
+
+        save_mock = MagicMock(return_value=True)
+        monkeypatch.setattr(ranking_orchestrator, "save_usage_to_supabase", save_mock)
+
+        ranking_orchestrator.check_rankings_for_publication("pub-1")
+        save_mock.assert_called_once()
+        _, kwargs = save_mock.call_args
+        assert kwargs["stage"] == "ranking_check"
+
 
 class TestCheckAllActiveRankings:
     def test_iterates_all_publications(

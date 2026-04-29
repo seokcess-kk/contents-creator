@@ -48,6 +48,30 @@ class TestAnalyzeKeyword:
         client.fetch.assert_called_once()
         mock_insert.assert_called_once()
 
+    @patch("application.keyword_difficulty_orchestrator.save_usage_to_supabase")
+    @patch("application.keyword_difficulty_orchestrator.storage.insert_snapshot")
+    def test_records_brightdata_usage(
+        self, mock_insert: MagicMock, mock_save_usage: MagicMock
+    ) -> None:
+        """BrightDataClient.fetch 의 자동 record_usage 가 Supabase 까지 저장된다."""
+        from domain.common.usage import ApiUsage, record_usage
+
+        client = MagicMock()
+
+        def fetch_with_usage(url: str) -> str:
+            # 실 BrightDataClient 가 fetch 후 record_usage 호출하는 동작 모방
+            record_usage(ApiUsage(provider="brightdata", model="web_unlocker"))
+            return _FAKE_HTML
+
+        client.fetch.side_effect = fetch_with_usage
+        mock_insert.side_effect = lambda diff: diff
+
+        analyze_keyword("테스트", client=client)
+        mock_save_usage.assert_called_once()
+        _, kwargs = mock_save_usage.call_args
+        assert kwargs["keyword"] == "테스트"
+        assert kwargs["stage"] == "keyword_difficulty"
+
     @patch("application.keyword_difficulty_orchestrator.storage.insert_snapshot")
     def test_persist_false_skips_insert(self, mock_insert: MagicMock) -> None:
         client = MagicMock()
