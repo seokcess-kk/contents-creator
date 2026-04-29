@@ -307,6 +307,7 @@ def _build_outline_system(
     tag_block = _format_tag_instructions(tags, pc)
     image_block = _format_image_instructions(pc)
     keyword_placement_block = _format_keyword_placement(pc)
+    structure_directive = _build_structure_directive(pc)
 
     intro_type = _select_intro_type(pc.distributions)
 
@@ -351,8 +352,7 @@ def _build_outline_system(
         f"{image_block}\n\n"
         f"{compliance_block}\n\n"
         "[핵심 지시]\n"
-        "1. 필수 섹션 모두 포함 + 차별화 섹션 0~2개 추가\n"
-        "2. 상위 글 구조를 참조하되 그대로 복제하지 말 것\n"
+        f"{structure_directive}\n"
         "3. 도입부 본문 200~300자를 확정본으로 작성 "
         "(본문 생성 단계에서 재생성하지 않음)\n"
         "4. 업체명/브랜드명/1인칭 표현 금지\n"
@@ -470,11 +470,35 @@ def _format_keyword_placement(pc: PatternCard) -> str:
     return "[키워드 배치 전략]\n" + "\n".join(lines)
 
 
+def _build_structure_directive(pc: PatternCard) -> str:
+    """[핵심 지시] 1·2 항을 상위 글 구조 데이터 유무로 분기.
+
+    데이터 있음(top_structures 또는 sections.required 보유) → 참조하되 복제 금지.
+    데이터 없음(소제목 0~1개 글이 대다수) → 자체 설계, 복제 금지 지시 무의미.
+    lessons.md P2 발견 4 정합.
+    """
+    has_structure = bool(pc.top_structures) or bool(pc.sections.required)
+    if has_structure:
+        return (
+            "1. 필수 섹션 모두 포함 + 차별화 섹션 0~2개 추가\n"
+            "2. 상위 글 구조를 참조하되 그대로 복제하지 말 것"
+        )
+    return (
+        "1. 상위 글 구조 데이터 부재 — 키워드 의도·타겟 독자에 맞춰 SEO 친화적 구조를 자체 설계\n"
+        "2. 도입/공감 → 정보제공 → 방법제시/사례 → 요약 흐름을 기본형으로 사용 가능"
+    )
+
+
 def _format_top_structures(pc: PatternCard) -> str:
     lines: list[str] = []
     for ts in pc.top_structures[:3]:
         lines.append(f"  {ts.rank}위: {' -> '.join(ts.sequence)}")
-    return "\n".join(lines) if lines else "(없음)"
+    if lines:
+        return "\n".join(lines)
+    return (
+        "(상위 글에서 소제목 기반 구조 데이터를 수집하지 못했음. "
+        "키워드 의도와 타겟 독자 고민·검색 의도에 맞춰 SEO 친화적 구조를 자체 설계하라)"
+    )
 
 
 def _format_dia_instructions(dia: dict[str, float]) -> str:

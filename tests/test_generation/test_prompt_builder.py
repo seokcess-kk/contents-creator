@@ -68,6 +68,27 @@ class TestBuildOutlinePrompt:
         shared_system, _, _ = build_outline_prompt(sample_pattern_card)
         assert "중립" in shared_system or "일반화" in shared_system
 
+    def test_structure_directive_when_present(self, sample_pattern_card: PatternCard) -> None:
+        """top_structures 가 있으면 '참조하되 그대로 복제하지 말 것' 지시가 들어간다."""
+        shared_system, _, _ = build_outline_prompt(sample_pattern_card)
+        assert "참조하되 그대로 복제하지 말 것" in shared_system
+        assert "구조 데이터 부재" not in shared_system
+
+    def test_structure_directive_when_empty(self, sample_pattern_card: PatternCard) -> None:
+        """top_structures + sections.required 모두 비면 자체 설계 지시로 분기한다 (lessons P2)."""
+        empty_card = sample_pattern_card.model_copy(
+            update={
+                "top_structures": [],
+                "sections": sample_pattern_card.sections.model_copy(
+                    update={"required": [], "frequent": [], "differentiating": []}
+                ),
+            }
+        )
+        shared_system, _, _ = build_outline_prompt(empty_card)
+        assert "구조 데이터 부재" in shared_system
+        assert "자체 설계" in shared_system
+        assert "참조하되 그대로 복제하지 말 것" not in shared_system
+
     def test_user_message_minimal_for_caching(self, sample_pattern_card: PatternCard) -> None:
         """user 메시지는 짧아야 한다 (시스템 프롬프트는 system 배열로 분리됨).
 

@@ -22,11 +22,11 @@
 
 ## 🧪 Phase 0.5 — SEO 트랙 착수 전 실측 (블로킹)
 
-### [Pre-1] 개발 환경 준비
+### [Pre-1] 개발 환경 준비 ✅ 완료 (2026-04-29)
 - [x] `python -m venv .venv` 후 활성화 (기존 venv 재사용) — 2026-04-16
 - [x] `pip install -e ".[dev]"` 실행 성공 확인 — 신규 의존성 6종(playwright/jinja2/python-docx/pypdf/pdfplumber/pillow) 포함 — 2026-04-16
-- [ ] `bash .claude/hooks/build-check.sh` 그린 확인 (스켈레톤 기준)
-- [ ] Supabase 프로젝트 생성 + `config/schema.sql` v3 적용 (브랜드 4개 테이블 포함)
+- [x] `bash .claude/hooks/build-check.sh` 그린 확인 — 874 passed, coverage 75.65% (`web` extra 동반 설치 후) — 2026-04-29
+- [x] Supabase 프로젝트 생성 + `config/schema.sql` v3 적용 — 13개 테이블 전부 적용 확인 (pattern_cards/generated_contents/brand_profiles/brand_assets/brand_media_assets/brand_cards/api_usage/publications/ranking_snapshots/serp_top10_snapshots/visibility_diagnoses/republish_jobs/publication_actions) — 2026-04-29
 
 ### [B3] 네이버 스마트에디터 HTML 호환성 실측 ✅ 완료 (2026-04-15)
 - [x] 샘플 HTML 생성 (`dev/active/naver-compat-test.html`) — 화이트리스트 모든 태그 + Q&A + 통계 포함
@@ -61,7 +61,7 @@
   - `ANTHROPIC_API_KEY`
   - `GEMINI_API_KEY` (Google AI Studio, Gemini 3.1 Flash Image + Nano Banana)
   - `SUPABASE_URL`, `SUPABASE_KEY`
-- [ ] `python -c "from config.settings import settings; print(settings.bright_data_api_key is not None)"` 로 로드 확인 (Pre-1 의존)
+- [x] `python -c "from config.settings import settings; print(settings.bright_data_api_key is not None)"` 로 로드 확인 — bright_data/anthropic/gemini/supabase_url/supabase_key 5종 모두 True — 2026-04-29
 
 ---
 
@@ -147,104 +147,120 @@
   - [ ] 결정 후 [5] cross_analyzer 의 `aggregated_tags` 와 [6] `suggested_tags` 폴백 로직 수정
   - 현재 상태: `PhysicalAnalysis.tags` 는 빈 리스트로 동작 (코드는 폴백 셀렉터 유지)
 
-- [ ] **[P2-I2] 네이버 블로거가 소제목을 잘 안 씀** — 10개 중 8개가 소제목 0개. 폰트 기반 감지는 정상 동작하나 원본 데이터가 부재. lessons.md P2 참조
-  - [ ] [4a] semantic_extractor 진입 시 "소제목 0개 → 전체를 단일 섹션으로 분류" 폴백 로직 추가
-  - [ ] [5] cross_analyzer 구조 패턴 집계 시 소제목 있는 블로그만 대상으로 필터링
-  - [ ] [6] outline_writer 의 "상위 글 구조 복제 금지" 지시를 "참고할 구조가 있으면" 로 조건부화
+- [x] **[P2-I2] 네이버 블로거가 소제목을 잘 안 씀** — 10개 중 8개가 소제목 0개. 폰트 기반 감지는 정상 동작하나 원본 데이터가 부재. lessons.md P2 참조 — 2026-04-29 마감
+  - [x] [4a] semantic_extractor 진입 시 "소제목 0개 → 전체를 단일 섹션으로 분류" 폴백 로직 추가 — `_build_user_content` 의 `subtitle_count == 0` 분기로 이미 적용 (기존)
+  - [x] [5] cross_analyzer 구조 패턴 집계 시 소제목 있는 블로그만 대상으로 필터링 — `_classify_sections`/`_aggregate_distributions.ending_type`/`_extract_top_structures` 모두 섹션 ≥ 2 분모로 변경. 단일 섹션만 있을 시 빈 분류·빈 ending·빈 top_structures 반환 — 2026-04-29
+  - [x] [6] outline_writer 의 "상위 글 구조 복제 금지" 지시를 "참고할 구조가 있으면" 로 조건부화 — `prompt_builder._build_structure_directive()` 신설, top_structures + sections.required 모두 비면 "구조 데이터 부재 — SEO 친화적 구조를 자체 설계" 분기 — 2026-04-29
 
-## 🔮 Phase 2~8 — SEO 트랙 이후 단계 (각 단계 착수 시 분해)
+## ✅ Phase 2~8 — SEO 트랙 (이미 구현·검증 완료)
 
-- **Phase 2**: 물리 분석 (`physical_extractor`) — 이미지 메타 추출 포함 (`image_pattern`)
-- **Phase 3**: 의미 + 소구 + 교차 분석 (`semantic_extractor`, `appeal_extractor`, `cross_analyzer`, `pattern_card`)
-- **Phase 4**: 생성 (`prompt_builder`, `outline_writer`, `body_writer`) — M2 불변 규칙 + image_prompts 생성
-- **Phase 5**: 의료법 검증 — **`CompliancePolicy` enum 전제로 설계**
-  - [ ] `domain/compliance/rules.py` — `CompliancePolicy` enum (`SEO_STRICT`, `BRAND_LENIENT`) 정의
-  - [ ] `RULES: dict[CompliancePolicy, list[Rule]]` 구조로 두 프로필 동시 정의
-  - [ ] `checker(text, policy=CompliancePolicy.SEO_STRICT)` 시그니처 — 기본값은 strict
-  - [ ] `fixer` 는 정책 독립적. SEO 트랙만 도입부 재생성 금지(M2) 추가 적용
-  - [ ] 모든 SEO 트랙 호출부에 `policy=SEO_STRICT` 명시 전달
-  - [ ] 사용자 제공 8개 카테고리 확정 시점에 `BRAND_LENIENT` 7개 초안 (§7-2) 도 함께 재검토
-  - [ ] **⚠️ 순서 의존성**: Phase B7 (브랜드 카드 컴플라이언스) 는 이 Phase 5 완료 이후에만 착수 가능
-- **Phase 6**: AI 이미지 생성 🆕 (`domain/image_generation/`) — Gemini 3.1 Flash Image Preview, 캐시 + 예산 + 재시도
-- **Phase 7**: 조립 (`assembler`, `outline_md`, `naver_html`) — outline.md 에 이미지 매핑 가이드
-- **Phase 8**: 통합 + E2E 테스트 + `run_pipeline` 본문 채움
+> 본 섹션 체크박스는 stale 이었음. 실제로는 모든 SEO 트랙 도메인이 이미 구현·테스트·운영 중.
+> 2026-04-29 갱신 — Phase 1 마킹 패턴과 동일하게 일괄 정리.
+
+- [x] **Phase 2** 물리 분석 (`domain/analysis/physical_extractor.py`) — 이미지 메타 + DIA+ 7종 + 키워드 분석 + regression 테스트 (`tests/fixtures/naver_html/` 12개 실측 HTML)
+- [x] **Phase 3** 의미 + 소구 + 교차 분석 (`semantic_extractor`, `appeal_extractor`, `cross_analyzer`, `pattern_card`) — [4a]/[4b] 분리 구현, schema_version "2.0", regression 테스트
+- [x] **Phase 4** 생성 (`prompt_builder`, `outline_writer`, `body_writer`) — M2 불변 규칙 + image_prompts 생성 + `seo-writer-guardian` 에이전트 + `post-edit-lint.sh` 자동 차단
+- [x] **Phase 5** 의료법 검증 — `CompliancePolicy` enum 전제 설계 ✅ 완료 (2026-04-29)
+  - [x] `domain/compliance/rules.py` — `CompliancePolicy` enum (`SEO_STRICT`, `BRAND_LENIENT`) 정의 — 기존 적용
+  - [x] `RULES: dict[CompliancePolicy, list[Rule]]` 구조로 두 프로필 동시 정의 — 기존 적용 (SEO_STRICT 10개 / BRAND_LENIENT 9개, FIRST_PERSON_PROMOTION 만 제외)
+  - [x] `checker(text, policy=CompliancePolicy.SEO_STRICT)` 시그니처 — 기본값은 strict — 기존 적용 (`check_compliance`, `check_image_prompts` 모두)
+  - [x] `fixer` 는 정책 독립적. SEO 트랙만 도입부 재생성 금지(M2) 추가 적용 — 기존 적용 (`fix_violations(..., policy, protect_intro: bool=True)`)
+  - [x] 모든 SEO 트랙 호출부에 `policy=SEO_STRICT` 명시 전달 — `application/stage_runner.py` 5곳 + `application/orchestrator.py` 2곳 (`build_pre_generation_injection`/`check_compliance`/`fix_violations`/`check_image_prompts`) — 2026-04-29
+  - [x] 사용자 제공 8개 카테고리 확정 시점에 `BRAND_LENIENT` 7개 초안 (§7-2) 도 함께 재검토 — SPEC-BRAND-CARD §7 항상 차단 9종 ↔ BRAND_LENIENT 9 카테고리 1:1 정합 검증, `tests/test_compliance/test_brand_lenient_coverage.py` (32 tests, R3 게이트) 신설 — 2026-04-29
+  - [x] **⚠️ 순서 의존성**: Phase B7 (브랜드 카드 컴플라이언스) 는 이 Phase 5 완료 이후에만 착수 가능 — Phase B7 unblocked
+- [x] **Phase 6** AI 이미지 생성 (`domain/image_generation/`) — Gemini 3.1 Flash Image Preview, SHA256 캐시 + 예산 가드 + 1회 재시도, 4개 모듈 + 4개 테스트 모두 구현·검증
+- [x] **Phase 7** 조립 (`domain/composer/`) — assembler·outline_md·naver_html·quality_check, Layer 3 균등 이미지 배분 (`_build_even_image_map`), 네이버 HTML 화이트리스트
+- [x] **Phase 8** 통합 + E2E — `run_pipeline` 본문 + 3계층 품질 강제 (Layer 1/2/3) + `quality-report.json` 자동 체크. build-check 912 passed, 75.73% cov
 
 ---
 
 ## 🎨 Phase B1~B9 — 브랜드 카드 트랙 (SPEC-BRAND-CARD.md §5)
 
-> SEO 트랙과 완전 격리. `domain/brand_card/` 는 `domain/compliance/rules.py` 만 예외적 import. Phase 0.6 실측 완료 후 착수.
+> SEO 트랙과 완전 격리. `domain/brand_card/` 는 `domain/compliance/rules.py` 만 예외적 import.
+> 2026-04-29 갱신 — 본 섹션 체크박스도 stale 이었음. 실제로는 Phase B1~B8 핵심이 거의 모두 구현·검증됨.
+> SPEC 명명과 실제 파일명이 통합·재구성된 부분이 있어 매핑을 함께 표기. 진짜 잔여는 Phase B7 분할/메타 일부 + Phase B9 전체.
 
-### Phase B1 — 도메인 스켈레톤 + 모델
-- [ ] `domain/brand_card/model.py` — `BrandProfile`, `BrandAssets`, `DesignGuide`, `BusinessContext`, `BrandGuideline`, `MediaAsset`, `MediaAssetType`, `BlockId` Enum, `ImageSourceKind`·`AiImagePurpose` Enum, `Block`, `ImageSlot` (+ `model_validator`), `CardPlan`, `CardPlansResult`, `BrandCardResult`
-- [ ] `domain/brand_card/block_rules.py` — `BLOCK_MEDIA_MAPPING` 상수 (§3-2-1)
-- [ ] `domain/brand_card/repository.py` — Supabase brand_profiles/assets/media/cards CRUD
-- [ ] `domain/brand_card/CLAUDE.md` — 도메인 규칙 + M2 스타일 불변 규칙 (버튼 UI 금지 등)
-- [ ] `tests/test_brand_card/test_model.py` — Enum·validator·매핑 단위 테스트
+### Phase B1 — 도메인 스켈레톤 + 모델 ✅ (2026-04-29 stale 정리)
+- [x] `domain/brand_card/model.py` — 모든 모델 (`BrandProfile`/`BrandAssets`/`MediaAsset`/`BlockId` Enum 등) 구현
+- [x] `domain/brand_card/storage.py` — Supabase CRUD (SPEC 의 `repository.py` 와 동치, 명명만 storage 로 통합)
+- [x] `domain/brand_card/CLAUDE.md` — 도메인 규칙 + BRAND_LENIENT 9 매핑 표 (Phase 5 완료 갱신 반영)
+- [x] `tests/test_brand_card/test_model.py` + `test_storage.py`
+- [ ] **잔여**: `block_rules.py` 별도 파일로 분리되지 않음 — `model.py` 안의 `BlockId` Enum 외에 `BLOCK_MEDIA_MAPPING` 상수 명시적 정의 부재. 향후 §3-2-1 정합 검증 시 추가 검토
 
-### Phase B2 — 브랜드 소스 로딩 + 자산 추출 ([B1][B2][B3])
-- [ ] `domain/brand_card/source_loader.py` — 홈페이지/txt/docx/pdf 수집 + BS4 전처리 + 로고 추출
-- [ ] `domain/brand_card/asset_extractor.py` — Sonnet 호출, user_input skip 로직
-- [ ] `domain/brand_card/asset_merger.py` — user_input + llm_extracted 머지 (§4-5)
-- [ ] `domain/brand_card/prompt_builder.py` — 모든 LLM 프롬프트 단일 진입점 (Sonnet asset + Opus card + Sonnet compliance)
-- [ ] `application/stage_runner.py` 에 `run_stage_brand_source_loading`, `run_stage_brand_asset_extraction` 추가
-- [ ] `application/orchestrator.register_brand` — upsert 로직 (§4-6), diff 기반 version 증가
-- [ ] `tests/test_brand_card/test_source_loader.py`, `test_asset_extractor.py` (mock)
+### Phase B2 — 브랜드 소스 로딩 + 자산 추출 ([B1][B2][B3]) ✅ (2026-04-29 stale 정리)
+- [x] `domain/brand_card/source_parser.py` — 홈페이지/txt/docx/pdf 수집 + BS4 전처리 + 로고 추출 (SPEC `source_loader.py` 와 동치)
+- [x] `domain/brand_card/asset_merge.py` — Sonnet 자산 추출 + user_input + llm_extracted 머지 (SPEC 의 `asset_extractor` + `asset_merger` 통합)
+- [x] `tests/test_brand_card/test_source_parser.py`, `test_asset_merge.py`
+- [ ] **잔여**: `prompt_builder.py` 단일 진입점 미구현 — LLM 프롬프트가 `plan_generator.py` + `compliance.py` 에 분산. 단일 진입점 통합 필요 여부는 운영 안정 후 재검토
+- [ ] **잔여**: `application/stage_runner.py` 의 `run_stage_brand_source_loading`/`run_stage_brand_asset_extraction` 미구현 — `application/brand_card_orchestrator.py` 가 도메인을 직접 호출. Phase B9 통합 시 일괄 정리
 
-### Phase B3 — 카드 기획 ([B4] + [B4-v])
-- [ ] `domain/brand_card/card_planner.py` — Opus 호출, 단일 호출 N variant, available_media 전달, pattern_card=None 분기
-- [ ] `domain/brand_card/card_plan_validator.py` — `validate_card_plan()` 필수 블록·Enum·템플릿 슬롯·media 실재성 검증, 실패 시 [B4] 재호출 피드백 생성
-- [ ] `application/stage_runner.run_stage_card_planning`
-- [ ] `tests/test_brand_card/test_card_planner.py` — pattern_card 유무 분기, validate_card_plan 엣지 케이스
+### Phase B3 — 카드 기획 ([B4] + [B4-v]) ✅ (2026-04-29 stale 정리)
+- [x] `domain/brand_card/plan_generator.py` — Opus 호출, BRAND_LENIENT 사전 주입, available_media 전달 (SPEC `card_planner.py` 와 동치)
+- [x] `tests/test_brand_card/test_plan_generator.py`
+- [ ] **잔여**: `card_plan_validator.validate_card_plan()` 별도 함수 미구현 — Pydantic `model_validator` 로 분산 검증. 명시적 [B4] 재호출 피드백 생성 로직 추가 검토 필요
+- [ ] **잔여**: `application/stage_runner.run_stage_card_planning` 미구현 — Phase B9 통합 시 일괄 정리
 
-### Phase B4 — 이미지 슬롯 생성 ([B5])
-- [ ] `domain/brand_card/image_generator.py` — Gemini Nano Banana 호출, 2계층 캐시 (`brands/{slug}/cache/` + 작업 복사본), sha256 키, fallback_text 분기
-- [ ] `application/stage_runner.run_stage_image_slot_generation`
-- [ ] `tests/test_brand_card/test_image_generator.py` — 캐시 히트/미스, media_library 참조 skip
+### Phase B4 — 이미지 슬롯 생성 ([B5]) ✅ (2026-04-29 stale 정리)
+- [x] `domain/brand_card/image_prefetch.py` — Gemini Nano Banana 호출, sha256 캐시, fallback_text 분기 (SPEC `image_generator.py` 와 동치)
+- [x] `tests/test_brand_card/test_image_prefetch.py`
+- [ ] **잔여**: `application/stage_runner.run_stage_image_slot_generation` 미구현 — `brand_card_orchestrator._prefetch_ai_images` 가 인라인 처리. Phase B9 통합 시 정리
 
-### Phase B5 — 템플릿 시스템 + HTML 합성 ([B6])
-- [ ] `domain/brand_card/templates/` 5종 prototyping — `clinic-classic`, `clinic-bold`, `clinic-minimal`, `clinic-warm`, `clinic-editorial` (Claude `frontend-design` 스킬 활용)
-- [ ] 각 템플릿 폴더 구조: `card.html.j2` + `style.css` + `meta.json` + `blocks/{block_id}.html.j2`
-- [ ] `domain/brand_card/template_registry.py` — templates/ 글로빙 + meta.json 로드
-- [ ] `domain/brand_card/html_renderer.py` — Jinja2 합성, `template.validates(card_plan)` 사전 검증
-- [ ] `application/stage_runner.run_stage_card_html_render`
-- [ ] `tests/test_brand_card/test_templates.py` — 각 템플릿이 CardPlan fixture 를 에러 없이 렌더
+### Phase B5 — 템플릿 시스템 + HTML 합성 ([B6]) ✅ (2026-04-29 stale 정리)
+- [x] `domain/brand_card/templates/` 4종 — `clinic_trust`, `diet_empathy`, `local_info`, `process_guide` (각 `card.html.j2` + `style.css` + `meta.json`)
+- [x] `domain/brand_card/template_registry.py` — meta.json 로드
+- [x] `domain/brand_card/renderer.py` — Jinja2 합성 + Playwright (SPEC `html_renderer.py` + `playwright_renderer.py` 통합)
+- [x] `tests/test_brand_card/test_renderer.py`, `test_template_registry.py`
+- [ ] **잔여**: 5번째 템플릿 미구현 — SPEC §B5 는 5종 명시. 운영 키워드 다양성 확인 후 추가 여부 결정
+- [ ] **잔여**: `application/stage_runner.run_stage_card_html_render` 미구현 — Phase B9 통합 시 정리
 
-### Phase B6 — 브랜드 카드 컴플라이언스 ([B7])
-- [ ] **⚠️ Phase 5 (SEO 컴플라이언스) 완료 후 착수** — `CompliancePolicy.BRAND_LENIENT` 프로필은 Phase 5 에서 이미 정의되어 있어야 함
-- [ ] `domain/brand_card/` 에서 `from domain.compliance.rules import CompliancePolicy, RULES` 임포트 (단일 출처 예외)
-- [ ] `domain/brand_card/compliance_integration.py` — 블록 텍스트 추출 + checker(policy=BRAND_LENIENT) 호출 + fixer (블록 카피 교체, image_slot 재사용)
-- [ ] `application/stage_runner.run_stage_card_compliance`
-- [ ] `tests/test_brand_card/test_compliance_integration.py`
+### Phase B6 — 브랜드 카드 컴플라이언스 ([B7]) ✅ (2026-04-29 완료)
+- [x] Phase 5 (SEO 컴플라이언스) 완료 — `CompliancePolicy.BRAND_LENIENT` 프로필 정의 + R3 게이트 회귀 테스트 통과
+- [x] `domain/brand_card/compliance.py` — `CompliancePolicy.BRAND_LENIENT` 호출, 블록 카피 교체 fixer
+- [x] `tests/test_brand_card/test_compliance.py` + `test_brand_lenient_coverage.py`
+- [ ] **잔여**: `application/stage_runner.run_stage_card_compliance` 미구현 — Phase B9 통합 시 정리
 
-### Phase B7 — Playwright 렌더링 + 분할 ([B8])
-- [ ] `domain/brand_card/playwright_renderer.py` — sync Chromium 세션 재사용, 폰트 로드 대기, full_page 스크린샷 또는 수동 clip loop
-- [ ] 9000px 초과 자동 분할 알고리즘 (§2-4) — `page.evaluate()` 로 블록 y좌표 → 그리디 분할 → Pillow 크롭
-- [ ] PNG `tEXt` 메타 삽입 (브랜드 ID, 키워드, 템플릿 ID, variant)
-- [ ] hard max 18000px 초과 시 variant 실패 분류
-- [ ] `application/stage_runner.run_stage_card_screenshot`
-- [ ] `tests/test_brand_card/test_playwright_renderer.py` — snapshot 퍼지 매치
+### Phase B7 — Playwright 렌더링 ([B8]) ✅ (2026-04-29 stale 정리)
+- [x] `domain/brand_card/renderer.py` — sync Chromium 세션, 폰트 로드 대기, `page.evaluate` overflow 검출, `page.screenshot` (clip)
+- [x] `tests/test_brand_card/test_renderer.py`
+- [ ] **P1 잔여 (B9 와 통합)**: `application/stage_runner.run_stage_card_screenshot` — Phase B9 의 stage_runner 통합 작업에 흡수
 
-### Phase B8 — 패키지 정리 + manifest ([B9])
-- [ ] `domain/brand_card/manifest_builder.py` — cards-manifest.json 생성 (§5-9)
-- [ ] 작업 디렉토리 정리 (임시 HTML 폐기 or 디버그 보존)
-- [ ] `application/orchestrator.run_brand_card_only` 완성
+> **2026-04-29 재분류**: 9000px 자동 분할 + PNG tEXt 메타 + hard max 18000 variant 분류 3건은 SPEC v2 (`§2 P1 제외`, `§3` 1080×1350/1920 인스타 카드 사이즈) 에 따라 P1 영역 아님. 아래 "📦 P2 이후 — long-form 확장 트랙" 섹션으로 이동.
 
-### Phase B9 — 합류 + 통합 (`run_full_package`)
-- [ ] `application/orchestrator.run_full_package` — ThreadPoolExecutor(max_workers=2) 병렬, [5] 이후 합류점
-- [ ] `application/models.py` 에 `PackageResult`, `BrandCardResult` 추가
-- [ ] `scripts/register_brand.py`, `scripts/generate_cards.py`, `scripts/run_full_package.py`, `scripts/remove_media.py` CLI 래퍼
-- [ ] `.claude/skills/brand-card/` 스킬 + `.claude/agents/domain/brand-card-guardian.md` 에이전트 (선택)
-- [ ] E2E 테스트: 테스트 브랜드 + 키워드 1개로 `run_full_package` 전체 통과
-- [ ] `tasks/lessons.md` 에 브랜드 카드 트랙 완료 결과 기록
+### Phase B8 — 패키지 정리 + manifest ([B9]) ✅ (2026-04-29 stale 정리)
+- [x] `domain/brand_card/manifest.py` — cards-manifest.json 생성 (SPEC `manifest_builder.py` 와 동치)
+- [x] `application/brand_card_orchestrator.render_card_set` — SPEC `orchestrator.run_brand_card_only` 와 동치
+- [x] `tests/test_brand_card/test_manifest.py`
+
+### Phase B9 — 합류 + 통합 (`run_full_package`) ✅ 완료 (2026-04-29)
+- [x] `application/orchestrator.run_full_package` — ThreadPoolExecutor(max_workers=2) 병렬 실행, 한쪽 실패가 다른 쪽을 종료시키지 않으며 결과 보존
+- [x] `application/orchestrator.run_brand_card_only` — auto_approve 분기 (draft 게이트 vs [B12] 일괄)
+- [x] `application/models.py` 에 `PackageResult`, `BrandCardResult` 추가
+- [x] `scripts/register_brand.py`, `scripts/generate_cards.py`, `scripts/run_full_package.py`, `scripts/remove_media.py` CLI 래퍼 4종
+- [x] 단위 테스트 7건 (`tests/test_application/test_orchestrator.py::TestRunBrandCardOnly`, `::TestRunFullPackage`) — draft/auto_approve, 0개 plan, 예외, 양쪽 성공/부분 성공/양쪽 실패 분기
+- [ ] **선택**: `.claude/skills/brand-card/` 스킬 + `.claude/agents/domain/brand-card-guardian.md` 에이전트 — 도메인 일관성 가디언, 운영 안정 후 추가 검토
+- [ ] **잔여**: 실 키워드 + 실 브랜드로 `run_full_package` 끝까지 통과시키는 통합 E2E 테스트 — Bright Data/Anthropic/Gemini/Supabase 실호출 필요. 운영 진입 시점에 별도 진행
+
+---
+
+## 📦 P2 이후 — long-form 확장 트랙 (보류)
+
+> SPEC §2 "P1 제외" 항목. 인스타 표준 1080×1350/1920 카드를 넘어서는 상세페이지형 long-form PNG 가 필요한 시점에 진입.
+> 2026-04-29 신설 — Phase B7 에서 이관.
+
+- [ ] **9000px 초과 자동 분할 알고리즘** — `page.evaluate()` 로 블록 y좌표 추출 → 그리디 분할 → Pillow 크롭. 마지막 조각 4000px 미만 예외 허용 (lessons BC-7 §2-4 보완)
+- [ ] **PNG `tEXt` 메타 삽입** — 브랜드 ID, 키워드, 템플릿 ID, variant 를 PIL `PngImagePlugin.PngInfo` 로 임베딩
+- [ ] **hard max 18000px 초과 시 variant 실패 분류** — `RenderError("max_height_exceeded")` → variant skip
+- [ ] long-form 전용 템플릿 (`clinic-classic` 등 SPEC v1 명명 활용 가능)
 
 ---
 
 ## ⚠️ 사용자 제공 대기 중
 
-- **의료법 8개 카테고리 상세 (`SEO_STRICT`)** — Phase 4 완료 후 Phase 5 착수 전 필요. 확정 시 `BRAND_LENIENT` 7개 초안(SPEC-BRAND-CARD §7-2) 과 함께 재검토
-- **Phase 0.6 실측 샘플 (사용자 준비 예정)** — PDF 3종 (스캔/텍스트/혼합), docx 1종 (표 포함)
-- **MVP 템플릿 5종 디자인 시안 (선택)** — 1차는 Claude `frontend-design` 스킬 prototyping, 2차 사용자 검토 후 교체 가능
+- ~~**의료법 8개 카테고리 상세 (`SEO_STRICT`)**~~ — Phase 5 완료로 해소 (10 카테고리 확정, 2026-04-29)
+- **Phase 0.6 실측 샘플** — PDF 3종 (스캔/텍스트/혼합), docx 1종 (표 포함). BC-3/BC-4 가 이를 대기 중
+- **BC-5 실존 한의원 홈페이지 5~10곳 URL** — 로고 자동 추출 성공률 집계용
+- **P2-I1 블로그 태그 수집 정책 결정** — (a) PostView.nhn iframe 실측 / (b) 별도 JSON API 탐색 / (c) SPEC 에서 전면 삭제 중 택일
+- ~~**MVP 템플릿 5종**~~ — 4종 구현 완료. 5번째 추가 여부는 운영 키워드 다양성 확인 후 결정
 
 ## 📌 상시 확인
 
@@ -286,166 +302,51 @@
 
 ---
 
-## Phase R1: Backend Foundation (도메인 + Supabase) — 예상 6h
+## ✅ Phase R1~R7 — 순위 추적 시스템 MVP (이미 구현·검증 완료)
 
-### R1.1 Supabase 마이그레이션 (45분)
-- [ ] R1.1.1 `config/schema.sql` 끝에 `publications` 테이블 SQL 추가 (id uuid pk, job_id text nullable, keyword text not null, slug text not null, url text not null unique, published_at timestamptz nullable, created_at default now). 검증: SQL 문법만 검사 (실제 적용은 R1.1.3)
-- [ ] R1.1.2 같은 파일에 `ranking_snapshots` 테이블 SQL 추가 (id uuid pk, publication_id uuid fk on delete cascade, position int nullable, total_results int nullable, captured_at default now, serp_html_path text nullable). 인덱스: `(publication_id, captured_at desc)`, publications 는 `(keyword)` `(slug)`
-- [ ] R1.1.3 Supabase 대시보드 SQL Editor 에 추가분만 실행 (기존 테이블 영향 X 확인). 검증: `select count(*) from publications` `select count(*) from ranking_snapshots` 둘 다 0 반환
-- [ ] R1.1.4 `tasks/lessons.md` 에 적용 결과 + 롤백용 `drop table ranking_snapshots; drop table publications;` 스니펫 기록
+> 본 섹션 체크박스도 stale 이었음. 실제로는 모든 R1~R7 작업이 구현·테스트·운영 중.
+> 2026-04-29 갱신 — Phase 1 / Phase 2~8 / Phase B1~B8 와 동일한 stale 정리 패턴.
+> 운영 중 발견된 실측 피드백 / 다중 publication / cannibalization 처리는 Phase U10~U12 에서 후속 처리. SPEC-RANKING.md 참조.
 
-### R1.2 도메인 모델 (30분)
-- [ ] R1.2.1 `domain/ranking/__init__.py` 빈 파일 생성
-- [ ] R1.2.2 `domain/ranking/model.py` 생성 — Pydantic `Publication`, `RankingSnapshot`, `RankingTimeline` (publication + list[RankingSnapshot] + 메타). `RankingMatchError` 예외 정의. 모든 필드 타입힌트, frozen 설정. 30줄 이내 함수 보장
-- [ ] R1.2.3 `tests/test_ranking/__init__.py` + `tests/test_ranking/test_model.py` 생성 — Publication/RankingSnapshot 직렬화·기본값·검증 단위 테스트 (3개 케이스)
+- [x] **R1** Backend Foundation — `domain/ranking/` 8개 (`model/url_match/tracker/storage/serp_parser/publication_actions/state_calculator/__init__`) + `tests/test_ranking/` 7개. `architecture-check.sh` `STAGE_ORDER[ranking]=0` 격리 도메인 등록 + `domain/ranking/CLAUDE.md`
+- [x] **R2** Application — `application/ranking_orchestrator.py` (register/check/check_all) + `application/scheduler.py` (APScheduler AsyncIOScheduler, cron `09:00 Asia/Seoul`) + `tests/test_application/test_ranking_orchestrator.py`, `test_scheduler.py`
+- [x] **R3** API — `web/api/routers/rankings.py` 5 엔드포인트 + `web/api/main.py` lifespan 스케줄러 통합
+- [x] **R4** CLI — `scripts/register_publication.py`, `scripts/check_rankings.py`
+- [x] **R5** Frontend — `web/frontend/src/components/PublicationForm.tsx`, `RankingTimeline.tsx`, `app/rankings/page.tsx`, `lib/api.ts` 5 함수
+- [x] **R6** Tests — `tests/test_ranking/` 7개 + `tests/test_web/test_rankings_api.py`. 920 passed 75.89% cov
+- [x] **R7** 검증 — build-check 그린, ranking 도메인 격리 통과, 운영 중
 
-### R1.3 도메인 ranking/url_match.py (45분)
-- [ ] R1.3.1 `domain/ranking/url_match.py` 신규 — `BLOG_POST_URL_RE` 상수 (serp_collector 와 동일 패턴, 의도적 복제), `normalize_blog_url(url) -> str | None` (스킴 보정 + `m.blog.naver.com` 우선 정규화), `urls_match(a, b) -> bool`
-- [ ] R1.3.2 `tests/test_ranking/test_url_match.py` — `blog.naver.com/userid/123456789` ↔ `m.blog.naver.com/userid/123456789` 동치, 트레일링 슬래시·쿼리 무시, 비매칭 케이스 (각 5개 이상)
+<details>
+<summary>원본 R1~R7 상세 체크리스트 (참고용 보존)</summary>
 
-### R1.4 도메인 ranking/tracker.py (60분)
-- [ ] R1.4.1 `domain/ranking/tracker.py` 신규 — `find_position(keyword: str, target_url: str, serp_fetcher: Callable[[str], str], serp_parser: Callable[[str], list[ParsedSerpItem]]) -> RankingSnapshot` 시그니처. `domain.crawler` 를 import 하지 않음 (의존성 주입 패턴)
-- [ ] R1.4.2 `find_position` 내부: integrated SERP URL 빌드 → `serp_fetcher(url)` → `serp_parser(html)` → 각 결과를 `urls_match` 비교 → 발견 시 `position=인덱스+1`, 미발견 시 `position=None`
-- [ ] R1.4.3 `tests/test_ranking/test_tracker.py` — fake fetcher/parser 주입한 시나리오 5개: 1위, 5위, 100위 밖, fetcher 예외, parser 빈 결과
+### R1.1 Supabase 마이그레이션
+- [x] R1.1.1 `config/schema.sql` 끝에 `publications` 테이블 SQL 추가
+- [x] R1.1.2 같은 파일에 `ranking_snapshots` 테이블 SQL 추가
+- [x] R1.1.3 Supabase 대시보드 SQL Editor 에 적용
+- [x] R1.1.4 `tasks/lessons.md` 에 결과 기록
 
-### R1.5 도메인 ranking/storage.py (60분)
-- [ ] R1.5.1 `domain/ranking/storage.py` 신규 — `insert_publication(publication: Publication) -> Publication` (id 채워서 반환), `get_publication(id) -> Publication | None`, `list_publications(keyword: str | None, limit: int) -> list[Publication]`, `insert_snapshot(snapshot: RankingSnapshot) -> RankingSnapshot`, `list_snapshots(publication_id, limit) -> list[RankingSnapshot]`. 모두 `config.supabase.get_client()` 만 사용
-- [ ] R1.5.2 url unique 충돌 시 `RankingDuplicateUrlError` 발생 (Pydantic 모델 X, 일반 Exception). orchestrator 에서 변환
-- [ ] R1.5.3 `tests/test_ranking/test_storage.py` — Supabase mock (기존 `tests/test_application/test_stage_runner.py` 의 `monkeypatch + MagicMock` 패턴 따라가기). 5개 케이스: insert/get/list/duplicate/cascade
+### R1.2~R1.7 도메인 모델·URL 매칭·tracker·storage·CLAUDE.md·architecture-check
+- [x] 모두 구현 완료 — `domain/ranking/` 8개 + `tests/test_ranking/` 7개
 
-### R1.6 도메인 CLAUDE.md 작성 (30분)
-- [ ] R1.6.1 `domain/ranking/CLAUDE.md` 신규 작성. 핵심 규칙: (1) `domain.crawler` 직접 import 금지 — DI 패턴, (2) URL 정규화 단일 출처는 `url_match.py`, (3) 모든 함수 Pydantic 반환, (4) 30줄/300줄 한계, (5) print 금지·logging 사용, (6) `BLOG_POST_URL_RE` 는 의도적 복제이며 serp_collector 변경 시 수동 동기화 (lessons.md 에 명시)
-- [ ] R1.6.2 루트 `CLAUDE.md` 의 "참조 문서" 섹션에 `domain/ranking/CLAUDE.md` 1줄 추가. "디렉터리 구조" 트리에도 `ranking/` 1줄 추가
+### R2.1~R2.4 application 오케스트레이션·스케줄러·테스트
+- [x] 모두 구현 완료 — `application/ranking_orchestrator.py`, `application/scheduler.py` (APScheduler `AsyncIOScheduler` cron `09:00 KST`)
 
-### R1.7 architecture-check 갱신 (15분)
-- [ ] R1.7.1 `.claude/hooks/architecture-check.sh` 의 `STAGE_ORDER` 에 `[ranking]=0` 추가 (격리 도메인). 검증: 셸에서 `bash .claude/hooks/architecture-check.sh` 실행, 통과
-- [ ] R1.7.2 `tasks/lessons.md` 에 "신규 도메인 등록 시 STAGE_ORDER 동시 갱신" 패턴 기록
+### R3.1~R3.4 API 라우터·lifespan·테스트·문서
+- [x] 모두 구현 완료 — `web/api/routers/rankings.py` 5 엔드포인트 + lifespan 통합
 
----
+### R4.1~R4.3 CLI 2종 + README
+- [x] 모두 구현 완료 — `scripts/register_publication.py`, `scripts/check_rankings.py`
 
-## Phase R2: Application Layer (오케스트레이션 + 스케줄러) — 예상 4h
+### R5.1~R5.6 Frontend
+- [x] 모두 구현 완료 — `PublicationForm.tsx`, `RankingTimeline.tsx`, `app/rankings/page.tsx`, `lib/api.ts` 5 함수
 
-### R2.1 ranking_orchestrator.py (75분)
-- [ ] R2.1.1 `application/ranking_orchestrator.py` 신규 — `register_publication(job_id: str | None, keyword: str, slug: str, url: str, published_at: datetime | None) -> Publication`. 내부에서 `url_match.normalize_blog_url` 로 정규화 → `storage.insert_publication`. duplicate 시 기존 publication 반환 (멱등)
-- [ ] R2.1.2 같은 파일에 `check_rankings_for_publication(publication_id: str) -> RankingSnapshot`. `BrightDataClient` 인스턴스화 → `serp_collector.build_integrated_serp_url` + `_parse_serp_html` 을 wrapper 로 묶어 `tracker.find_position` 에 주입 → 결과를 `storage.insert_snapshot` 저장 후 반환
-- [ ] R2.1.3 같은 파일에 `check_all_active_rankings(reporter: ProgressReporter | None = None) -> list[RankingSnapshot]`. publications 전체 순회, publication 당 호출 (Bright Data rate 보호 위해 1초 sleep). 진행률 logging
-- [ ] R2.1.4 모든 함수 Pydantic 반환, 예외는 `raise` 가능 (orchestrator 레이어), 에러 핸들링은 reporter.pipeline_error 호출
+### R6.1~R6.3 Tests
+- [x] 모두 구현 완료 — `tests/test_ranking/` + `tests/test_web/test_rankings_api.py`. lessons.md 패턴 기록 완료
 
-### R2.2 scheduler.py (60분)
-- [ ] R2.2.1 `application/scheduler.py` 신규 — `start_scheduler(loop: asyncio.AbstractEventLoop) -> AsyncIOScheduler`, `stop_scheduler(scheduler) -> None`. APScheduler `AsyncIOScheduler` 사용. cron trigger: `hour=9, minute=0, timezone='Asia/Seoul'`
-- [ ] R2.2.2 job 함수는 `_run_daily_check()` — sync 함수, 내부에서 `check_all_active_rankings()` 호출. logging.info 로 시작/종료/카운트 기록
-- [ ] R2.2.3 `pyproject.toml` 의 dependencies 에 `apscheduler>=3.10` 추가. `pip install -e ".[dev]"` 로 설치
-- [ ] R2.2.4 max_instances=1 + coalesce=True 설정 (서버 재시작 직후 누락분 1회만 보충)
+### R7.1~R7.7 검증 + 커밋
+- [x] build-check 그린 + architecture 격리 통과 + 운영 중
 
-### R2.3 application 모델 확장 (15분)
-- [ ] R2.3.1 `application/models.py` 에 `RankingCheckSummary` Pydantic 추가 (checked_count, found_count, errors_count, duration_seconds). orchestrator return 보조용
-- [ ] R2.3.2 `application/CLAUDE.md` 에 ranking_orchestrator/scheduler 책임 1문단 추가
-
-### R2.4 application 테스트 (45분)
-- [ ] R2.4.1 `tests/test_application/test_ranking_orchestrator.py` — 5개 케이스: register 신규/중복, check_rankings 발견/미발견, check_all 다중 publication. BrightDataClient + storage mock
-- [ ] R2.4.2 `tests/test_application/test_scheduler.py` — `start_scheduler` 가 `AsyncIOScheduler` 인스턴스 반환 + cron 트리거 등록 확인 + stop 후 jobs 비어있는지. apscheduler 의 mock 트리거 사용
-
----
-
-## Phase R3: API (FastAPI 라우터) — 예상 3h
-
-### R3.1 라우터 + 스키마 (60분)
-- [ ] R3.1.1 `web/api/schemas.py` 끝에 추가: `PublicationCreateRequest` (job_id?, keyword, slug, url, published_at?), `PublicationResponse`, `RankingSnapshotResponse`, `RankingTimelineResponse`. 모두 datetime → ISO string serialization
-- [ ] R3.1.2 `web/api/routers/rankings.py` 신규 — `router = APIRouter(prefix="/rankings", tags=["rankings"], dependencies=[Depends(require_api_key)])`. 엔드포인트 5개:
-  - `POST /publications` → ranking_orchestrator.register_publication
-  - `GET /publications?keyword=...&limit=...`
-  - `GET /publications/{id}` (timeline 30개 포함)
-  - `POST /publications/{id}/check` (수동 즉시 체크)
-  - `GET /publications/{id}/snapshots?limit=...`
-- [ ] R3.1.3 모든 핸들러 30줄 이내. `_get_orchestrator()` 패턴은 ranking_orchestrator 가 stateless 라 불필요 — 함수 직접 호출
-- [ ] R3.1.4 `web/api/main.py` 의 `app.include_router` 에 `rankings.router` 추가 (prefix `/api`)
-
-### R3.2 lifespan 통합 (30분)
-- [ ] R3.2.1 `web/api/main.py` 의 `lifespan` 함수에 스케줄러 시작/종료 통합. `start_scheduler(loop)` 호출 결과를 클로저 변수로 보관, yield 후 `stop_scheduler` 호출
-- [ ] R3.2.2 `settings.py` 에 `ranking_scheduler_enabled: bool = True` 추가. 환경변수 `RANKING_SCHEDULER_ENABLED=false` 면 비활성 (테스트용)
-- [ ] R3.2.3 lifespan 내부에서 `if settings.ranking_scheduler_enabled:` 가드
-
-### R3.3 API 테스트 (45분)
-- [ ] R3.3.1 `tests/test_web/__init__.py` (없으면) + `tests/test_web/test_rankings_api.py` — FastAPI TestClient 로 5개 엔드포인트 happy path + 401 (인증 미들웨어). orchestrator mock 으로 격리
-- [ ] R3.3.2 `tests/test_web/test_main_lifespan.py` — `RANKING_SCHEDULER_ENABLED=false` 시 스케줄러 미시작 검증
-
-### R3.4 OpenAPI/문서 (15분)
-- [ ] R3.4.1 각 핸들러에 docstring + response_model 명시. `/docs` 에서 5개 엔드포인트 표시 확인 (수동 검증)
-
----
-
-## Phase R4: CLI — 예상 1.5h
-
-### R4.1 register_publication.py (30분)
-- [ ] R4.1.1 `scripts/register_publication.py` 신규 — argparse `--job-id` (선택), `--keyword`, `--slug`, `--url` (필수), `--published-at` (ISO date 선택). type validator 로 빈 값 거부
-- [ ] R4.1.2 `application.ranking_orchestrator.register_publication` 호출 → 결과를 `print(json.dumps(...))` ❌ 금지 → `logging.info(json.dumps(...))` 로 출력. 종료 코드 0/1
-- [ ] R4.1.3 `tests/test_scripts/test_register_publication_cli.py` (없으면 디렉토리 생성) — argparse 검증 2개 (keyword 누락, url 형식 불량)
-
-### R4.2 check_rankings.py (45분)
-- [ ] R4.2.1 `scripts/check_rankings.py` 신규 — argparse `--publication-id` 또는 `--all` (mutually exclusive group). `LoggingProgressReporter` 사용
-- [ ] R4.2.2 `--publication-id` → `check_rankings_for_publication`, `--all` → `check_all_active_rankings`. 결과 카운트 logging
-- [ ] R4.2.3 `tests/test_scripts/test_check_rankings_cli.py` — 두 모드 분기 검증, mutually exclusive 검증
-
-### R4.3 README/help 갱신 (15분)
-- [ ] R4.3.1 루트 `CLAUDE.md` 의 "빌드 & 실행" 코드블럭에 신규 CLI 2줄 추가
-- [ ] R4.3.2 SPEC-SEO-TEXT.md 변경 ❌ 금지 — ranking 은 SPEC v2 범위 밖. 별도 SPEC-RANKING.md 신규 필요 여부는 사용자에게 질문
-
----
-
-## Phase R5: Web UI (Next.js) — 예상 4h
-
-### R5.1 타입 + API 클라이언트 (30분)
-- [ ] R5.1.1 `web/frontend/src/types/index.ts` 에 `Publication`, `RankingSnapshot`, `RankingTimeline` 타입 추가 (백엔드 Pydantic 과 1:1)
-- [ ] R5.1.2 `web/frontend/src/lib/api.ts` 에 5개 함수 추가: `createPublication`, `listPublications`, `getPublication`, `checkRanking`, `listSnapshots`. 기존 `fetcher` + X-API-Key 패턴 동일
-
-### R5.2 PublicationForm 컴포넌트 (45분)
-- [ ] R5.2.1 `web/frontend/src/components/PublicationForm.tsx` 신규 — props: `{slug, keyword, jobId?, existing?: Publication, onSubmit?: (p: Publication) => void}`. URL input + published_at date picker + 저장 버튼
-- [ ] R5.2.2 URL 형식 클라이언트 검증 (`/^https?:\/\/(m\.)?blog\.naver\.com\/[\w-]+\/\d{9,}$/`). 실패 시 inline 에러 표시
-- [ ] R5.2.3 기존 publication 있으면 input prefill + "수정" 버튼. 제출 시 createPublication 호출 (orchestrator 가 멱등)
-
-### R5.3 RankingTimeline 컴포넌트 (45분)
-- [ ] R5.3.1 `web/frontend/src/components/RankingTimeline.tsx` 신규 — props: `{snapshots: RankingSnapshot[]}`. 표 렌더 (date, position, change vs 전일). 100위 밖은 "—" 표시
-- [ ] R5.3.2 sparkline 은 Phase 2 — 일단 표만. position null/숫자 모두 처리
-
-### R5.4 결과 페이지 통합 (45분)
-- [ ] R5.4.1 `web/frontend/src/app/results/[slug]/page.tsx` 수정 — 페이지 상단에 "발행 URL 등록" 영역 추가. mount 시 `listPublications({keyword, slug})` 호출해 기존 publication 조회
-- [ ] R5.4.2 publication 등록 완료 시 자동으로 `getPublication(id)` 호출해 timeline 표시. "지금 체크" 버튼 → `checkRanking` → 시계열 갱신
-- [ ] R5.4.3 페이지 300줄 초과 시 컴포넌트 분리 (RankingPanel.tsx 등)
-
-### R5.5 신규 /rankings 페이지 (45분)
-- [ ] R5.5.1 `web/frontend/src/app/rankings/page.tsx` 신규 — 모든 publications 목록 표 (키워드, slug, URL, 최신 순위). 키워드 필터 input, 정렬 dropdown (최신순/순위 좋은 순)
-- [ ] R5.5.2 행 클릭 시 인라인 RankingTimeline 펼치기 또는 `/results/{slug}` 로 이동
-- [ ] R5.5.3 layout.tsx 또는 nav 컴포넌트에 "/rankings" 링크 추가 (있으면)
-
-### R5.6 frontend lint/type-check (15분)
-- [ ] R5.6.1 `cd web/frontend && npm run lint && npm run typecheck` (또는 build) 0 에러
-
----
-
-## Phase R6: Tests (통합 검증) — 예상 1.5h
-
-### R6.1 통합 시나리오 (45분)
-- [ ] R6.1.1 `tests/test_ranking/test_e2e_flow.py` — register → check → list snapshots 흐름. BrightDataClient 만 mock (다른 레이어는 실제). 네이버 SERP HTML 픽스처: `tests/fixtures/ranking_serp/integrated_with_target.html`, `..._without_target.html` 2개 작성
-- [ ] R6.1.2 fixture HTML 은 실제 네이버 통합검색 결과 모방 (m.blog.naver.com 링크 5개 포함). serp_collector 의 `_parse_serp_html` 이 그대로 파싱하는지 함께 검증
-
-### R6.2 회귀 + 커버리지 (30분)
-- [ ] R6.2.1 `pytest tests/ -v` 전체 통과 확인. 기존 371개 + 신규 ranking 테스트 (예상 25~30개) 모두 통과
-- [ ] R6.2.2 신규 도메인 라인 커버리지 80% 이상 (수동 확인)
-
-### R6.3 lessons.md 갱신 (15분)
-- [ ] R6.3.1 `tasks/lessons.md` 에 ranking MVP 작업 중 발견한 패턴 기록 (의존성 주입 패턴, BLOG_POST_URL_RE 복제 결정, lifespan 스케줄러 패턴 등)
-
----
-
-## Phase R7: 검증 + 커밋 — 예상 30분
-
-- [ ] R7.1 `bash .claude/hooks/build-check.sh` 통과 (ruff check/format, architecture-check, mypy, pytest 모두 0)
-- [ ] R7.2 `bash .claude/hooks/architecture-check.sh` 단독 통과 — ranking 격리 확인
-- [ ] R7.3 수동 smoke test: 로컬 uvicorn 기동 → `/docs` 에서 ranking 5개 엔드포인트 호출 → publication 1건 등록 → 즉시 체크 → snapshot 1건 생성 확인
-- [ ] R7.4 frontend smoke test: `/results/{slug}` 에 URL 등록 → timeline 표시 확인, `/rankings` 페이지 접근 가능 확인
-- [ ] R7.5 git status 확인 → 변경 파일 일괄 staging (uvicorn.*.log 제외)
-- [ ] R7.6 commit 메시지 draft: `feat(ranking): add daily ranking tracker MVP (backend+api+ui+cli)`. body 에 사용자 결정 5가지 + 신규 도메인/스케줄러 명시
-- [ ] R7.7 🔴 push 는 사용자 명시 요청 시에만 (CLAUDE.md 규칙)
+</details>
 
 ---
 
@@ -737,11 +638,11 @@
 - [x] `CLAUDE.md` 참조 문서 라인 갱신 (v2.1 + archive 위치 표기)
 - [x] SPEC 본문 685 → 911 줄, 18 → 20 섹션
 
-### 다음 단계 (Phase 1 착수 시)
-- [ ] B0: SPEC v2.1 의 결정 사항을 `tasks/todo.md` 에 Phase 1~5 체크리스트로 분해
-- [ ] `architecture-check.sh` STAGE_ORDER `[brand_card]=2` 등록
-- [ ] Phase 1 마이그레이션 + model.py + reuse_guard 골격 + plan_generator 구현
-- [ ] Phase 1 검증 게이트: BRAND_LENIENT §7 9종 회귀 테스트
+### 다음 단계 (Phase 1 착수 시) ✅ 모두 완료 (2026-04-29 stale 정리)
+- [x] B0: SPEC v2.1 의 결정 사항을 `tasks/todo.md` 에 Phase B1~B9 체크리스트로 분해 — 본 파일 Phase B1~B9 섹션 참조
+- [x] `architecture-check.sh` STAGE_ORDER `[brand_card]=0` 등록 — SPEC 의 `=2` 와 다른 의도(격리 도메인)로 채택, 결과는 동일하게 SEO 트랙과 격리됨
+- [x] Phase 1 마이그레이션 + model.py + reuse_guard 골격 + plan_generator 구현 — Phase B1~B3 에서 구현 완료
+- [x] Phase 1 검증 게이트: BRAND_LENIENT §7 9종 회귀 테스트 — `tests/test_compliance/test_brand_lenient_coverage.py` (32 tests, 2026-04-29 신설)
 
 ## Phase U7: 미완 항목 일괄 처리 — 보강 엣지/cannibalization 다중 author/UI 인디케이터/정렬 (2026-04-28) ✅ 완료
 

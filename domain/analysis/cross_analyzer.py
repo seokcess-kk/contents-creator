@@ -70,26 +70,38 @@ def cross_analyze(
 
 
 def _classify_sections(semantics: list[SemanticAnalysis], n: int) -> SectionClassification:
-    """역할별 등장 비율로 필수/빈출/차별화 분류."""
+    """역할별 등장 비율로 필수/빈출/차별화 분류.
+
+    소제목 있는 블로그(섹션 ≥ 2)만 분모로 사용한다. lessons.md P2 발견 4 참조 —
+    네이버 블로거가 소제목을 잘 안 써서 단일 섹션 글을 포함하면 "정보제공" 만
+    인위적으로 80% 이상이 되어 구조 신호가 망가진다.
+    """
     if n == 0:
         return SectionClassification()
 
+    structured = [s for s in semantics if len(s.semantic_structure) >= 2]
+    n_struct = len(structured)
+    if n_struct == 0:
+        return SectionClassification()
+
     role_counts: Counter[str] = Counter()
-    for sem in semantics:
+    for sem in structured:
         seen_roles: set[str] = set()
         for sec in sem.semantic_structure:
             if sec.role not in seen_roles:
                 role_counts[sec.role] += 1
                 seen_roles.add(sec.role)
 
-    required = [r for r, c in role_counts.items() if c / n >= REQUIRED_RATIO]
-    frequent = [r for r, c in role_counts.items() if FREQUENT_RATIO <= c / n < REQUIRED_RATIO]
+    required = [r for r, c in role_counts.items() if c / n_struct >= REQUIRED_RATIO]
+    frequent = [
+        r for r, c in role_counts.items() if FREQUENT_RATIO <= c / n_struct < REQUIRED_RATIO
+    ]
 
-    if n >= DIFFERENTIATING_MIN_SAMPLES:
+    if n_struct >= DIFFERENTIATING_MIN_SAMPLES:
         differentiating = [
             r
             for r, c in role_counts.items()
-            if c / n < DIFFERENTIATING_MAX_RATIO and c >= DIFFERENTIATING_MIN_COUNT
+            if c / n_struct < DIFFERENTIATING_MAX_RATIO and c >= DIFFERENTIATING_MIN_COUNT
         ]
     else:
         differentiating = []
@@ -126,21 +138,29 @@ def _aggregate_stats(physicals: list[PhysicalAnalysis]) -> PatternCardStats:
 def _aggregate_distributions(
     semantics: list[SemanticAnalysis],
 ) -> dict[str, dict[str, float]]:
-    """도입 방식, 마무리 방식, 제목 패턴 분포."""
+    """도입 방식, 마무리 방식, 제목 패턴 분포.
+
+    `ending_type` 만 소제목 있는 블로그(섹션 ≥ 2) 분모로 집계. 단일 섹션 글의
+    유일한 역할이 "ending" 으로 잘못 잡히는 노이즈 차단. intro/title 은 글 전체
+    수준의 표면 신호라 모든 글 대상.
+    """
     n = len(semantics)
     if n == 0:
         return {"intro_type": {}, "ending_type": {}, "title_pattern": {}}
 
     hook_counter: Counter[str] = Counter(s.hook_type for s in semantics)
     title_counter: Counter[str] = Counter(s.title_pattern for s in semantics)
+
+    structured = [s for s in semantics if len(s.semantic_structure) >= 2]
+    n_struct = len(structured)
     ending_counter: Counter[str] = Counter()
-    for sem in semantics:
-        if sem.semantic_structure:
-            ending_counter[sem.semantic_structure[-1].role] += 1
+    for sem in structured:
+        ending_counter[sem.semantic_structure[-1].role] += 1
+    ending_dist = {k: round(v / n_struct, 2) for k, v in ending_counter.items()} if n_struct else {}
 
     return {
         "intro_type": {k: round(v / n, 2) for k, v in hook_counter.items()},
-        "ending_type": {k: round(v / n, 2) for k, v in ending_counter.items()},
+        "ending_type": ending_dist,
         "title_pattern": {k: round(v / n, 2) for k, v in title_counter.items()},
     }
 
@@ -312,7 +332,11 @@ def _aggregate_keyword_placement(physicals: list[PhysicalAnalysis]) -> KeywordPl
 def _extract_top_structures(
     semantics: list[SemanticAnalysis], top_k: int = 3
 ) -> list[TopStructure]:
-    """가장 빈번한 역할 시퀀스 상위 K개. 소제목 있는 블로그만 대상."""
+    """가장 빈번한 역할 시퀀스 상위 K개. 소제목 있는 블로그(섹션 ≥ 2)만 대상.
+
+    유효 시퀀스가 없으면 빈 리스트. prompt_builder 가 데이터 부재를 감지해
+    "참조하되 복제 금지" 지시 대신 자체 구조 설계 지시로 분기한다.
+    """
     sequences: list[tuple[str, ...]] = []
     for sem in semantics:
         if len(sem.semantic_structure) > 1:
@@ -320,7 +344,7 @@ def _extract_top_structures(
             sequences.append(seq)
 
     if not sequences:
-        return [TopStructure(rank=1, sequence=["정보제공"])]
+        return []
 
     counter: Counter[tuple[str, ...]] = Counter(sequences)
     return [

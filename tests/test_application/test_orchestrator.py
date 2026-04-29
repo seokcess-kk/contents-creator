@@ -183,3 +183,184 @@ class TestRunValidateOnly:
         result = run_validate_only(missing, reporter=NullProgressReporter())
         assert result.status == StageStatus.FAILED
         assert "파일 없음" in (result.error or "")
+
+
+# ── run_brand_card_only / run_full_package ──
+
+
+class TestRunBrandCardOnly:
+    """SPEC-BRAND-CARD §15 [B1]~[B5] 단독 트랙 — mock 으로 도메인 격리."""
+
+    def _fake_plan(self, plan_id: str = "p1", reuse: str = "rg1") -> object:
+        from domain.brand_card.model import BrandCardPlan
+
+        return BrandCardPlan(
+            id=plan_id,
+            brand_id="b1",
+            keyword="다이어트",
+            template_id="diet_empathy",
+            strategy="empathy_first",
+            expression_level="balanced",
+            angle="공감 우선",
+            blocks=[],
+            status="draft",
+            reuse_group_id=reuse,
+        )
+
+    @patch("application.brand_card_orchestrator.generate_card_plan")
+    def test_draft_mode_returns_succeeded(self, mock_gen: MagicMock) -> None:
+        from application.orchestrator import run_brand_card_only
+
+        mock_gen.return_value = [self._fake_plan("p1"), self._fake_plan("p2")]
+        result = run_brand_card_only(
+            brand_id="b1", keyword="다이어트", reporter=NullProgressReporter()
+        )
+        assert result.status == StageStatus.SUCCEEDED
+        assert result.plan_count == 2
+        assert result.reuse_group_id == "rg1"
+        assert result.rendered_count == 0  # auto_approve 아니므로 렌더 X
+
+    @patch("application.brand_card_orchestrator.generate_card_plan")
+    def test_zero_plans_failed(self, mock_gen: MagicMock) -> None:
+        from application.orchestrator import run_brand_card_only
+
+        mock_gen.return_value = []
+        result = run_brand_card_only(
+            brand_id="b1", keyword="다이어트", reporter=NullProgressReporter()
+        )
+        assert result.status == StageStatus.FAILED
+        assert "0개" in (result.error or "")
+
+    @patch("application.brand_card_orchestrator.generate_card_plan")
+    def test_card_plan_exception(self, mock_gen: MagicMock) -> None:
+        from application.orchestrator import run_brand_card_only
+
+        mock_gen.side_effect = RuntimeError("LLM 실패")
+        result = run_brand_card_only(
+            brand_id="b1", keyword="다이어트", reporter=NullProgressReporter()
+        )
+        assert result.status == StageStatus.FAILED
+        assert "LLM 실패" in (result.error or "")
+
+    @patch("application.brand_card_orchestrator.render_card_set")
+    @patch("application.brand_card_orchestrator.approve_plan")
+    @patch("application.brand_card_orchestrator.generate_card_plan")
+    def test_auto_approve_renders(
+        self,
+        mock_gen: MagicMock,
+        mock_approve: MagicMock,
+        mock_render: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        from application.orchestrator import run_brand_card_only
+        from domain.brand_card.model import RenderedCardSet
+
+        plans = [self._fake_plan("p1"), self._fake_plan("p2")]
+        mock_gen.return_value = plans
+        manifest_path = tmp_path / "rg1" / "manifest.json"
+        manifest_path.parent.mkdir(parents=True)
+        manifest_path.write_text("{}", encoding="utf-8")
+        mock_render.return_value = RenderedCardSet(
+            reuse_group_id="rg1",
+            brand_id="b1",
+            keyword="다이어트",
+            cards=[],
+            manifest_path=manifest_path,
+        )
+
+        result = run_brand_card_only(
+            brand_id="b1",
+            keyword="다이어트",
+            auto_approve=True,
+            output_root=tmp_path,
+            reporter=NullProgressReporter(),
+        )
+        assert result.status == StageStatus.SUCCEEDED
+        assert result.plan_count == 2
+        assert result.manifest_path == manifest_path
+        assert mock_approve.call_count == 2  # 두 plan 모두 approve
+
+
+class TestRunFullPackage:
+    """SEO + 브랜드 카드 병렬 합류."""
+
+    @patch("application.orchestrator.run_brand_card_only")
+    @patch("application.orchestrator.run_pipeline")
+    def test_both_succeed(self, mock_seo: MagicMock, mock_brand: MagicMock, tmp_path: Path) -> None:
+        from application.models import BrandCardResult, PipelineResult
+        from application.orchestrator import run_full_package
+
+        mock_seo.return_value = PipelineResult(
+            status=StageStatus.SUCCEEDED, keyword="다이어트", slug="다이어트"
+        )
+        mock_brand.return_value = BrandCardResult(
+            status=StageStatus.SUCCEEDED,
+            brand_id="b1",
+            keyword="다이어트",
+            reuse_group_id="rg1",
+            plan_count=3,
+        )
+        result = run_full_package(
+            keyword="다이어트", brand_id="b1", reporter=NullProgressReporter()
+        )
+        assert result.status == StageStatus.SUCCEEDED
+        assert result.seo_result is not None and result.seo_result.status == StageStatus.SUCCEEDED
+        assert result.brand_card_result is not None
+        assert result.brand_card_result.plan_count == 3
+
+    @patch("application.orchestrator.run_brand_card_only")
+    @patch("application.orchestrator.run_pipeline")
+    def test_seo_fails_brand_succeeds_partial(
+        self, mock_seo: MagicMock, mock_brand: MagicMock
+    ) -> None:
+        from application.models import BrandCardResult, PipelineResult
+        from application.orchestrator import run_full_package
+
+        mock_seo.return_value = PipelineResult(
+            status=StageStatus.FAILED, keyword="다이어트", slug="다이어트", error="크롤 실패"
+        )
+        mock_brand.return_value = BrandCardResult(
+            status=StageStatus.SUCCEEDED, brand_id="b1", keyword="다이어트", plan_count=2
+        )
+        result = run_full_package(
+            keyword="다이어트", brand_id="b1", reporter=NullProgressReporter()
+        )
+        # 한쪽 성공·한쪽 실패 → 부분 성공으로 SUCCEEDED 반환 (데이터로는 둘 다 보존)
+        assert result.status == StageStatus.SUCCEEDED
+        assert result.seo_result is not None and result.seo_result.status == StageStatus.FAILED
+        assert result.brand_card_result is not None
+        assert result.brand_card_result.status == StageStatus.SUCCEEDED
+
+    @patch("application.orchestrator.run_brand_card_only")
+    @patch("application.orchestrator.run_pipeline")
+    def test_both_fail_overall_failed(self, mock_seo: MagicMock, mock_brand: MagicMock) -> None:
+        from application.models import BrandCardResult, PipelineResult
+        from application.orchestrator import run_full_package
+
+        mock_seo.return_value = PipelineResult(
+            status=StageStatus.FAILED, keyword="다이어트", slug="다이어트"
+        )
+        mock_brand.return_value = BrandCardResult(
+            status=StageStatus.FAILED, brand_id="b1", keyword="다이어트"
+        )
+        result = run_full_package(
+            keyword="다이어트", brand_id="b1", reporter=NullProgressReporter()
+        )
+        assert result.status == StageStatus.FAILED
+
+    @patch("application.orchestrator.run_brand_card_only")
+    @patch("application.orchestrator.run_pipeline")
+    def test_seo_exception_data_preserved(self, mock_seo: MagicMock, mock_brand: MagicMock) -> None:
+        from application.models import BrandCardResult
+        from application.orchestrator import run_full_package
+
+        mock_seo.side_effect = RuntimeError("network down")
+        mock_brand.return_value = BrandCardResult(
+            status=StageStatus.SUCCEEDED, brand_id="b1", keyword="다이어트", plan_count=1
+        )
+        result = run_full_package(
+            keyword="다이어트", brand_id="b1", reporter=NullProgressReporter()
+        )
+        assert result.seo_result is None
+        assert result.brand_card_result is not None
+        assert "network down" in (result.error or "")

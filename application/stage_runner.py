@@ -340,13 +340,13 @@ def run_stage_outline_generation(
 
     생성 후 코드 검증 → 미달 시 1회 재생성.
     """
-    from domain.compliance.rules import build_pre_generation_injection
+    from domain.compliance.rules import CompliancePolicy, build_pre_generation_injection
     from domain.generation.outline_validator import validate_outline
     from domain.generation.outline_writer import generate_outline
 
     reporter.stage_start("outline_generation")
 
-    compliance_rules = build_pre_generation_injection()
+    compliance_rules = build_pre_generation_injection(CompliancePolicy.SEO_STRICT)
     outline = generate_outline(pattern_card, compliance_rules)
 
     issues = validate_outline(outline, pattern_card)
@@ -397,14 +397,14 @@ def run_stage_body_generation(
 
     생성 후 코드 검증 → 약한 섹션만 LLM 으로 보강.
     """
-    from domain.compliance.rules import build_pre_generation_injection
+    from domain.compliance.rules import CompliancePolicy, build_pre_generation_injection
     from domain.generation.body_quality_enforcer import find_weak_sections
     from domain.generation.body_writer import generate_body
     from domain.generation.model import Outline as OutlineModel
 
     reporter.stage_start("body_generation")
 
-    compliance_rules = build_pre_generation_injection()
+    compliance_rules = build_pre_generation_injection(CompliancePolicy.SEO_STRICT)
 
     # M2: intro 섹션 제거한 outline 전달
     non_intro_sections = [s for s in outline.sections if not s.is_intro]
@@ -537,6 +537,7 @@ def run_stage_compliance_check(
     from domain.compliance.checker import check_compliance
     from domain.compliance.fixer import fix_violations
     from domain.compliance.model import ChangelogEntry
+    from domain.compliance.rules import CompliancePolicy
     from domain.composer.assembler import assemble_content
 
     reporter.stage_start("compliance_check")
@@ -551,7 +552,7 @@ def run_stage_compliance_check(
 
     for iteration in range(MAX_COMPLIANCE_ITERATIONS + 1):
         reporter.check_cancel()
-        violations = check_compliance(text, keyword=keyword)
+        violations = check_compliance(text, policy=CompliancePolicy.SEO_STRICT, keyword=keyword)
         iterations = iteration + 1
         reporter.stage_progress(iteration + 1, f"iteration {iterations}")
 
@@ -571,7 +572,9 @@ def run_stage_compliance_check(
             reporter.stage_end("compliance_check", {"passed": False, "iterations": iterations})
             return report
 
-        fixed_text, changelog = fix_violations(text, violations, keyword=keyword)
+        fixed_text, changelog = fix_violations(
+            text, violations, policy=CompliancePolicy.SEO_STRICT, keyword=keyword
+        )
         all_changelog.extend(changelog)
         text = fixed_text
 
@@ -607,10 +610,13 @@ def _drop_violating_image_prompts(outline: Outline, reporter: ProgressReporter) 
     """
     from domain.compliance.checker import check_image_prompts
     from domain.compliance.fixer import fix_image_prompts
+    from domain.compliance.rules import CompliancePolicy
 
     if not outline.image_prompts:
         return
-    violations = check_image_prompts(list(outline.image_prompts))
+    violations = check_image_prompts(
+        list(outline.image_prompts), policy=CompliancePolicy.SEO_STRICT
+    )
     if not violations:
         return
 

@@ -21,7 +21,9 @@ if TYPE_CHECKING:
 
 from application.models import (
     AnalyzeResult,
+    BrandCardResult,
     GenerateResult,
+    PackageResult,
     PipelineResult,
     StageResult,
     StageStatus,
@@ -785,6 +787,7 @@ def run_validate_only(
     from domain.compliance.checker import check_compliance
     from domain.compliance.fixer import fix_violations
     from domain.compliance.model import ChangelogEntry
+    from domain.compliance.rules import CompliancePolicy
 
     _reporter = reporter or LoggingProgressReporter()
     _reporter.stage_start("validate_only")
@@ -801,7 +804,7 @@ def run_validate_only(
     iterations = 0
 
     for iteration in range(3):
-        violations = check_compliance(text)
+        violations = check_compliance(text, policy=CompliancePolicy.SEO_STRICT)
         iterations = iteration + 1
 
         if not violations:
@@ -820,7 +823,7 @@ def run_validate_only(
                 violations_count=len(violations),
             )
 
-        fixed_text, changelog = fix_violations(text, violations)
+        fixed_text, changelog = fix_violations(text, violations, policy=CompliancePolicy.SEO_STRICT)
         all_changelog.extend(changelog)
         text = fixed_text
 
@@ -834,4 +837,210 @@ def run_validate_only(
         passed=True,
         iterations=iterations,
         violations_count=0,
+    )
+
+
+# ── Full Package — SEO + 브랜드 카드 합류 (SPEC-BRAND-CARD §5) ──
+
+
+def run_brand_card_only(
+    *,
+    brand_id: str,
+    keyword: str,
+    expression_level: str = "balanced",
+    strategy_count: int = 3,
+    auto_approve: bool = False,
+    output_root: Path | None = None,
+    reporter: ProgressReporter | None = None,
+) -> BrandCardResult:
+    """브랜드 카드 단독 트랙 실행 ([B1]~[B5] 또는 [B1]~[B12]).
+
+    `auto_approve=False` 면 [B5] 까지만 (status=draft, 사용자 승인 게이트). True 면
+    승인 게이트를 건너뛰고 [B12] 까지 일괄 실행 (E2E 테스트·자동화 시나리오용).
+    """
+    from application.brand_card_orchestrator import (
+        approve_plan,
+        generate_card_plan,
+        render_card_set,
+    )
+
+    _reporter = reporter or LoggingProgressReporter()
+    _reporter.stage_start("brand_card_only")
+    stages: list[StageResult] = []
+
+    try:
+        plans = generate_card_plan(
+            brand_id=brand_id,
+            keyword=keyword,
+            expression_level=expression_level,
+            strategy_count=strategy_count,
+        )
+        stages.append(StageResult(name="card_plan", status=StageStatus.SUCCEEDED))
+    except Exception as exc:
+        stages.append(StageResult(name="card_plan", status=StageStatus.FAILED, error=str(exc)))
+        _reporter.pipeline_error("card_plan", exc)
+        return BrandCardResult(
+            status=StageStatus.FAILED,
+            brand_id=brand_id,
+            keyword=keyword,
+            stages=stages,
+            error=f"카드 기획 실패: {exc}",
+        )
+
+    if not plans:
+        return BrandCardResult(
+            status=StageStatus.FAILED,
+            brand_id=brand_id,
+            keyword=keyword,
+            stages=stages,
+            error="기획안 0개 — strategy_count 또는 자산 부족",
+        )
+
+    reuse_group_id = plans[0].reuse_group_id
+    plan_count = len(plans)
+    if reuse_group_id is None:
+        return BrandCardResult(
+            status=StageStatus.FAILED,
+            brand_id=brand_id,
+            keyword=keyword,
+            plan_count=plan_count,
+            stages=stages,
+            error="plan_generator 가 reuse_group_id 를 채우지 않았다 — 도메인 계약 위반",
+        )
+
+    if not auto_approve:
+        _reporter.stage_end(
+            "brand_card_only",
+            {"plan_count": plan_count, "status": "draft", "reuse_group_id": reuse_group_id},
+        )
+        return BrandCardResult(
+            status=StageStatus.SUCCEEDED,
+            brand_id=brand_id,
+            keyword=keyword,
+            reuse_group_id=reuse_group_id,
+            plan_count=plan_count,
+            stages=stages,
+        )
+
+    # auto_approve 모드: 모든 plan approve → render
+    for plan in plans:
+        if plan.id:
+            approve_plan(plan.id)
+    stages.append(StageResult(name="auto_approve", status=StageStatus.SUCCEEDED))
+
+    try:
+        rendered = render_card_set(reuse_group_id, output_root=output_root)
+        stages.append(StageResult(name="render_cards", status=StageStatus.SUCCEEDED))
+    except Exception as exc:
+        stages.append(StageResult(name="render_cards", status=StageStatus.FAILED, error=str(exc)))
+        return BrandCardResult(
+            status=StageStatus.FAILED,
+            brand_id=brand_id,
+            keyword=keyword,
+            reuse_group_id=reuse_group_id,
+            plan_count=plan_count,
+            stages=stages,
+            error=f"카드 렌더 실패: {exc}",
+        )
+
+    _reporter.stage_end(
+        "brand_card_only",
+        {"plan_count": plan_count, "rendered_count": len(rendered.cards)},
+    )
+    return BrandCardResult(
+        status=StageStatus.SUCCEEDED,
+        brand_id=brand_id,
+        keyword=keyword,
+        reuse_group_id=reuse_group_id,
+        plan_count=plan_count,
+        rendered_count=len(rendered.cards),
+        manifest_path=rendered.manifest_path,
+        cards_dir=rendered.manifest_path.parent / "cards" if rendered.manifest_path else None,
+        stages=stages,
+    )
+
+
+def run_full_package(
+    *,
+    keyword: str,
+    brand_id: str,
+    expression_level: str = "balanced",
+    strategy_count: int = 3,
+    auto_approve: bool = False,
+    reporter: ProgressReporter | None = None,
+) -> PackageResult:
+    """SEO 파이프라인 + 브랜드 카드 트랙 병렬 실행 후 합류.
+
+    SPEC-BRAND-CARD §5 합류점. `ThreadPoolExecutor(max_workers=2)` 로 두 트랙을 동시
+    실행. 한쪽 실패가 다른 쪽을 종료시키지 않으며 각 트랙의 결과를 보존한다.
+
+    `auto_approve=False` 면 브랜드 카드는 [B5] 까지만 (사용자 승인 대기). True 면 [B12].
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    _reporter = reporter or LoggingProgressReporter()
+    _reporter.stage_start("full_package")
+    slug = _slugify(keyword)
+
+    seo_result: PipelineResult | None = None
+    brand_result: BrandCardResult | None = None
+    seo_error: str | None = None
+    brand_error: str | None = None
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        seo_future = executor.submit(run_pipeline, keyword=keyword, reporter=_reporter)
+        brand_future = executor.submit(
+            run_brand_card_only,
+            brand_id=brand_id,
+            keyword=keyword,
+            expression_level=expression_level,
+            strategy_count=strategy_count,
+            auto_approve=auto_approve,
+            reporter=_reporter,
+        )
+        try:
+            seo_result = seo_future.result()
+        except Exception as exc:
+            seo_error = f"SEO 트랙 예외: {exc}"
+            logger.exception("full_package.seo_failed keyword=%s", keyword)
+        try:
+            brand_result = brand_future.result()
+        except Exception as exc:
+            brand_error = f"브랜드 카드 트랙 예외: {exc}"
+            logger.exception("full_package.brand_failed brand_id=%s", brand_id)
+
+    statuses: list[StageStatus] = []
+    if seo_result is not None:
+        statuses.append(seo_result.status)
+    elif seo_error:
+        statuses.append(StageStatus.FAILED)
+    if brand_result is not None:
+        statuses.append(brand_result.status)
+    elif brand_error:
+        statuses.append(StageStatus.FAILED)
+
+    if all(s == StageStatus.SUCCEEDED for s in statuses) and statuses:
+        overall = StageStatus.SUCCEEDED
+    elif all(s == StageStatus.FAILED for s in statuses):
+        overall = StageStatus.FAILED
+    else:
+        overall = StageStatus.SUCCEEDED  # 한쪽이라도 성공하면 부분 성공
+
+    error_parts = [e for e in (seo_error, brand_error) if e]
+    _reporter.stage_end(
+        "full_package",
+        {
+            "seo_status": seo_result.status.value if seo_result else "exception",
+            "brand_status": brand_result.status.value if brand_result else "exception",
+        },
+    )
+
+    return PackageResult(
+        status=overall,
+        keyword=keyword,
+        brand_id=brand_id,
+        slug=slug,
+        seo_result=seo_result,
+        brand_card_result=brand_result,
+        error="; ".join(error_parts) if error_parts else None,
     )

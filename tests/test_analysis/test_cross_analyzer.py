@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from domain.analysis.cross_analyzer import (
     _aggregate_dia_plus,
+    _aggregate_distributions,
     _aggregate_stats,
     _aggregate_tags,
     _classify_sections,
@@ -101,29 +102,67 @@ class TestClassifySections:
         assert "요약" in result.required
 
     def test_frequent_at_50(self) -> None:
-        sems = [_semantic(["정보제공"])] * 10
-        sems[0] = _semantic(["정보제공", "FAQ"])
-        sems[1] = _semantic(["정보제공", "FAQ"])
-        sems[2] = _semantic(["정보제공", "FAQ"])
-        sems[3] = _semantic(["정보제공", "FAQ"])
-        sems[4] = _semantic(["정보제공", "FAQ"])
+        # 모든 글에 소제목 ≥ 2 보장 (FAQ 50% 가 소제목 분모 기준 검증되도록)
+        sems = [_semantic(["정보제공", "요약"])] * 10
+        sems[0] = _semantic(["정보제공", "요약", "FAQ"])
+        sems[1] = _semantic(["정보제공", "요약", "FAQ"])
+        sems[2] = _semantic(["정보제공", "요약", "FAQ"])
+        sems[3] = _semantic(["정보제공", "요약", "FAQ"])
+        sems[4] = _semantic(["정보제공", "요약", "FAQ"])
         result = _classify_sections(sems, 10)
         assert "정보제공" in result.required
         assert "FAQ" in result.frequent
 
     def test_n_under_10_no_differentiating(self) -> None:
-        sems = [_semantic(["정보제공"])] * 7
-        sems[0] = _semantic(["정보제공", "전문가의견"])
-        sems[1] = _semantic(["정보제공", "전문가의견"])
+        # 7개 모두 섹션 ≥ 2 보장하여 분모(=7)가 임계 검증되도록
+        sems = [_semantic(["정보제공", "요약"])] * 7
+        sems[0] = _semantic(["정보제공", "요약", "전문가의견"])
+        sems[1] = _semantic(["정보제공", "요약", "전문가의견"])
         result = _classify_sections(sems, 7)
         assert result.differentiating == []
 
     def test_differentiating_with_n_10(self) -> None:
-        sems = [_semantic(["정보제공"])] * 10
-        sems[0] = _semantic(["정보제공", "전문가의견"])
-        sems[1] = _semantic(["정보제공", "전문가의견"])
+        sems = [_semantic(["정보제공", "요약"])] * 10
+        sems[0] = _semantic(["정보제공", "요약", "전문가의견"])
+        sems[1] = _semantic(["정보제공", "요약", "전문가의견"])
         result = _classify_sections(sems, 10)
         assert "전문가의견" in result.differentiating
+
+    def test_all_single_section_returns_empty(self) -> None:
+        """소제목 0개(섹션 1개) 글만 있으면 구조 분류는 비어야 한다 (lessons P2 발견 4)."""
+        sems = [_semantic(["정보제공"])] * 10
+        result = _classify_sections(sems, 10)
+        assert result.required == []
+        assert result.frequent == []
+        assert result.differentiating == []
+
+    def test_only_structured_blogs_count_for_ratio(self) -> None:
+        """단일 섹션 글은 분모에서 제외되어야 한다.
+
+        섹션 ≥ 2 인 블로그 5개 중 5개 모두 "정보제공" 보유 → 100% → required.
+        단일 섹션 글 5개가 추가되어도 결과는 동일해야 한다.
+        """
+        sems = [_semantic(["정보제공", "요약"])] * 5 + [_semantic(["정보제공"])] * 5
+        result = _classify_sections(sems, 10)
+        assert "정보제공" in result.required
+        assert "요약" in result.required
+
+
+class TestAggregateDistributions:
+    def test_ending_type_only_structured(self) -> None:
+        """ending_type 은 소제목 있는 블로그만 분모. 단일 섹션 글의 역할은 ending 으로 잡지 않는다."""
+        sems = [_semantic(["도입/공감", "요약"])] * 5 + [_semantic(["정보제공"])] * 5
+        dist = _aggregate_distributions(sems)
+        assert dist["ending_type"] == {"요약": 1.0}
+        # intro/title 은 모든 글 대상 → 분모 10
+        assert dist["intro_type"]["공감형"] == 1.0
+        assert dist["title_pattern"]["방법론형"] == 1.0
+
+    def test_all_single_section_ending_empty(self) -> None:
+        sems = [_semantic(["정보제공"])] * 7
+        dist = _aggregate_distributions(sems)
+        assert dist["ending_type"] == {}
+        assert dist["intro_type"]["공감형"] == 1.0
 
 
 class TestAggregateStats:
@@ -158,11 +197,11 @@ class TestAggregateTags:
 
 
 class TestTopStructures:
-    def test_no_subtitles_fallback(self) -> None:
+    def test_no_subtitles_returns_empty(self) -> None:
+        """소제목 0~1개 글만 있으면 빈 리스트. prompt_builder 가 자체 설계 분기로 진입하도록."""
         sems = [_semantic(["정보제공"])] * 7
         result = _extract_top_structures(sems)
-        assert len(result) == 1
-        assert result[0].sequence == ["정보제공"]
+        assert result == []
 
     def test_mixed(self) -> None:
         sems = [

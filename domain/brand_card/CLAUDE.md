@@ -78,11 +78,17 @@ def render_card_set(plan_id) -> RenderedCardSet
 
 ## BRAND_LENIENT 정책 (§7)
 
-- `RULES[CompliancePolicy.BRAND_LENIENT]` 의 7 규칙은 SEO_STRICT 부분집합
-  (1인칭 promotion 만 제외)
-- §7 항상 차단 9종 중 7종이 매핑됨. 미매핑 2종(부작용 없음, 가격 할인 과장)은
-  `tests/test_brand_card/test_brand_lenient_coverage.py` 에서 xfail 로 갭 명시
-- 카테고리 추가는 `domain/compliance/CLAUDE.md` "8개 카테고리 보호" 룰에 따라
+- `RULES[CompliancePolicy.BRAND_LENIENT]` 의 9 규칙은 SEO_STRICT 10 규칙의 부분집합
+  (`first_person_promotion` 만 제외 — 브랜드 카드는 1인칭/CTA 허용)
+- SPEC-BRAND-CARD §7 항상 차단 9종 ↔ 9 규칙 1:1 정합 (2026-04-29 검증 완료):
+  효과 보장→ABSOLUTE_GUARANTEE / 수치 감량+환자 후기→PATIENT_TESTIMONIAL /
+  최고/유일/1위→UNIQUE_SUPERLATIVE / 전후 비교→BEFORE_AFTER /
+  타 병원 비교→DIRECT_COMPARISON / 부작용 없음→NO_SIDE_EFFECTS_CLAIM /
+  가격 할인 과장→PRICE_DISCOUNT_HYPE / 검증되지 않은 의료진 인증→UNVERIFIED_CREDENTIAL.
+  CURE_PROMISE 는 효과 보장 안전망 보강
+- 회귀 테스트: `tests/test_compliance/test_brand_lenient_coverage.py` 가
+  §7 9종 키워드별 차단 동작을 검증 (SPEC-BRAND-CARD R3 게이트)
+- 카테고리 추가는 `domain/compliance/CLAUDE.md` "10개 카테고리 보호" 룰에 따라
   사용자 결정 게이트 필요
 
 ## 명명 규칙 (§20)
