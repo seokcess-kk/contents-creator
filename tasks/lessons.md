@@ -112,7 +112,7 @@
 
 ---
 
-### [BC-5] 로고 자동 추출 셀렉터 (2026-04-16 로직 검증 완료) ✅
+### [BC-5] 로고 자동 추출 셀렉터 (2026-04-29 실측 완료, 7/7) ✅
 
 **Phase 1 — 로컬 fixture 7/7 통과** (`dev/active/bc-tests/bc5_logo.py`):
 
@@ -133,8 +133,28 @@
 4. `[class*=logo]` 하위 img — 클래스 명명 관례
 5. `img[src*=logo]` — 파일명 관례
 
-**Phase 2 — 실존 홈페이지 실측 (사용자 URL 리스트 대기)** ⏸
-- 한의원 5~10곳 공개 홈페이지 URL 제공 시 동일 로직으로 실측 후 성공률 집계 예정
+**Phase 2 — 실존 한의원 홈페이지 7곳 실측 (2026-04-29)** ✅ 7/7 성공
+
+| URL | 매칭 셀렉터 | 추출 로고 |
+|---|---|---|
+| daeatdiet.com | `link[rel=apple-touch-icon]` | `/logo.png` |
+| ilsan.daeatdiet.com | `link[rel=apple-touch-icon]` | `/logo.png` |
+| cheonan.daeatdiet.com | `link[rel=apple-touch-icon]` | `/logo.png` |
+| incheon.daeatdiet.com | `link[rel=apple-touch-icon]` | `/logo.png` |
+| busan.daeatdiet.com | `link[rel=apple-touch-icon]` | `/logo.png` |
+| serea.co.kr | `link[rel=apple-touch-icon]` | `cloudfront.../apple-touch-icon.png` |
+| liting.co.kr | `link[rel=apple-touch-icon]` | `/logo.png` |
+
+**핵심 발견**:
+- **7/7 모두 1단 셀렉터 (`link[rel=apple-touch-icon]`) 가 first match** — 폴백 2~5단 한 번도 가동되지 않음
+- 그러나 폴백 5단 자체는 **유지 필수** — 샘플 다양성이 제한적임 (daeatdiet 5개는 단일 codebase 의 멀티 지점 사이트, serea + liting 까지 합해도 3개 시스템)
+- `apple-touch-icon` 이 압도적이라 1단 셀렉터의 검색 순서는 `apple-touch-icon` → `icon` → `shortcut icon` 으로 **현 우선순위가 정답**
+- HTTP 단순 GET (Bright Data 불필요) + `Mozilla/5.0` UA 만으로 모두 fetch 성공 — 봇 차단 없음. 한의원 홈페이지는 일반 정적 사이트로 분류
+- 일부는 CDN 경유 (cloudfront) — 추출 후 절대 URL 화 시 도메인 정규화 로직 그대로 동작 확인
+
+**향후 운영 시 모니터링 항목**:
+- 1단 (`link[rel=*icon*]`) 미매칭 시 어느 폴백이 활약하는지 카운터 누적
+- `apple-touch-icon` 추출이 실제 로고가 아니라 작은 favicon 인 경우가 있을 수 있음 → 추출 후 이미지 크기 검사 추가 검토 (지금은 보류, 운영 데이터 누적 후 결정)
 
 ---
 

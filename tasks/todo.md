@@ -98,11 +98,11 @@
 - [ ] 텍스트 순서·표 내용 정확 추출 확인
 - [ ] 결과를 `tasks/lessons.md` BC-4 섹션에 기록
 
-### [BC-5] 로고 자동 추출 셀렉터 세트 실측 ✅ 로직 검증 완료, ⏸ 실존 URL 대기 (2026-04-16)
+### [BC-5] 로고 자동 추출 셀렉터 세트 실측 ✅ 완료 (2026-04-29)
 - [x] 로컬 fixture 7/7 통과 (`dev/active/bc-tests/bc5_logo.py`)
 - [x] 폴백 셀렉터 5단 순서 확정: `link[rel=icon]` → `meta[og:image]` → `header img[alt*=logo]` → `[class*=logo] img` → `img[src*=logo]`
 - [x] 우선순위 정확 (case6 link + og:image 공존 → link 선택)
-- [ ] 실존 한의원 홈페이지 5~10곳 URL 사용자 제공 → 성공률 집계
+- [x] 실존 한의원 홈페이지 **7곳 실측 7/7 성공** (daeatdiet 5지점 + serea + liting). 모두 1단 `link[rel=apple-touch-icon]` 매칭. lessons.md BC-5 Phase 2 표 기록 — 2026-04-29
 - [x] `tasks/lessons.md` BC-5 섹션 기록
 
 ### [BC-6] Gemini Nano Banana 이미지 생성 실측 ✅ 완료 (2026-04-16)

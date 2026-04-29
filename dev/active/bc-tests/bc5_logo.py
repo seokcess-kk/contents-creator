@@ -113,11 +113,72 @@ def run_fixtures() -> int:
     return failed
 
 
+_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"
+
+
+def fetch(url: str, timeout: int = 15) -> str:
+    """단순 HTTP GET. 봇 차단 회피 위해 일반 브라우저 UA 사용."""
+    import urllib.request
+
+    req = urllib.request.Request(url, headers={"User-Agent": _UA})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        raw = resp.read()
+    # 인코딩 추정 — content-type 헤더 우선, 없으면 meta charset
+    ct = resp.headers.get("Content-Type", "")
+    encoding = "utf-8"
+    if "charset=" in ct:
+        encoding = ct.split("charset=", 1)[1].split(";")[0].strip()
+    try:
+        return raw.decode(encoding, errors="replace")
+    except LookupError:
+        return raw.decode("utf-8", errors="replace")
+
+
+def run_real_urls(urls: list[str]) -> tuple[int, int]:
+    """URL 별 로고 추출 결과를 출력하고 (성공, 전체) 반환."""
+    success = 0
+    for url in urls:
+        try:
+            html = fetch(url)
+        except Exception as exc:
+            print(f"❌ {url}: fetch 실패 ({type(exc).__name__}: {exc})")
+            continue
+
+        logo, selector = extract_logo(html)
+        if logo:
+            success += 1
+            # 상대 URL 절대화 (보고용)
+            if logo.startswith("//"):
+                abs_url = "https:" + logo
+            elif logo.startswith("/"):
+                from urllib.parse import urlparse
+
+                parsed = urlparse(url)
+                abs_url = f"{parsed.scheme}://{parsed.netloc}{logo}"
+            else:
+                abs_url = logo
+            print(f"✅ {url}")
+            print(f"   selector: {selector}")
+            print(f"   logo:     {abs_url}")
+        else:
+            print(f"❌ {url} — 5단 셀렉터 모두 실패")
+    return success, len(urls)
+
+
 if __name__ == "__main__":
+    import sys
+
     print("=== BC-5 Phase 1: 로컬 fixture 로직 검증 ===")
     failed = run_fixtures()
     print(f"\nfixture result: {len(FIXTURE_CASES) - failed}/{len(FIXTURE_CASES)} passed")
     if failed:
         raise SystemExit(1)
-    print("\n=== Phase 2: 실존 홈페이지 실측은 사용자 URL 리스트 대기 ===")
-    print("실제 한의원 홈페이지 5~10곳 URL 을 사용자가 제공하면 동일 로직으로 실측 가능.")
+
+    if len(sys.argv) > 1:
+        urls = sys.argv[1:]
+        print(f"\n=== Phase 2: 실측 ({len(urls)} URL) ===")
+        ok, total = run_real_urls(urls)
+        print(f"\n실측 결과: {ok}/{total} 성공")
+        sys.exit(0 if ok == total else 1)
+    print("\n=== Phase 2: URL 인자 미제공 — 사용 예 ===")
+    print("python dev/active/bc-tests/bc5_logo.py URL1 URL2 ...")
