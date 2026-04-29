@@ -104,53 +104,55 @@ export default function RankingTimeline({
       {ascending.length >= 2 && <RankingChart snapshots={ascending} dayOffset={dayOffset} />}
 
       {snapshots.length > 0 && (
-        <table className="w-full text-xs">
-          <thead className="text-gray-600">
-            <tr className="border-b border-gray-200">
-              <th className="text-left py-1">측정 시각</th>
-              <th className="text-right py-1">N일차</th>
-              <th className="text-left py-1">섹션</th>
-              <th className="text-right py-1">순위</th>
-              <th className="text-right py-1">SERP 결과 수</th>
-            </tr>
-          </thead>
-          <tbody>
-            {snapshots.map((s) => {
-              const d = dayOffset(s.captured_at);
-              return (
-                <tr key={s.id} className="border-b border-gray-100">
-                  <td className="py-1 text-gray-700">
-                    {new Date(s.captured_at).toLocaleString("ko-KR")}
-                  </td>
-                  <td className="text-right font-mono text-gray-700">
-                    {d === null ? "-" : `${d}일차`}
-                  </td>
-                  <td className="py-1">
-                    {s.section ? (
-                      <span className="px-1.5 py-0.5 text-[10px] rounded bg-blue-100 text-blue-800">
-                        {s.section}
-                      </span>
-                    ) : (
-                      <span className="text-gray-400">-</span>
-                    )}
-                  </td>
-                  <td
-                    className={`text-right font-mono ${
-                      s.position === null
-                        ? "text-gray-400"
-                        : s.position <= 10
-                          ? "text-green-700 font-bold"
-                          : "text-gray-900"
-                    }`}
-                  >
-                    {s.position === null ? "미노출" : `${s.position}위`}
-                  </td>
-                  <td className="text-right text-gray-500">{s.total_results ?? "-"}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className="max-h-[280px] overflow-y-auto">
+          <table className="w-full text-xs">
+            <thead className="text-gray-600 sticky top-0 bg-white">
+              <tr className="border-b border-gray-200">
+                <th className="text-left py-1">측정 시각</th>
+                <th className="text-right py-1">N일차</th>
+                <th className="text-left py-1">섹션</th>
+                <th className="text-right py-1">순위</th>
+                <th className="text-right py-1">SERP 결과 수</th>
+              </tr>
+            </thead>
+            <tbody>
+              {snapshots.map((s) => {
+                const d = dayOffset(s.captured_at);
+                return (
+                  <tr key={s.id} className="border-b border-gray-100">
+                    <td className="py-1 text-gray-700">
+                      {new Date(s.captured_at).toLocaleString("ko-KR")}
+                    </td>
+                    <td className="text-right font-mono text-gray-700">
+                      {d === null ? "-" : `${d}일차`}
+                    </td>
+                    <td className="py-1">
+                      {s.section ? (
+                        <span className="px-1.5 py-0.5 text-[10px] rounded bg-blue-100 text-blue-800">
+                          {s.section}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
+                    </td>
+                    <td
+                      className={`text-right font-mono ${
+                        s.position === null
+                          ? "text-gray-400"
+                          : s.position <= 10
+                            ? "text-green-700 font-bold"
+                            : "text-gray-900"
+                      }`}
+                    >
+                      {s.position === null ? "미노출" : `${s.position}위`}
+                    </td>
+                    <td className="text-right text-gray-500">{s.total_results ?? "-"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
@@ -167,11 +169,11 @@ interface RankingChartProps {
  */
 function RankingChart({ snapshots, dayOffset }: RankingChartProps) {
   const W = 480;
-  const H = 160;
-  const PAD_L = 36;
+  const H = 110;
+  const PAD_L = 32;
   const PAD_R = 12;
-  const PAD_T = 12;
-  const PAD_B = 22;
+  const PAD_T = 8;
+  const PAD_B = 18;
 
   const points = snapshots.map((s) => {
     const d = dayOffset(s.captured_at);
@@ -199,7 +201,7 @@ function RankingChart({ snapshots, dayOffset }: RankingChartProps) {
   const yTicks = [1, 10, 50, 100];
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-md h-auto">
       {yTicks.map((t) => (
         <g key={t}>
           <line
