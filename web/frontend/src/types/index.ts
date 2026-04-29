@@ -56,6 +56,13 @@ export type WsMessage =
 // 키워드 노출 난이도 분석 (Phase K)
 export type DifficultyGrade = "missing" | "high" | "medium" | "low";
 
+export type SovValueGrade =
+  | "low_value"
+  | "moderate"
+  | "high_value"
+  | "overheated"
+  | "unknown";
+
 export interface KeywordDifficulty {
   keyword: string;
   grade: DifficultyGrade;
@@ -68,5 +75,6 @@ export interface KeywordDifficulty {
   monthly_mobile_search: number | null;
   monthly_total_search: number | null;
   competition_idx: string | null;
+  sov_grade: SovValueGrade;
   checked_at: string | null;
 }

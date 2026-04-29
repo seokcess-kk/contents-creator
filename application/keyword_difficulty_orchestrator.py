@@ -83,9 +83,8 @@ def analyze_keyword(
             save_usage_to_supabase(usages, keyword=keyword, stage="keyword_difficulty")
 
     composition = parse_serp(html)
-    diff = score_difficulty(keyword, composition)
-    if search_volume is not None:
-        diff = diff.model_copy(update={"search_volume": search_volume})
+    # search_volume 이 None 이어도 scorer 가 sov_grade=UNKNOWN 으로 채움
+    diff = score_difficulty(keyword, composition, search_volume=search_volume)
 
     if persist:
         try:

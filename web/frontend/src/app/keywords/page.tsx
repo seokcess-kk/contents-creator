@@ -7,7 +7,7 @@ import {
   batchAnalyzeKeywordDifficulty,
   listKeywordDifficulty,
 } from "@/lib/api";
-import type { DifficultyGrade, KeywordDifficulty } from "@/types";
+import type { DifficultyGrade, KeywordDifficulty, SovValueGrade } from "@/types";
 
 const GRADE_LABELS: Record<DifficultyGrade, string> = {
   missing: "미노출",
@@ -21,6 +21,22 @@ const GRADE_COLORS: Record<DifficultyGrade, string> = {
   high: "bg-red-100 text-red-700",
   medium: "bg-yellow-100 text-yellow-800",
   low: "bg-green-100 text-green-700",
+};
+
+const SOV_LABELS: Record<SovValueGrade, string> = {
+  low_value: "낮음",
+  moderate: "보통",
+  high_value: "유리",
+  overheated: "과열",
+  unknown: "—",
+};
+
+const SOV_COLORS: Record<SovValueGrade, string> = {
+  low_value: "bg-gray-100 text-gray-600",
+  moderate: "bg-blue-100 text-blue-700",
+  high_value: "bg-emerald-100 text-emerald-700",
+  overheated: "bg-orange-100 text-orange-700",
+  unknown: "bg-gray-50 text-gray-400",
 };
 
 const GRADE_FILTER_OPTIONS: { key: DifficultyGrade | "all"; label: string }[] = [
@@ -230,7 +246,8 @@ export default function KeywordsPage() {
           <thead className="bg-gray-50 text-left">
             <tr>
               <th className="px-3 py-2">키워드</th>
-              <th className="px-3 py-2">등급</th>
+              <th className="px-3 py-2">노출 등급</th>
+              <th className="px-3 py-2">SOV 가치</th>
               <th className="px-3 py-2 text-right">점수</th>
               <th className="px-3 py-2 text-right">월 검색량</th>
               <th className="px-3 py-2 text-right">PC / 모바일</th>
@@ -244,7 +261,7 @@ export default function KeywordsPage() {
           <tbody>
             {visible.length === 0 ? (
               <tr>
-                <td colSpan={10} className="px-3 py-6 text-center text-gray-500">
+                <td colSpan={11} className="px-3 py-6 text-center text-gray-500">
                   분석된 키워드 없음
                 </td>
               </tr>
@@ -257,6 +274,13 @@ export default function KeywordsPage() {
                       className={`rounded px-2 py-0.5 text-xs font-medium ${GRADE_COLORS[row.grade]}`}
                     >
                       {GRADE_LABELS[row.grade]}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2">
+                    <span
+                      className={`rounded px-2 py-0.5 text-xs font-medium ${SOV_COLORS[row.sov_grade]}`}
+                    >
+                      {SOV_LABELS[row.sov_grade]}
                     </span>
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{row.score}</td>

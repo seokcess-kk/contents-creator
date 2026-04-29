@@ -444,7 +444,9 @@ alter table keyword_difficulty_snapshots
     add column if not exists monthly_pc_search int,
     add column if not exists monthly_mobile_search int,
     add column if not exists monthly_total_search int,
-    add column if not exists competition_idx text;
+    add column if not exists competition_idx text,
+    -- 2026-04-29 추가: SOV 점유 가치 등급 (검색량 × 경쟁강도)
+    add column if not exists sov_grade text;
 
 do $$
 begin

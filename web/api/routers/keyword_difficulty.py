@@ -56,6 +56,7 @@ class _DifficultyResponse(BaseModel):
     monthly_mobile_search: int | None = None
     monthly_total_search: int | None = None
     competition_idx: str | None = None
+    sov_grade: str = "unknown"
     checked_at: datetime | None
 
 
@@ -73,6 +74,7 @@ def _to_response(diff: KeywordDifficulty) -> _DifficultyResponse:
         monthly_mobile_search=sv.monthly_mobile if sv else None,
         monthly_total_search=sv.monthly_total if sv else None,
         competition_idx=sv.competition_idx if sv else None,
+        sov_grade=diff.sov_grade.value,
         checked_at=diff.checked_at,
     )
 

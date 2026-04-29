@@ -79,6 +79,26 @@ class DifficultyGrade(StrEnum):
     LOW = "low"
 
 
+class SovValueGrade(StrEnum):
+    """SOV 점유 가치 4단계 — 검색량 × 경쟁강도로 산출.
+
+    노출 난이도(DifficultyGrade)와 별개의 보조 지표. SERP 진입 가능성과
+    SOV 점유로 얻는 실효 가치를 분리해 의사결정에 활용.
+
+    - LOW_VALUE: 검색량 자체가 적어 SOV 점유 효용 작음
+    - MODERATE: 적정 검색량, 통상적인 SOV 가치
+    - HIGH_VALUE: 검색량 충분 + 경쟁 합리적, SOV 점유 가치 큼 (우선 작업)
+    - OVERHEATED: 검색량 매우 큼 + 경쟁 과열, 슬롯 다수지만 인플루언서·광고에 밀림
+    - UNKNOWN: 검색량 데이터 미수신 (네이버 API 미설정·실패)
+    """
+
+    LOW_VALUE = "low_value"
+    MODERATE = "moderate"
+    HIGH_VALUE = "high_value"
+    OVERHEATED = "overheated"
+    UNKNOWN = "unknown"
+
+
 class SearchVolume(BaseModel):
     """네이버 검색광고 API 의 월간 검색량 — `naver_ad_client.get_search_volume` 반환값.
 
@@ -103,6 +123,7 @@ class KeywordDifficulty(BaseModel):
     grade: DifficultyGrade
     composition: SerpComposition
     search_volume: SearchVolume | None = None
+    sov_grade: SovValueGrade = SovValueGrade.UNKNOWN
     checked_at: datetime | None = None
 
 

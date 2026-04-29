@@ -16,6 +16,7 @@ from domain.keyword_difficulty.model import (
     SearchVolume,
     SerpComposition,
     SerpSection,
+    SovValueGrade,
 )
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,7 @@ def insert_snapshot(diff: KeywordDifficulty) -> KeywordDifficulty:
         payload["monthly_mobile_search"] = diff.search_volume.monthly_mobile
         payload["monthly_total_search"] = diff.search_volume.monthly_total
         payload["competition_idx"] = diff.search_volume.competition_idx
+    payload["sov_grade"] = diff.sov_grade.value
     result = client.table(_TABLE).insert(payload).execute()
     rows = result.data or []
     if not rows:
@@ -131,11 +133,18 @@ def _row_to_diff(row: dict[str, Any]) -> KeywordDifficulty:
             competition_idx=row.get("competition_idx"),
         )
 
+    sov_raw = row.get("sov_grade")
+    try:
+        sov_grade = SovValueGrade(sov_raw) if sov_raw else SovValueGrade.UNKNOWN
+    except ValueError:
+        sov_grade = SovValueGrade.UNKNOWN
+
     return KeywordDifficulty(
         keyword=row["keyword"],
         score=float(row["score"]),
         grade=DifficultyGrade(row["grade"]),
         composition=composition,
         search_volume=search_volume,
+        sov_grade=sov_grade,
         checked_at=checked_at,
     )

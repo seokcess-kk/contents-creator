@@ -9,13 +9,16 @@ import pytest
 
 from domain.keyword_difficulty.model import (
     DifficultyGrade,
+    SearchVolume,
     SerpComposition,
     SerpSection,
+    SovValueGrade,
 )
 from domain.keyword_difficulty.scorer import (
     BLOG_WEIGHT,
     SPAM_WEIGHT,
     score_difficulty,
+    score_sov_value,
 )
 
 
@@ -135,3 +138,62 @@ def test_grade_examples_consistency(kw: str, c: SerpComposition, expected: Diffi
     """대화에서 분류한 키워드 패턴과 등급 판정이 일치하는지 회귀."""
     result = score_difficulty(kw, c)
     assert result.grade == expected, f"{kw}: {result.grade} (score={result.score})"
+
+
+# ── SOV 가치 등급 ───────────────────────────────────────────
+
+
+def _vol(total: int, *, comp: str | None = None) -> SearchVolume:
+    """검색량 빠른 생성 — pc 0, mobile=total 로 단순화."""
+    return SearchVolume(monthly_pc=0, monthly_mobile=total, competition_idx=comp)
+
+
+class TestSovValue:
+    def test_unknown_when_no_volume(self) -> None:
+        assert score_sov_value(None) == SovValueGrade.UNKNOWN
+
+    def test_low_value_under_100(self) -> None:
+        assert score_sov_value(_vol(50)) == SovValueGrade.LOW_VALUE
+        assert score_sov_value(_vol(99, comp="낮음")) == SovValueGrade.LOW_VALUE
+        assert score_sov_value(_vol(0, comp="높음")) == SovValueGrade.LOW_VALUE
+
+    def test_high_value_when_low_competition(self) -> None:
+        # 검색량 1000 + 경쟁 낮음
+        assert score_sov_value(_vol(1000, comp="낮음")) == SovValueGrade.HIGH_VALUE
+        # 검색량 5000 + 경쟁 낮음
+        assert score_sov_value(_vol(5000, comp="낮음")) == SovValueGrade.HIGH_VALUE
+
+    def test_moderate_when_medium_or_high_competition(self) -> None:
+        assert score_sov_value(_vol(500, comp="중간")) == SovValueGrade.MODERATE
+        assert score_sov_value(_vol(5000, comp="높음")) == SovValueGrade.MODERATE
+
+    def test_overheated_when_high_volume_and_high_competition(self) -> None:
+        # 검색량 10,000+ + 경쟁 높음 → 과열
+        assert score_sov_value(_vol(15000, comp="높음")) == SovValueGrade.OVERHEATED
+
+    def test_high_value_when_volume_high_low_competition(self) -> None:
+        # 검색량 10,000+ + 경쟁 낮음 → 유리
+        assert score_sov_value(_vol(20000, comp="낮음")) == SovValueGrade.HIGH_VALUE
+
+    def test_overheated_when_very_high_volume(self) -> None:
+        # 검색량 50,000+ + 경쟁 중간/높음 → 과열
+        assert score_sov_value(_vol(60000, comp="중간")) == SovValueGrade.OVERHEATED
+        assert score_sov_value(_vol(100000, comp="높음")) == SovValueGrade.OVERHEATED
+
+    def test_very_high_volume_low_competition_moderate(self) -> None:
+        # 빅키워드 + 경쟁 낮음 → moderate (드문 케이스)
+        assert score_sov_value(_vol(60000, comp="낮음")) == SovValueGrade.MODERATE
+
+
+class TestScoreDifficultyWithVolume:
+    def test_sov_grade_propagated(self) -> None:
+        c = _composition(blog_view=5, ad=3)
+        sv = SearchVolume(monthly_pc=200, monthly_mobile=800, competition_idx="낮음")
+        result = score_difficulty("테스트", c, search_volume=sv)
+        assert result.sov_grade == SovValueGrade.HIGH_VALUE
+        assert result.search_volume == sv
+
+    def test_unknown_when_volume_missing(self) -> None:
+        c = _composition(blog_view=5, ad=3)
+        result = score_difficulty("테스트", c)
+        assert result.sov_grade == SovValueGrade.UNKNOWN
