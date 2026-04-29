@@ -142,7 +142,7 @@
 
 ## 🚨 Phase 2 실측 이슈 (2026-04-16 발견, 후속 조치 대기)
 
-- [ ] **[P2-I1] 블로그 태그 수집 불가** — 모바일 네이버 본문 HTML 에 태그 영역 자체가 없음. 데스크톱은 iframe 껍데기만 반환. 별도 스프린트로 분리 예정. lessons.md P2 참조
+- [x] **[P2-I1] 블로그 태그 수집 불가** — (c) **SPEC 전면 삭제** 채택 (2026-04-29). 사유: ① 모바일 본문에 태그 영역 부재 + 데스크톱 iframe 만 반환 ② 네이버 SEO 에서 해시태그는 마이너 시그널 (DIA+ 가중치 감소) ③ `related_keywords` 폴백으로 `suggested_tags` 추천 가능 ④ (a)/(b) 옵션의 추가 호출 비용·유지보수 부담이 효용 상회. SPEC-SEO-TEXT.md §3 [3]/[5]/[6] 정리, 코드 모델/필드는 호환성 유지 차원 빈 폴백 그대로 둠
   - [ ] 선택지 결정: (a) PostView.nhn iframe 실측, (b) 별도 JSON API 탐색, (c) SPEC 에서 전면 삭제
   - [ ] 결정 후 [5] cross_analyzer 의 `aggregated_tags` 와 [6] `suggested_tags` 폴백 로직 수정
   - 현재 상태: `PhysicalAnalysis.tags` 는 빈 리스트로 동작 (코드는 폴백 셀렉터 유지)

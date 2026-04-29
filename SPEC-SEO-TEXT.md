@@ -120,16 +120,11 @@ HTML 파싱으로 정량 데이터 추출. LLM 불필요.
 | DIA+ 요소 | 표·Q&A·리스트·인용구·bold·구분선·통계 데이터 |
 | 문단 통계 | 평균 문단 길이, 평균 문장 길이, 짧은 문단 비율 |
 | 섹션 비율 | 도입/본문/결론 글자수 비율, 총 글자수, 소제목 수 |
-| **블로그 태그** | **포스트 하단 해시태그 리스트 (`#키워드`) 추출** |
 
-**블로그 태그 추출 규칙:**
-- 네이버 스마트에디터의 하단 태그 영역을 BeautifulSoup으로 파싱 (`div.post_tag`, `.blog_tag`, `a[href*="TagSearch"]` 등 폴백 셀렉터 다중 시도)
-- 태그 문자열에서 `#` 접두어·공백 정규화
-- 중복 제거, 순서 보존
-- 태그 미검출 시 빈 리스트 반환 (에러 아님)
-- LLM 불필요, 코드로만 처리
-
-> **⚠️ P2 실측 결과 (2026-04-16, lessons.md P2)**: 모바일 네이버 본문 HTML 에는 태그 영역이 아예 없음. 데스크톱 URL 은 iframe 껍데기만 반환. 현재 크롤링 방식으로는 태그 수집 불가 → **Phase 2 에서는 빈 리스트로 동작**. 태그 수집은 별도 스프린트로 분리되어 있으며, [5] `aggregated_tags` 와 [6] `suggested_tags` 는 태그 부재에 대응하는 폴백 경로(빈 값 허용·주 키워드 기반 구성)를 [4a]~[6] 구현 시점에 추가한다.
+> **블로그 태그(해시태그) 분석은 SPEC 에서 제외 (2026-04-29, P2-I1 결정)**.
+> 사유: ① 모바일 네이버 본문 HTML 에 태그 영역 자체 부재 (lessons.md P2 발견 5, 10/10건 매칭 0건), 데스크톱 `blog.naver.com` 은 iframe 껍데기만 반환 ② 네이버 SEO 점수에서 해시태그는 마이너 시그널로 줄어드는 추세 (DIA+ 도입 후) ③ `related_keywords` 폴백으로 `suggested_tags` 추천 가능 — 태그 신호의 한계 효용 작음 ④ 태그 수집을 위한 추가 호출(2단계 fetch 또는 비공식 JSON API) 비용·유지보수 부담이 효용을 상회.
+>
+> 코드는 호환성 유지 차원에서 빈 폴백 그대로 둔다 (`PhysicalAnalysis.tags` 빈 리스트, `aggregated_tags` 빈 폴백, `suggested_tags` 는 주 키워드 + `related_keywords` 폴백).
 
 **네이버 스마트에디터 ONE 파싱 주의 (2026-04-16 P2 실측 반영)**:
 - 본문 컨테이너: `div.se-main-container` (우선) → `div.post_ct` (폴백)
@@ -199,8 +194,8 @@ HTML 파싱으로 정량 데이터 추출. LLM 불필요.
     "body": 0.73,
     "conclusion": 0.15
   },
-  "tags": ["다이어트", "한의원", "체질", "요요", "한약", "건강"],
-  "tag_count": 6
+  "tags": [],
+  "tag_count": 0
 }
 ```
 
@@ -289,7 +284,8 @@ HTML 파싱으로 정량 데이터 추출. LLM 불필요.
 | DIA+ 사용률 | 각 요소별 사용 비율 |
 | 타겟 독자 | 공통 고민 키워드, 검색 의도, 정보 수준 |
 | 소구 포인트 집계 | 공통 소구 포인트, 전체 홍보성 비율 |
-| **블로그 태그 집계** | **공통 태그(80% 이상), 빈출 태그(50% 이상), 평균 태그 개수** |
+
+> **태그 집계는 SPEC 에서 제외** (P2-I1 결정). `aggregated_tags` 필드는 호환성 유지 차원에서 모델에 남기되 항상 빈 폴백(`common=[]`, `frequent=[]`, `avg_tag_count_per_post=0`) 으로 동작.
 
 **패턴 카드 출력 형식:**
 
@@ -338,15 +334,10 @@ HTML 파싱으로 정량 데이터 추출. LLM 불필요.
     "promotional_ratio": 0.6
   },
   "aggregated_tags": {
-    "common": ["다이어트", "한의원"],
-    "frequent": ["체질", "요요", "한약"],
-    "top_tags": [
-      {"tag": "다이어트", "frequency": 0.9},
-      {"tag": "한의원", "frequency": 0.8},
-      {"tag": "체질", "frequency": 0.6},
-      {"tag": "요요", "frequency": 0.5}
-    ],
-    "avg_tag_count_per_post": 6.3
+    "common": [],
+    "frequent": [],
+    "top_tags": [],
+    "avg_tag_count_per_post": 0
   }
 }
 ```
@@ -398,16 +389,14 @@ HTML 파싱으로 정량 데이터 추출. LLM 불필요.
 - "우리 한의원은 체질 분석을 합니다" → "한의원 다이어트는 일반적으로 체질 분석을 거친다"
 - 공통 소구 포인트: {aggregated_appeal_points.common}
 
-[SEO 태그 제안]
-상위 글이 공통으로 쓰는 태그(80%+): {aggregated_tags.common}
-빈출 태그(50%+): {aggregated_tags.frequent}
-상위 글 평균 태그 개수: {aggregated_tags.avg_tag_count_per_post}
+[SEO 태그 제안 — 폴백 경로 (P2-I1 결정, 2026-04-29)]
+상위 글의 해시태그 데이터는 수집되지 않는다 (lessons P2 발견 5).
 
-`suggested_tags` 필드에 태그 리스트를 출력하라. 개수는 **분석 결과 그대로** 따른다 (별도 클램프 없음):
-- 목표 개수 = `round(avg_tag_count_per_post)` — 상위 글 평균 그대로
-- Naver의 물리적 상한(30개)만 예외 처리
-- 우선순위: (a) common 태그 전부 → (b) frequent 태그에서 본 원고와 관련도 높은 순 → (c) 주 키워드·연관 키워드 중 top_tags에 없는 1~2개
+`suggested_tags` 필드는 다음 폴백으로 채운다:
+- 우선순위: (a) 주 키워드 → (b) `related_keywords` 상위 N개 → (c) 본문에서 빈출하는 명사구 1~2개
+- 목표 개수: 5~10개 (네이버 물리 상한 30개)
 - 중복 제거, 의료법 금지 표현 배제
+- 본문에 삽입하지 않음 (수동 삽입 워크플로우 유지, [10] §10 참조)
 
 [AI 이미지 prompt 생성]
 상위 글 평균 이미지 개수: {image_pattern.avg_count_per_post}
@@ -464,7 +453,7 @@ HTML 파싱으로 정량 데이터 추출. LLM 불필요.
   "title": "다이어트 한의원 효과, 한 번에 정리",
   "title_pattern": "방법론형",
   "target_chars": 2800,
-  "suggested_tags": ["다이어트", "한의원", "체질", "요요", "한약", "건강"],
+  "suggested_tags": ["다이어트", "한의원", "체질 분석", "한약", "요요"],
   "image_prompts": [
     {
       "sequence": 1,
@@ -1052,9 +1041,7 @@ mypy domain/
 | 본문 | 도입부 재생성 없음, 키워드 밀도 목표 범위, DIA+ 요소 반영, 업체 홍보 없음 |
 | 의료법 | 10개 카테고리 감지, 자동 수정 후 재검증 통과 |
 | HTML 출력 | 화이트리스트 태그만 포함, 네이버 에디터 실측 통과 |
-| 블로그 태그 추출 | 상위 글 각각에서 해시태그 리스트 정확 추출 (수동 검증 5개) |
-| 태그 집계 | 공통/빈출 태그 비율 계산이 수동 집계와 일치 |
-| 제안 태그 | 본문에 삽입되지 않고 `outline.md`/`outline.json`에만 존재. 목표 개수가 avg_tag_count_per_post 기준 유동 |
+| 제안 태그 | `suggested_tags` 는 주 키워드 + `related_keywords` 폴백으로 5~10개 생성. 본문에 삽입되지 않고 `outline.md`/`outline.json`에만 존재. 상위 글 해시태그 분석은 SPEC 제외 (P2-I1 결정) |
 | AI 이미지 prompt | 영어, 텍스트 금지(`no text`), 사람 금지(`no people/faces`), 전후 비교 금지 |
 | AI 이미지 생성 | 검증 통과한 prompt 만 호출, 캐시 동작, 예산 초과 시 스킵 |
 | 이미지 의료법 | 위반 prompt 차단·재생성·2회 후 스킵 (파이프라인 종료 X) |
@@ -1200,6 +1187,7 @@ def run_validate_only(
 
 - `2026-04-15`: v2 초판. Bright Data 기반 파이프라인, [4] 분리([4a]+[4b]), 소구 포인트 중립화, 도입부 톤 락, 비율 기반 임계값, 타임스탬프 디렉토리, Supabase 스키마, 네이버 호환 HTML 화이트리스트
 - `2026-04-15`: 블로그 해시태그 분석 추가. [3] 태그 추출, [5] 태그 집계, [6] suggested_tags 동적 개수, [8] 태그도 의료법 검증 대상, [9] 태그는 본문 미삽입·메타만 유지
+- `2026-04-29`: **블로그 해시태그 분석 SPEC 제외 (P2-I1 결정)**. 모바일 본문에 태그 영역 부재 + 데스크톱 iframe 만 반환 + 네이버 SEO 점수에서 마이너 시그널. `suggested_tags` 는 주 키워드 + `related_keywords` 폴백으로 5~10개 생성. 코드 모델/필드는 호환성 유지 차원에서 빈 폴백 그대로 둠 (마이그레이션 회피). [3] 추출 절·[5] 집계 행·[6] 알고리즘 모두 제외 처리
 - `2026-04-15`: 2차 비평 반영. (C1) iframe 재요청 실측 후 결정. (M1) fixer는 구절 치환 기본·문단 재생성 폴백. (M2) N<10 차별화 섹션 생략. (M3) 패턴 카드 `schema_version` 필드 추가. (M4) 태그 개수는 `round(avg)` 분석값 그대로(클램프 제거). (M5) `outline.md` 변환은 composer 도메인 담당
 - `2026-04-15`: Phase 2 Web UI(Next.js + FastAPI) 대비. `application/` 레이어 신설, ProgressReporter 프로토콜, 파이프라인 함수 시그니처 불변 확정, scripts/ 를 얇은 CLI 래퍼로 전환
 - `2026-04-15`: Bright Data SERP API 가 Naver 전용 지원이 없어 (Google/Bing/Yandex/Baidu 만) **SERP API 사용 철회**. SERP 수집과 본문 수집 모두 Web Unlocker 단일 zone + BeautifulSoup 파싱으로 전환. `BRIGHT_DATA_SERP_ZONE` 환경 변수 제거
