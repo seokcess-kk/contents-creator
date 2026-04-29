@@ -290,6 +290,58 @@
 
 ---
 
+## ☁️ Phase D1~D5 — 클라우드 배포 (Vercel + Render, 2026-04-29 착수)
+
+> 노트북 의존성 0. 어디서든 `*.vercel.app` 접속 시 항상 응답.
+> Frontend = Vercel Hobby (free), Backend = Render Starter ($7/월), DB/Storage = Supabase (이미).
+> 자동 도메인으로 시작 → 안정화 후 커스텀 도메인 검토.
+
+### Phase D1 — 백엔드 컨테이너 + Storage ✅ (대부분 사전 구현됨)
+- [x] `Dockerfile` — Python 3.11 + Playwright Chromium + 의존성 캐시 레이어 (이전 작업)
+- [x] `render.yaml` — `plan: starter` 로 변경 (always-on)
+- [x] `domain/storage/supabase_storage.py` — `upload_bytes`, `get_signed_url` (이전 작업)
+- [x] `application/stage_runner.py` — output 저장 시 Supabase Storage 동시 업로드 (이전 작업)
+- [x] `web/api/routers/results.py` — 조회 시 signed URL 리다이렉트 (이전 작업)
+- [x] `config/settings.py` — `cors_origins`, `admin_api_key`, `storage_bucket` (이전 작업)
+
+### Phase D2 — 사용자 작업: Supabase Storage 버킷
+- [ ] D2.1 Supabase 대시보드 → Storage → New Bucket → name: `results`, **Private**
+- [ ] D2.2 RLS 정책: service_role 키로 업로드 + signed URL 만 외부 노출 (Supabase 기본값으로 충분)
+
+### Phase D3 — 사용자 작업: Render 백엔드 배포
+- [ ] D3.1 Render 대시보드 → New Web Service → GitHub 연결 → contents-creator repo
+- [ ] D3.2 자동 감지된 `render.yaml` 적용 → `contents-creator-api` 서비스 생성
+- [ ] D3.3 환경 변수 8개 입력 (Render 대시보드의 Environment 탭):
+  - `ANTHROPIC_API_KEY`
+  - `GEMINI_API_KEY`
+  - `BRIGHT_DATA_API_KEY`
+  - `BRIGHT_DATA_WEB_UNLOCKER_ZONE`
+  - `SUPABASE_URL`
+  - `SUPABASE_KEY` (service_role 권장 — Storage 업로드용)
+  - `CORS_ORIGINS` = `https://contents-creator.vercel.app` (Vercel 도메인 확정 후)
+  - `ADMIN_API_KEY` = 임의 32자 랜덤 (예: `openssl rand -hex 32`). Vercel `NEXT_PUBLIC_API_KEY` 와 동일값
+- [ ] D3.4 첫 배포 — 빌드 5~8분 (Playwright Chromium 다운로드 포함)
+- [ ] D3.5 `https://contents-creator-api.onrender.com/health` 200 확인
+- [ ] D3.6 `/docs` (Swagger) 접속해 모든 엔드포인트 표시 확인
+
+### Phase D4 — 사용자 작업: Vercel 프론트엔드 배포
+- [ ] D4.1 Vercel 대시보드 → New Project → GitHub contents-creator repo → Root Directory `web/frontend`
+- [ ] D4.2 환경 변수 입력:
+  - `BACKEND_API_URL` = `https://contents-creator-api.onrender.com` (서버사이드 rewrites 용)
+  - `NEXT_PUBLIC_WS_URL` = `wss://contents-creator-api.onrender.com` (WebSocket)
+  - `NEXT_PUBLIC_API_KEY` = D3.3 의 `ADMIN_API_KEY` 와 동일
+- [ ] D4.3 자동 빌드 → `https://contents-creator.vercel.app` (또는 자동 부여 도메인)
+- [ ] D4.4 Vercel 도메인 확정 후 Render 의 `CORS_ORIGINS` 갱신 (D3.3 재방문)
+
+### Phase D5 — 운영 확인
+- [ ] D5.1 `/keywords` 페이지 접속 → 단일 키워드 분석 → 등급 표시 확인
+- [ ] D5.2 `/rankings` 페이지 접속 → 기존 publication 목록 확인
+- [ ] D5.3 SEO 파이프라인 1건 실행 → output → Supabase Storage 업로드 + Signed URL 조회 확인
+- [ ] D5.4 Render Metrics 탭에서 Memory 사용량 모니터링 (480MB+ 상시면 Standard 업그레이드)
+- [ ] D5.5 비용 모니터링 알림 — Anthropic/Bright Data/Gemini 대시보드에서 일·월 한도 설정
+
+---
+
 ## 📦 P2 이후 — long-form 확장 트랙 (보류)
 
 > SPEC §2 "P1 제외" 항목. 인스타 표준 1080×1350/1920 카드를 넘어서는 상세페이지형 long-form PNG 가 필요한 시점에 진입.

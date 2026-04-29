@@ -2,7 +2,9 @@ services:
   - type: web
     name: contents-creator-api
     runtime: docker
-    plan: free
+    # 2026-04-29: APScheduler in-process cron + WebSocket 끊김 방지를 위해 always-on Starter 채택.
+    # 브랜드 카드 Playwright 사용 시 메모리 빠듯할 수 있어 Standard 업그레이드 필요 — 운영 모니터링 후 결정.
+    plan: starter
     dockerfilePath: ./Dockerfile
     # 환경변수는 전부 런타임 주입 (sync: false → Render 대시보드에서 수동 입력).
     # Dockerfile 에는 .env 를 COPY 하지 않으며 .dockerignore 가 추가로 차단한다.
