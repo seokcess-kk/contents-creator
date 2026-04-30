@@ -236,8 +236,10 @@ export interface BrandMediaAsset {
   id: string | null;
   brand_id: string;
   type: string;
-  file_path: string;
+  file_path: string | null;
+  storage_path?: string | null;
   file_sha256: string;
+  file_size_bytes?: number | null;
   title: string | null;
   description: string | null;
   orientation: string | null;
@@ -251,19 +253,81 @@ export function listMediaAssets(brandId: string): Promise<BrandMediaAsset[]> {
   return request(`/brands/${encodeURIComponent(brandId)}/media-assets`);
 }
 
-export function uploadMediaAsset(
+// ── 미디어 자산 presigned upload (sources 와 동일 패턴) ──
+
+export interface MediaUploadInitResponse {
+  upload_url: string;
+  upload_token: string | null;
+  storage_path: string;
+  expires_at: string;
+}
+
+export function initMediaUpload(
+  brandId: string,
+  payload: {
+    file_name: string;
+    file_size: number;
+    sha256: string;
+    asset_type: string;
+  },
+): Promise<MediaUploadInitResponse> {
+  return request(`/brands/${encodeURIComponent(brandId)}/media-assets/init`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function confirmMediaUpload(
+  brandId: string,
+  payload: {
+    storage_path: string;
+    asset_type: string;
+    file_name: string;
+    sha256: string;
+    title?: string | null;
+    description?: string | null;
+  },
+): Promise<BrandMediaAsset> {
+  return request(`/brands/${encodeURIComponent(brandId)}/media-assets/confirm`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function uploadMediaAsset(
   brandId: string,
   file: File,
   options: { asset_type: string; title?: string; description?: string },
 ): Promise<BrandMediaAsset> {
-  const fd = new FormData();
-  fd.append("file", file);
-  fd.append("asset_type", options.asset_type);
-  if (options.title) fd.append("title", options.title);
-  if (options.description) fd.append("description", options.description);
-  return request(`/brands/${encodeURIComponent(brandId)}/media-assets`, {
-    method: "POST",
-    body: fd,
+  const sha256 = await sha256Hex(file);
+
+  const init = await initMediaUpload(brandId, {
+    file_name: file.name,
+    file_size: file.size,
+    sha256,
+    asset_type: options.asset_type,
+  });
+
+  const putRes = await fetch(init.upload_url, {
+    method: "PUT",
+    body: file,
+    headers: { "Content-Type": file.type || "application/octet-stream" },
+  });
+  if (!putRes.ok) {
+    const text = await putRes.text().catch(() => "");
+    throw new BrandStudioApiError(
+      putRes.status,
+      `Supabase Storage PUT 실패: ${text || putRes.statusText}`,
+    );
+  }
+
+  return confirmMediaUpload(brandId, {
+    storage_path: init.storage_path,
+    asset_type: options.asset_type,
+    file_name: file.name,
+    sha256,
+    title: options.title ?? null,
+    description: options.description ?? null,
   });
 }
 

@@ -94,6 +94,16 @@ class Settings(BaseSettings):
         ".htm",
     )
 
+    # 브랜드 미디어 자산 (실사 사진 라이브러리) presigned upload — 동일 패턴
+    brand_media_bucket: str = "brand-media"
+    brand_media_max_bytes: int = 20 * 1024 * 1024  # 20 MB (이미지)
+    brand_media_allowed_suffixes: tuple[str, ...] = (
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".webp",
+    )
+
     # API 비용 (USD per 1M tokens, 2026-04 기준)
     cost_anthropic_opus_input: float = 15.0
     cost_anthropic_opus_output: float = 75.0

@@ -123,7 +123,6 @@ def insert_media_asset(asset: BrandMediaAsset) -> BrandMediaAsset:
     payload: dict[str, Any] = {
         "brand_id": asset.brand_id,
         "type": asset.type,
-        "file_path": asset.file_path,
         "file_sha256": asset.file_sha256,
         "title": asset.title,
         "description": asset.description,
@@ -132,6 +131,12 @@ def insert_media_asset(asset: BrandMediaAsset) -> BrandMediaAsset:
         "height": asset.height,
         "tags": list(asset.tags),
     }
+    if asset.file_path is not None:
+        payload["file_path"] = asset.file_path
+    if asset.storage_path is not None:
+        payload["storage_path"] = asset.storage_path
+    if asset.file_size_bytes is not None:
+        payload["file_size_bytes"] = asset.file_size_bytes
     result = client.table(_MEDIA_TABLE).insert(payload).execute()
     rows = result.data or []
     if not rows:
@@ -349,8 +354,10 @@ def _row_to_media(row: dict[str, Any]) -> BrandMediaAsset:
         id=row.get("id"),
         brand_id=row["brand_id"],
         type=row["type"],
-        file_path=row["file_path"],
+        file_path=row.get("file_path"),
+        storage_path=row.get("storage_path"),
         file_sha256=row["file_sha256"],
+        file_size_bytes=row.get("file_size_bytes"),
         title=row.get("title"),
         description=row.get("description"),
         orientation=row.get("orientation"),

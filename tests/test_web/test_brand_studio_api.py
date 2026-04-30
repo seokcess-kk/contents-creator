@@ -1011,6 +1011,184 @@ class TestMediaAssetUpload:
         assert captured["asset"].title == "원장님"
 
 
+class TestMediaAssetPresigned:
+    def _payload(self, **overrides: Any) -> dict[str, Any]:
+        sha = hashlib.sha256(b"placeholder").hexdigest()
+        base: dict[str, Any] = {
+            "file_name": "doctor.png",
+            "file_size": 12345,
+            "sha256": sha,
+            "asset_type": "doctor",
+        }
+        base.update(overrides)
+        return base
+
+    def test_init_unknown_brand_404(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_brand", lambda _id: None)
+        resp = client.post(
+            "/api/brand-studio/brands/missing/media-assets/init", json=self._payload()
+        )
+        assert resp.status_code == 404
+
+    def test_init_invalid_asset_type_422(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_brand", lambda _id: _profile())
+        resp = client.post(
+            "/api/brand-studio/brands/brand-1/media-assets/init",
+            json=self._payload(asset_type="hack"),
+        )
+        assert resp.status_code == 422
+
+    def test_init_too_large_413(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_brand", lambda _id: _profile())
+        monkeypatch.setattr("config.settings.settings.brand_media_max_bytes", 1000)
+        resp = client.post(
+            "/api/brand-studio/brands/brand-1/media-assets/init",
+            json=self._payload(file_size=999_999),
+        )
+        assert resp.status_code == 413
+
+    def test_init_unsupported_suffix_415(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_brand", lambda _id: _profile())
+        resp = client.post(
+            "/api/brand-studio/brands/brand-1/media-assets/init",
+            json=self._payload(file_name="img.bmp"),
+        )
+        assert resp.status_code == 415
+
+    def test_init_returns_signed_url_with_media_prefix(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_brand", lambda _id: _profile())
+
+        captured_kwargs: dict[str, Any] = {}
+
+        def fake_create(brand_id: str, sha256: str, suffix: str, **kw: Any) -> SignedUploadUrl:
+            captured_kwargs.update(kw)
+            return SignedUploadUrl(
+                upload_url="https://supabase.example/sign/PUT",
+                upload_token="tok",
+                storage_path=f"{brand_id}/media/{sha256}{suffix}",
+                expires_at=datetime.now(UTC) + timedelta(seconds=300),
+            )
+
+        monkeypatch.setattr(brand_studio.storage_signed, "create_upload_url", fake_create)
+        resp = client.post(
+            "/api/brand-studio/brands/brand-1/media-assets/init", json=self._payload()
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert "/media/" in body["storage_path"]
+        assert body["storage_path"].endswith(".png")
+        # 미디어는 brand-media 버킷 + media prefix 로 호출되어야 한다
+        assert captured_kwargs.get("prefix") == "media"
+        assert captured_kwargs.get("bucket") == "brand-media"
+
+    def test_confirm_path_mismatch_400(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_brand", lambda _id: _profile())
+        sha = hashlib.sha256(b"x").hexdigest()
+        resp = client.post(
+            "/api/brand-studio/brands/brand-1/media-assets/confirm",
+            json={
+                "storage_path": "evil/../escape.png",
+                "asset_type": "doctor",
+                "file_name": "img.png",
+                "sha256": sha,
+            },
+        )
+        assert resp.status_code == 400
+
+    def test_confirm_sha256_mismatch_422(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_brand", lambda _id: _profile())
+        client_sha = hashlib.sha256(b"claimed").hexdigest()
+        monkeypatch.setattr(
+            brand_studio.storage_signed,
+            "download_object",
+            lambda _p, **_kw: b"actually different",
+        )
+        removed: dict[str, str] = {}
+        monkeypatch.setattr(
+            brand_studio.storage_signed,
+            "remove_object",
+            lambda p, **_kw: removed.setdefault("path", p) is None or True,
+        )
+        path = f"brand-1/media/{client_sha}.png"
+        resp = client.post(
+            "/api/brand-studio/brands/brand-1/media-assets/confirm",
+            json={
+                "storage_path": path,
+                "asset_type": "doctor",
+                "file_name": "img.png",
+                "sha256": client_sha,
+            },
+        )
+        assert resp.status_code == 422
+        assert removed.get("path") == path
+
+    def test_confirm_persists_record(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_brand", lambda _id: _profile())
+        png = _make_png_bytes(width=200, height=100)
+        sha = hashlib.sha256(png).hexdigest()
+        monkeypatch.setattr(brand_studio.storage_signed, "download_object", lambda _p, **_kw: png)
+
+        captured: dict[str, Any] = {}
+
+        def fake_insert(asset: BrandMediaAsset) -> BrandMediaAsset:
+            captured["asset"] = asset
+            return asset.model_copy(update={"id": "m-confirmed"})
+
+        monkeypatch.setattr(brand_studio.storage, "insert_media_asset", fake_insert)
+
+        path = f"brand-1/media/{sha}.png"
+        resp = client.post(
+            "/api/brand-studio/brands/brand-1/media-assets/confirm",
+            json={
+                "storage_path": path,
+                "asset_type": "facility",
+                "file_name": "img.png",
+                "sha256": sha,
+                "title": "정문",
+            },
+        )
+        assert resp.status_code == 201
+        asset = captured["asset"]
+        assert asset.storage_path == path
+        assert asset.file_path is None
+        assert asset.file_sha256 == sha
+        assert asset.file_size_bytes == len(png)
+        assert asset.width == 200 and asset.height == 100
+        assert asset.orientation == "landscape"
+        assert asset.title == "정문"
+        assert asset.type == "facility"
+
+
 class TestMediaAssetGet:
     def test_get_404(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
         from web.api.routers import brand_studio
@@ -1098,6 +1276,26 @@ class TestMediaAssetDownload:
         assert resp.status_code == 200
         assert resp.headers["content-type"] == "image/png"
         assert resp.content == png
+
+    def test_storage_path_redirects_to_signed_url(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """presigned 자산 (storage_path 만 있음) → 302 redirect to Supabase."""
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(
+            brand_studio.storage,
+            "get_media_asset",
+            lambda _id: _media(file_path=None, storage_path="brand-1/media/abc.png"),
+        )
+        monkeypatch.setattr(
+            brand_studio.storage_signed,
+            "create_download_url",
+            lambda _p, **_kw: "https://supabase.example/signed-download",
+        )
+        resp = client.get("/api/brand-studio/media-assets/m-1/file", follow_redirects=False)
+        assert resp.status_code == 302
+        assert resp.headers["location"] == "https://supabase.example/signed-download"
 
 
 # ── 인증 ────────────────────────────────────────────────────

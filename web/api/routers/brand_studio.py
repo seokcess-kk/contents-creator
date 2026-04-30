@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from application import brand_card_orchestrator as orch
@@ -604,10 +604,16 @@ async def upload_media_asset(
     title: str | None = Form(None),
     description: str | None = Form(None),
 ) -> BrandMediaAsset:
-    """이미지 업로드 → Pillow 검증 → output/brand_assets/{id}/media/{sha256}{ext}.
+    """[DEPRECATED] 이미지 multipart 업로드 → Pillow 검증 → 로컬 디스크.
 
-    asset_type: doctor / facility / equipment / cert / other (free-text, model 주석 참조).
+    Vercel 함수 페이로드 4.5MB 한계로 큰 이미지는 실패. 신규 흐름은
+    `/media-assets/init` + Supabase Storage PUT + `/media-assets/confirm`.
+    CLI/기존 클라이언트 호환을 위해 유지하되 호출 시 deprecation 경고.
     """
+    logger.warning(
+        "media_asset.multipart_upload_deprecated brand_id=%s — use /media-assets/init+confirm",
+        brand_id,
+    )
     if storage.get_brand(brand_id) is None:
         raise HTTPException(status_code=404, detail="Brand not found")
 
@@ -637,6 +643,7 @@ async def upload_media_asset(
         type=asset_type,
         file_path=str(save_path),
         file_sha256=digest,
+        file_size_bytes=len(raw),
         title=title,
         description=description,
         orientation=_orientation_label(width, height),
@@ -644,6 +651,133 @@ async def upload_media_asset(
         height=height,
     )
     return storage.insert_media_asset(record)
+
+
+# ── 12b. media-assets presigned upload (Vercel 4.5MB 우회) ──
+
+
+_VALID_ASSET_TYPES = {"doctor", "facility", "equipment", "cert", "other"}
+
+
+class MediaUploadInitRequest(BaseModel):
+    """미디어 자산 업로드 init — 이미지 메타만 전송."""
+
+    file_name: str = Field(min_length=1, max_length=255)
+    file_size: int = Field(gt=0)
+    sha256: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    asset_type: str = Field(default="other")
+
+
+class MediaUploadInitResponse(BaseModel):
+    upload_url: str
+    upload_token: str | None
+    storage_path: str
+    expires_at: str
+
+
+class MediaUploadConfirmRequest(BaseModel):
+    """업로드 완료 알림 → Storage download → Pillow 검증 → INSERT."""
+
+    storage_path: str = Field(min_length=1)
+    asset_type: str = Field(default="other")
+    file_name: str = Field(min_length=1, max_length=255)
+    sha256: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    title: str | None = None
+    description: str | None = None
+
+
+@router.post("/brands/{brand_id}/media-assets/init", status_code=201)
+def init_media_upload(brand_id: str, req: MediaUploadInitRequest) -> MediaUploadInitResponse:
+    """[1/2] 이미지용 signed PUT URL 발급. brand-media 버킷."""
+    if storage.get_brand(brand_id) is None:
+        raise HTTPException(status_code=404, detail="Brand not found")
+    _validate_asset_type(req.asset_type)
+
+    if req.file_size > settings.brand_media_max_bytes:
+        max_mb = settings.brand_media_max_bytes // (1024 * 1024)
+        raise HTTPException(status_code=413, detail=f"이미지가 너무 큽니다. 최대 {max_mb}MB")
+
+    safe_name = _sanitize_filename(req.file_name)
+    suffix = Path(safe_name).suffix.lower()
+    if suffix not in settings.brand_media_allowed_suffixes:
+        raise HTTPException(
+            status_code=415,
+            detail=(
+                f"지원되지 않는 이미지 형식: {suffix!r} "
+                f"(허용: {list(settings.brand_media_allowed_suffixes)})"
+            ),
+        )
+
+    try:
+        signed = storage_signed.create_upload_url(
+            brand_id,
+            req.sha256,
+            suffix,
+            bucket=settings.brand_media_bucket,
+            prefix="media",
+        )
+    except StorageSignedError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return MediaUploadInitResponse(
+        upload_url=signed.upload_url,
+        upload_token=signed.upload_token,
+        storage_path=signed.storage_path,
+        expires_at=signed.expires_at.isoformat(),
+    )
+
+
+@router.post("/brands/{brand_id}/media-assets/confirm", status_code=201)
+def confirm_media_upload(brand_id: str, req: MediaUploadConfirmRequest) -> BrandMediaAsset:
+    """[2/2] download → sha256 재검증 → Pillow 검증 → INSERT."""
+    if storage.get_brand(brand_id) is None:
+        raise HTTPException(status_code=404, detail="Brand not found")
+    _validate_asset_type(req.asset_type)
+
+    safe_name = _sanitize_filename(req.file_name)
+    suffix = Path(safe_name).suffix.lower()
+    if suffix not in settings.brand_media_allowed_suffixes:
+        raise HTTPException(status_code=415, detail=f"지원되지 않는 이미지 형식: {suffix!r}")
+
+    expected_path = storage_signed.build_storage_path(brand_id, req.sha256, suffix, prefix="media")
+    if req.storage_path != expected_path:
+        raise HTTPException(
+            status_code=400, detail="storage_path 가 init 발급 패턴과 일치하지 않습니다"
+        )
+
+    try:
+        raw = storage_signed.download_object(req.storage_path, bucket=settings.brand_media_bucket)
+    except StorageSignedError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    actual_sha = hashlib.sha256(raw).hexdigest()
+    if actual_sha != req.sha256:
+        storage_signed.remove_object(req.storage_path, bucket=settings.brand_media_bucket)
+        raise HTTPException(status_code=422, detail="sha256 불일치 (변조 또는 중간 손상)")
+
+    width, height = _validate_and_size(raw)
+
+    record = BrandMediaAsset(
+        brand_id=brand_id,
+        type=req.asset_type,
+        storage_path=req.storage_path,
+        file_sha256=req.sha256,
+        file_size_bytes=len(raw),
+        title=req.title,
+        description=req.description,
+        orientation=_orientation_label(width, height),
+        width=width,
+        height=height,
+    )
+    return storage.insert_media_asset(record)
+
+
+def _validate_asset_type(asset_type: str) -> None:
+    if asset_type not in _VALID_ASSET_TYPES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"asset_type 는 {sorted(_VALID_ASSET_TYPES)} 중 하나여야 합니다",
+        )
 
 
 @router.get("/media-assets/{asset_id}")
@@ -656,39 +790,57 @@ def get_media_asset(asset_id: str) -> BrandMediaAsset:
 
 @router.delete("/media-assets/{asset_id}", status_code=204)
 def delete_media_asset(asset_id: str) -> Response:
-    """Hard delete. 디스크 파일도 best-effort 삭제. 미존재 → 404."""
+    """Hard delete. 디스크 파일 / Supabase 객체 모두 best-effort 삭제. 미존재 → 404."""
     asset = storage.get_media_asset(asset_id)
     if asset is None:
         raise HTTPException(status_code=404, detail="Asset not found")
     storage.delete_media_asset(asset_id)
-    try:
-        Path(asset.file_path).unlink(missing_ok=True)
-    except OSError:
-        # 디스크 삭제 실패는 데이터 정합성에 영향 없음 (DB 행은 이미 사라짐)
-        logger.warning("media_asset.disk_unlink_failed path=%s", asset.file_path)
+    if asset.storage_path:
+        # presigned 업로드 자산 — Supabase Storage 에서 객체 제거
+        storage_signed.remove_object(asset.storage_path, bucket=settings.brand_media_bucket)
+    if asset.file_path:
+        try:
+            Path(asset.file_path).unlink(missing_ok=True)
+        except OSError:
+            # 디스크 삭제 실패는 데이터 정합성에 영향 없음 (DB 행은 이미 사라짐)
+            logger.warning("media_asset.disk_unlink_failed path=%s", asset.file_path)
     return Response(status_code=204)
 
 
 @router.get("/media-assets/{asset_id}/file")
-def download_media_asset(asset_id: str) -> FileResponse:
-    """이미지 파일 응답 — img src 또는 다운로드. 디스크 파일 미존재 → 404."""
+def download_media_asset(asset_id: str) -> Response:
+    """이미지 파일 응답 — img src 또는 다운로드.
+
+    storage_path 가 있으면 Supabase signed URL 로 302 redirect (브라우저가 자동
+    follow). 로컬 file_path 만 있으면 FileResponse.
+    """
     asset = storage.get_media_asset(asset_id)
     if asset is None:
         raise HTTPException(status_code=404, detail="Asset not found")
-    path = Path(asset.file_path)
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="Asset file missing on disk")
-    suffix = path.suffix.lower().lstrip(".")
-    media_type = {
-        "jpg": "image/jpeg",
-        "jpeg": "image/jpeg",
-        "png": "image/png",
-        "webp": "image/webp",
-    }.get(
-        suffix,
-        "application/octet-stream",
-    )
-    return FileResponse(path=str(path), media_type=media_type, filename=path.name)
+
+    if asset.storage_path:
+        try:
+            url = storage_signed.create_download_url(
+                asset.storage_path, bucket=settings.brand_media_bucket
+            )
+        except StorageSignedError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        return RedirectResponse(url=url, status_code=302)
+
+    if asset.file_path:
+        path = Path(asset.file_path)
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="Asset file missing on disk")
+        suffix = path.suffix.lower().lstrip(".")
+        media_type = {
+            "jpg": "image/jpeg",
+            "jpeg": "image/jpeg",
+            "png": "image/png",
+            "webp": "image/webp",
+        }.get(suffix, "application/octet-stream")
+        return FileResponse(path=str(path), media_type=media_type, filename=path.name)
+
+    raise HTTPException(status_code=404, detail="Asset has no file or storage path")
 
 
 def _validate_and_size(raw: bytes) -> tuple[int, int]:

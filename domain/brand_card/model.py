@@ -85,13 +85,20 @@ class BrandProfile(BaseModel):
 
 
 class BrandMediaAsset(BaseModel):
-    """brand_media_assets 1행 — 실사 사진 라이브러리."""
+    """brand_media_assets 1행 — 실사 사진 라이브러리.
+
+    저장 위치는 sources 와 동일하게 두 가지가 공존:
+    - `file_path`: 로컬 디스크 경로 (multipart 업로드 — deprecated)
+    - `storage_path`: Supabase Storage 객체 키 (presigned 업로드 — 권장)
+    """
 
     id: str | None = None
     brand_id: str
     type: str  # doctor | facility | equipment | cert | other
-    file_path: str
+    file_path: str | None = None
+    storage_path: str | None = None
     file_sha256: str
+    file_size_bytes: int | None = None
     title: str | None = None
     description: str | None = None
     orientation: str | None = None
