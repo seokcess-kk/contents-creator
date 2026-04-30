@@ -16,6 +16,13 @@ interface PlanEditModalProps {
   onSaved: (updated: BrandCardPlan) => void;
 }
 
+function mediaAssetLabel(m: BrandMediaAsset): string {
+  // file_path (multipart legacy) 또는 storage_path (presigned) 의 basename.
+  const source = m.file_path ?? m.storage_path ?? "";
+  const base = source.split(/[\\/]/).pop();
+  return base || m.id || "(이름 없음)";
+}
+
 export default function PlanEditModal({
   plan,
   onClose,
@@ -219,7 +226,7 @@ function BlockEditor({
             <option value="">(미선택)</option>
             {media.map((m) => (
               <option key={m.id ?? ""} value={m.id ?? ""}>
-                {m.title ?? m.file_path.split(/[\\/]/).pop()} ({m.type})
+                {m.title ?? mediaAssetLabel(m)} ({m.type})
               </option>
             ))}
           </select>
