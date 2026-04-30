@@ -7,7 +7,7 @@ import PublicationForm from "@/components/PublicationForm";
 import PublicationLineage from "@/components/PublicationLineage";
 import PublicationStatusBadge from "@/components/PublicationStatusBadge";
 import RankingTimeline from "@/components/RankingTimeline";
-import { listPublications, type Publication } from "@/lib/api";
+import { getLatestPublicationBySlug, type Publication } from "@/lib/api";
 
 export default function ResultDetailPage({
   params,
@@ -20,12 +20,8 @@ export default function ResultDetailPage({
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
-    // 같은 slug 의 가장 최근 publication 로드
-    listPublications(undefined, 200)
-      .then((data) => {
-        const matched = data.items.find((p) => p.slug === slug) ?? null;
-        setPublication(matched);
-      })
+    getLatestPublicationBySlug(slug)
+      .then((p) => setPublication(p))
       .catch(() => setPublication(null));
   }, [slug, refreshKey]);
 

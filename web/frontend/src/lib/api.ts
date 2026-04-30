@@ -129,6 +129,7 @@ export interface Publication {
   workflow_status?: string;
   visibility_status?: string;
   held_until?: string | null;
+  keyword_difficulty_snapshot_id?: string | null;
 }
 
 export interface RankingSnapshot {
@@ -220,6 +221,10 @@ export function triggerBulkCheck(
 
 export function getPublicationTimeline(publicationId: string): Promise<RankingTimeline> {
   return fetchJson(`/rankings/publications/${encodeURIComponent(publicationId)}`);
+}
+
+export function getLatestPublicationBySlug(slug: string): Promise<Publication> {
+  return fetchJson(`/rankings/publications/by-slug/${encodeURIComponent(slug)}`);
 }
 
 export interface PublicationEvent {

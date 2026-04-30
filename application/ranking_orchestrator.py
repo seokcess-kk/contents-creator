@@ -97,8 +97,10 @@ def register_publication(
             "publication.duplicate keyword=%r url=%s — returning existing", keyword, normalized
         )
         _ensure_keyword_difficulty_attached(existing)
+        _attach_generated_content(existing)
         return existing
     _ensure_keyword_difficulty_attached(inserted)
+    _attach_generated_content(inserted)
     return inserted
 
 
@@ -248,8 +250,10 @@ def update_publication(
         if refreshed is not None:
             updated = refreshed
         _ensure_keyword_difficulty_attached(updated)
+        _attach_generated_content(updated)
     elif updated.url is not None and (keyword is not None or normalized_url is not None):
         _ensure_keyword_difficulty_attached(updated, force=keyword is not None)
+        _attach_generated_content(updated)
     return updated
 
 
@@ -277,6 +281,37 @@ def _ensure_keyword_difficulty_attached(publication: Publication, *, force: bool
             "publication.keyword_difficulty_attach_failed publication_id=%s keyword=%r",
             publication.id,
             publication.keyword,
+            exc_info=True,
+        )
+
+
+def _attach_generated_content(publication: Publication) -> None:
+    """Link generated content rows to the publication by job_id first, then slug."""
+    if publication.id is None or publication.url is None:
+        return
+    if not publication.job_id and not publication.slug:
+        return
+
+    try:
+        from config.supabase import get_client
+
+        client = get_client()
+        payload = {"publication_id": publication.id}
+        if publication.job_id:
+            client.table("generated_contents").update(payload).eq(
+                "job_id", publication.job_id
+            ).execute()
+            return
+        if publication.slug:
+            client.table("generated_contents").update(payload).eq(
+                "slug", publication.slug
+            ).execute()
+    except Exception:
+        logger.warning(
+            "publication.generated_content_attach_failed publication_id=%s slug=%r job_id=%r",
+            publication.id,
+            publication.slug,
+            publication.job_id,
             exc_info=True,
         )
 

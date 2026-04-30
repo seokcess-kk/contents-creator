@@ -897,12 +897,14 @@ def _save_generated_to_supabase(
     """
     try:
         from config.supabase import get_client
+        from application.job_context import current_job_id
 
         client = get_client()
         pc_result = (
             client.table("pattern_cards")
             .select("id")
             .eq("keyword", keyword)
+            .eq("slug", slug)
             .order("created_at", desc=True)
             .limit(1)
             .execute()
@@ -912,7 +914,9 @@ def _save_generated_to_supabase(
         client.table("generated_contents").insert(
             {
                 "pattern_card_id": pc_id,
+                "keyword": keyword,
                 "slug": slug,
+                "job_id": current_job_id(),
                 "outline_md": outline_md,
                 "content_md": content_md,
                 "content_html": content_html,

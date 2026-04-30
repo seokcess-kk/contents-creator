@@ -104,6 +104,19 @@ class TestGetPublication:
         assert result is not None
         assert result.keyword == "kw"
 
+    def test_get_latest_by_slug(self, mock_client: MagicMock) -> None:
+        table = MagicMock()
+        table.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = MagicMock(
+            data=[_publication_row()]
+        )
+        mock_client.table.return_value = table
+
+        result = storage.get_latest_publication_by_slug("kw-slug")
+
+        assert result is not None
+        assert result.slug == "kw-slug"
+        table.select.return_value.eq.assert_called_once_with("slug", "kw-slug")
+
 
 class TestListPublications:
     def test_no_keyword_filter(self, mock_client: MagicMock) -> None:

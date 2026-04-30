@@ -107,6 +107,23 @@ class TestListPublications:
         assert body["count"] == 1
 
 
+class TestGetPublicationBySlug:
+    def test_returns_latest_publication(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(storage, "get_latest_publication_by_slug", lambda slug: _publication(slug=slug))
+
+        resp = client.get("/api/rankings/publications/by-slug/kw-slug")
+
+        assert resp.status_code == 200
+        assert resp.json()["slug"] == "kw-slug"
+
+    def test_404_when_missing(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(storage, "get_latest_publication_by_slug", lambda slug: None)
+
+        resp = client.get("/api/rankings/publications/by-slug/missing")
+
+        assert resp.status_code == 404
+
+
 class TestGetPublicationWithTimeline:
     def test_404_when_missing(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(ranking_orchestrator, "get_publication_timeline", lambda *_, **__: None)

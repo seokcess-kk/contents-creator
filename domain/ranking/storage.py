@@ -59,6 +59,20 @@ def get_publication_by_url(url: str) -> Publication | None:
     return _row_to_publication(cast("dict[str, Any]", rows[0])) if rows else None
 
 
+def get_latest_publication_by_slug(slug: str) -> Publication | None:
+    client = get_client()
+    result = (
+        client.table(_PUB_TABLE)
+        .select("*")
+        .eq("slug", slug)
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    return _row_to_publication(cast("dict[str, Any]", rows[0])) if rows else None
+
+
 def update_publication(
     publication_id: str,
     *,

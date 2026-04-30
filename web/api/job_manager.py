@@ -24,6 +24,7 @@ from application.models import (
     PipelineResult,
     ValidateResult,
 )
+from application.job_context import job_id_var
 from application.orchestrator import (
     run_analyze_only,
     run_generate_only,
@@ -220,6 +221,7 @@ class JobManager:
 
         reporter = WebSocketProgressReporter(job.id, self.event_bus, job)
 
+        token = job_id_var.set(job.id)
         try:
             result = self._dispatch(job, reporter)
             # timeout/cancel 이 먼저 터졌으면 그 상태를 유지
@@ -236,6 +238,7 @@ class JobManager:
                     job.id, {"type": "pipeline_error", "stage": "unknown", "error": str(exc)}
                 )
         finally:
+            job_id_var.reset(token)
             job.finished_at = datetime.now(tz=UTC)
             self.event_bus.emit(job.id, {"type": "job_status", "status": job.status})
             for hook in self._on_finished_hooks:

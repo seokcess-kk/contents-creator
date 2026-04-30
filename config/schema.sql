@@ -29,6 +29,9 @@ create table if not exists generated_contents (
     id uuid primary key default gen_random_uuid(),
     pattern_card_id uuid references pattern_cards(id) on delete cascade,
     created_at timestamptz default now(),
+    keyword text,
+    slug text,
+    job_id text,
     outline_md text,
     content_md text,
     content_html text,
@@ -39,6 +42,12 @@ create table if not exists generated_contents (
 
 create index if not exists idx_generated_contents_card
     on generated_contents (pattern_card_id, created_at desc);
+
+create index if not exists idx_generated_contents_slug
+    on generated_contents (slug, created_at desc);
+
+create index if not exists idx_generated_contents_job
+    on generated_contents (job_id, created_at desc);
 
 
 -- ============================================================
@@ -200,6 +209,15 @@ create index if not exists idx_publications_keyword
 
 create index if not exists idx_publications_slug
     on publications (slug);
+
+alter table generated_contents
+    add column if not exists keyword text,
+    add column if not exists slug text,
+    add column if not exists job_id text,
+    add column if not exists publication_id uuid references publications(id) on delete set null;
+
+create index if not exists idx_generated_contents_publication
+    on generated_contents (publication_id, created_at desc);
 
 
 -- ============================================================

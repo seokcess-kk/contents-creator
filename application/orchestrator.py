@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import contextvars
 import logging
 import re
 import subprocess
@@ -29,18 +28,13 @@ from application.models import (
     StageStatus,
     ValidateResult,
 )
+from application.job_context import current_job_id
 from application.progress import JobCancelled, LoggingProgressReporter, ProgressReporter
 from application.usage_tracker import save_usage_to_supabase, summarize_usages
 from config.settings import settings
 from domain.common.usage import collect_usage, record_usage, reset_usage, run_in_isolated_usage_ctx
 
 logger = logging.getLogger(__name__)
-
-# 웹 UI 에서 주입하는 job_id (contextvars 로 전달)
-_job_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-    "pipeline_job_id", default=None
-)
-
 
 def _harvest_usage(stage: str, keyword: str) -> dict[str, object]:
     """단계 종료 후 usage 수확 + Supabase 저장. summary dict 반환.
@@ -51,9 +45,7 @@ def _harvest_usage(stage: str, keyword: str) -> dict[str, object]:
     usages = collect_usage()
     if not usages:
         return {}
-    saved = save_usage_to_supabase(
-        usages, job_id=_job_id_var.get(None), keyword=keyword, stage=stage
-    )
+    saved = save_usage_to_supabase(usages, job_id=current_job_id(), keyword=keyword, stage=stage)
     summary: dict[str, object] = {"usage": summarize_usages(usages)}
     if not saved:
         summary["supabase_saved"] = False

@@ -139,6 +139,17 @@ def list_publications(
     }
 
 
+@router.get("/publications/by-slug/{slug}")
+def get_latest_publication_by_slug(slug: str) -> dict[str, Any]:
+    """slug 기준 최신 publication 조회. 결과 상세 화면 초기 로딩 최적화용."""
+    from domain.ranking import storage
+
+    publication = storage.get_latest_publication_by_slug(slug)
+    if publication is None:
+        raise HTTPException(status_code=404, detail="publication 미존재")
+    return publication.model_dump(mode="json")
+
+
 @router.get("/publications/{publication_id}")
 def get_publication_with_timeline(publication_id: str) -> dict[str, Any]:
     """단건 publication + 최근 90개 snapshot timeline."""

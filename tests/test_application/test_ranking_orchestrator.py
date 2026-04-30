@@ -34,6 +34,17 @@ def keyword_difficulty_mock(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     return analyze_mock
 
 
+@pytest.fixture(autouse=True)
+def generated_content_client_mock(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    import config.supabase as supabase_config
+
+    client = MagicMock()
+    table = client.table.return_value
+    table.update.return_value.eq.return_value.execute.return_value = MagicMock(data=[])
+    monkeypatch.setattr(supabase_config, "get_client", lambda: client)
+    return client
+
+
 @pytest.fixture
 def brightdata_mock(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     """BrightDataClient 생성자 자체를 mock."""
@@ -119,7 +130,10 @@ class TestRegisterPublication:
         assert result.slug is None
 
     def test_attaches_keyword_difficulty_for_published_url(
-        self, storage_mock: MagicMock, keyword_difficulty_mock: MagicMock
+        self,
+        storage_mock: MagicMock,
+        keyword_difficulty_mock: MagicMock,
+        generated_content_client_mock: MagicMock,
     ) -> None:
         publication = _publication()
         storage_mock.insert_publication.return_value = publication
@@ -130,6 +144,7 @@ class TestRegisterPublication:
 
         keyword_difficulty_mock.assert_called_once_with("kw", persist=True)
         storage_mock.update_publication_keyword_difficulty.assert_called_once_with("pub-1", "kd-1")
+        generated_content_client_mock.table.assert_called_with("generated_contents")
 
     def test_draft_does_not_attach_keyword_difficulty(self, storage_mock: MagicMock) -> None:
         storage_mock.insert_publication.return_value = _publication(url=None, slug=None)
@@ -285,6 +300,22 @@ class TestKeywordDifficultyAttach:
         ranking_orchestrator._ensure_keyword_difficulty_attached(publication)
 
         storage_mock.update_publication_keyword_difficulty.assert_not_called()
+
+    def test_attach_generated_content_prefers_job_id(
+        self, generated_content_client_mock: MagicMock
+    ) -> None:
+        ranking_orchestrator._attach_generated_content(_publication(job_id="job-1", slug="slug-1"))
+
+        table = generated_content_client_mock.table.return_value
+        table.update.return_value.eq.assert_called_once_with("job_id", "job-1")
+
+    def test_attach_generated_content_falls_back_to_slug(
+        self, generated_content_client_mock: MagicMock
+    ) -> None:
+        ranking_orchestrator._attach_generated_content(_publication(job_id=None, slug="slug-1"))
+
+        table = generated_content_client_mock.table.return_value
+        table.update.return_value.eq.assert_called_once_with("slug", "slug-1")
 
 
 class TestDeletePublication:
