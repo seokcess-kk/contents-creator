@@ -26,6 +26,47 @@ LOW_BLOG_SLOTS_THRESHOLD = 5  # B ≥ 5 면 SOV 점유 유리
 SPAM_WEIGHT = 1.5  # D 1개당 +1.5
 BLOG_WEIGHT = 3.0  # B 1개당 -3.0
 
+# SERP 슬롯 수만으로는 전국 대표/의료 고전환 키워드가 과소평가될 수 있다.
+# 아래 보정값은 지면 진입성에 운영 난이도와 검수 리스크를 함께 반영한다.
+KEYWORD_ADJUSTMENT_HIGH_RISK = 12.0
+KEYWORD_ADJUSTMENT_MEDICAL_INTENT = 6.0
+
+_NATIONAL_HIGH_RISK_KEYWORDS = {
+    "다이어트약",
+    "다이어트한약",
+    "다이어트한의원",
+    "다이어트병원",
+    "비만치료",
+    "다이어트약처방",
+    "식욕억제제",
+    "식욕억제제처방",
+    "다이어트약처방병원",
+    "다이어트한약가격",
+    "다이어트한약후기",
+    "다이어트한약추천",
+}
+_MEDICAL_INTENT_TERMS = (
+    "병원",
+    "한의원",
+    "의원",
+    "클리닉",
+    "한약",
+    "약",
+    "처방",
+    "주사",
+    "비만치료",
+)
+_HIGH_CONVERSION_RISK_TERMS = (
+    "가격",
+    "비용",
+    "금액",
+    "후기",
+    "추천",
+    "유명",
+    "성지",
+    "확실",
+)
+
 # ── SOV 가치 임계값 (검색량 + 경쟁강도) ─────────────────────────
 # 운영 데이터 누적 후 조정 가능. 본 모듈이 단일 출처.
 
@@ -44,7 +85,7 @@ def score_difficulty(
 ) -> KeywordDifficulty:
     """SERP 구성을 받아 점수 + 등급을 산출한다.
 
-    score = D × SPAM_WEIGHT - B × BLOG_WEIGHT
+    score = D × SPAM_WEIGHT - B × BLOG_WEIGHT + keyword_adjustment
 
     Grade 판정 (우선순위 순):
     1. MISSING: T < 8 또는 B = 0
@@ -58,8 +99,12 @@ def score_difficulty(
     spam = composition.spam_cards
     total = composition.total_cards
 
-    score = round(spam * SPAM_WEIGHT - blog * BLOG_WEIGHT, 2)
-    grade = _decide_grade(blog=blog, spam=spam, total=total)
+    keyword_adjustment = _keyword_adjustment(keyword)
+    score = round(spam * SPAM_WEIGHT - blog * BLOG_WEIGHT + keyword_adjustment, 2)
+    grade = _apply_keyword_floor(
+        _decide_grade(blog=blog, spam=spam, total=total),
+        keyword=keyword,
+    )
     sov_grade = score_sov_value(search_volume)
 
     return KeywordDifficulty(
@@ -128,3 +173,49 @@ def _decide_grade(*, blog: int, spam: int, total: int) -> DifficultyGrade:
         return DifficultyGrade.LOW
 
     return DifficultyGrade.MEDIUM
+
+
+def _keyword_adjustment(keyword: str) -> float:
+    normalized = _normalize_keyword(keyword)
+    if normalized in _NATIONAL_HIGH_RISK_KEYWORDS:
+        return KEYWORD_ADJUSTMENT_HIGH_RISK
+
+    if _has_medical_intent(normalized) or _has_high_conversion_risk(normalized):
+        return KEYWORD_ADJUSTMENT_MEDICAL_INTENT
+
+    return 0.0
+
+
+def _apply_keyword_floor(base: DifficultyGrade, *, keyword: str) -> DifficultyGrade:
+    if base == DifficultyGrade.MISSING:
+        return base
+
+    normalized = _normalize_keyword(keyword)
+    if normalized in _NATIONAL_HIGH_RISK_KEYWORDS:
+        return DifficultyGrade.HIGH
+
+    if _has_medical_intent(normalized) or _has_high_conversion_risk(normalized):
+        return _max_grade(base, DifficultyGrade.MEDIUM)
+
+    return base
+
+
+def _max_grade(a: DifficultyGrade, b: DifficultyGrade) -> DifficultyGrade:
+    order = {
+        DifficultyGrade.LOW: 0,
+        DifficultyGrade.MEDIUM: 1,
+        DifficultyGrade.HIGH: 2,
+    }
+    return a if order[a] >= order[b] else b
+
+
+def _normalize_keyword(keyword: str) -> str:
+    return "".join(keyword.split()).lower()
+
+
+def _has_medical_intent(keyword: str) -> bool:
+    return any(term in keyword for term in _MEDICAL_INTENT_TERMS)
+
+
+def _has_high_conversion_risk(keyword: str) -> bool:
+    return any(term in keyword for term in _HIGH_CONVERSION_RISK_TERMS)

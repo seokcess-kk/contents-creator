@@ -83,13 +83,25 @@ class TestGrade:
 
     def test_medium_when_3_or_4_slots(self) -> None:
         c = _composition(blog_view=3, ad=5, other=4)  # B=3, T=12, D=5
-        result = score_difficulty("비만치료", c)
+        result = score_difficulty("운동방법", c)
         assert result.grade == DifficultyGrade.MEDIUM
 
     def test_medium_when_few_slots_but_low_spam(self) -> None:
         # B=2, T=15, D=5, ratio=0.33 → HIGH 분기 미해당
         c = _composition(blog_view=2, ad=3, place=2, other=8)
         result = score_difficulty("작은키워드", c)
+        assert result.grade == DifficultyGrade.MEDIUM
+
+    def test_high_risk_national_keyword_is_not_low_despite_many_blog_slots(self) -> None:
+        # B=6이면 슬롯 기준으로는 LOW지만, 전국 대표 의료 키워드는 보정으로 HIGH.
+        c = _composition(blog_view=4, influencer=2, ad=5, place=3, other=8)
+        result = score_difficulty("다이어트한의원", c)
+        assert result.grade == DifficultyGrade.HIGH
+
+    def test_medical_intent_keyword_is_at_least_medium(self) -> None:
+        # 지역+한의원 키워드는 블로그 슬롯이 많아도 단순 유리로 낮추지 않는다.
+        c = _composition(blog_view=4, influencer=2, place=3, ad=2, other=4)
+        result = score_difficulty("천안다이어트한의원", c)
         assert result.grade == DifficultyGrade.MEDIUM
 
 
@@ -106,6 +118,12 @@ class TestScore:
         # 1*1.5 - 1*3.0 = -1.5
         result = score_difficulty("test", c)
         assert result.score == -1.5
+
+    def test_score_includes_keyword_adjustment(self) -> None:
+        c = _composition(blog_view=4, influencer=2, ad=5, place=3, other=8)
+        # Base score: D=8, B=6 → 8*1.5 - 6*3 = -6. High-risk keyword adds +12.
+        result = score_difficulty("다이어트한의원", c)
+        assert result.score == 6.0
 
 
 @pytest.mark.parametrize(
@@ -125,7 +143,7 @@ class TestScore:
         (
             "천안다이어트한의원_가상",
             _composition(blog_view=4, influencer=2, place=3, ad=2, other=4),
-            DifficultyGrade.LOW,
+            DifficultyGrade.MEDIUM,
         ),
         (
             "비만치료_가상",
