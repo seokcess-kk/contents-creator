@@ -1,4 +1,11 @@
-import type { Job, JobSubmitResponse, RecentResult } from "@/types";
+import type {
+  DifficultyGrade,
+  Job,
+  JobSubmitResponse,
+  KeywordDifficulty,
+  RecentResult,
+  SovValueGrade,
+} from "@/types";
 
 // Same-origin BFF. admin API 키는 서버사이드 `src/proxy.ts` 에서 주입되므로
 // 클라이언트는 `/api/*` same-origin 으로만 호출한다. NEXT_PUBLIC_API_KEY 는
@@ -293,6 +300,8 @@ export interface OperationsSummary {
   dismissed: number;
   draft: number;
   total: number;
+  difficulty_missing: number;
+  difficulty_stale: number;
 }
 
 export type QueueTab =
@@ -311,6 +320,19 @@ export interface QueueItem extends Publication {
   parent_publication_id: string | null;
   priority_score: number | null;
   republishing_started_at: string | null;
+  keyword_difficulty: {
+    keyword: string;
+    grade: DifficultyGrade;
+    score: number;
+    blog_slots: number;
+    spam_cards: number;
+    total_cards: number;
+    monthly_total_search: number | null;
+    sov_grade: SovValueGrade;
+    checked_at: string | null;
+    is_stale: boolean;
+    stale_after_days: number;
+  } | null;
   latest_snapshot: {
     captured_at: string | null;
     section: string | null;
@@ -467,7 +489,6 @@ export function listRankingSnapshots(
 }
 
 // 키워드 노출 난이도 분석 (Phase K)
-import type { DifficultyGrade, KeywordDifficulty } from "@/types";
 
 export function analyzeKeywordDifficulty(keyword: string): Promise<KeywordDifficulty> {
   return fetchJson(`/keyword-difficulty/analyze`, {

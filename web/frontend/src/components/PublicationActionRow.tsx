@@ -20,8 +20,8 @@ interface PublicationActionRowProps {
 const REASON_LABELS: Record<string, string> = {
   no_publication: "발행 URL 미등록",
   no_measurement: "측정 누락",
-  never_indexed: "한 번도 미노출",
-  lost_visibility: "노출 후 이탈",
+  never_indexed: "미노출",
+  lost_visibility: "노출 이탈",
   cannibalization: "카니발라이제이션",
 };
 
@@ -33,9 +33,6 @@ const VIS_LABELS: Record<string, string> = {
   persistent_off: "지속 미노출",
 };
 
-/**
- * 운영 홈 큐의 한 항목 행. 키워드 + 상태 뱃지 + 최신 진단 + 인라인 액션.
- */
 export default function PublicationActionRow({ item, onChanged }: PublicationActionRowProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,11 +40,9 @@ export default function PublicationActionRow({ item, onChanged }: PublicationAct
   const [republishOpen, setRepublishOpen] = useState(false);
 
   const wf = item.workflow_status;
-  const vis = item.visibility_status;
   const latest = item.latest_snapshot;
   const diagnosis = item.latest_diagnosis;
   const noPosition = !latest || latest.position === null;
-
   const latestText = latest
     ? latest.position === null
       ? "미노출"
@@ -73,7 +68,6 @@ export default function PublicationActionRow({ item, onChanged }: PublicationAct
     }
   }
 
-
   return (
     <div
       className={`border rounded px-3 py-1.5 border-l-4 ${
@@ -91,7 +85,8 @@ export default function PublicationActionRow({ item, onChanged }: PublicationAct
           {item.keyword}
         </Link>
         <WorkflowBadge status={wf} />
-        <VisibilityBadge status={vis} />
+        <VisibilityBadge status={item.visibility_status} />
+        <KeywordDifficultyBadge difficulty={item.keyword_difficulty} />
         {item.held_until && wf === "held" && (
           <span
             className="text-[10px] text-gray-600 truncate max-w-[200px]"
@@ -111,7 +106,7 @@ export default function PublicationActionRow({ item, onChanged }: PublicationAct
             title={item.url}
             className="text-xs text-blue-700 hover:underline shrink-0"
           >
-            ↗
+            원문
           </a>
         )}
         <span
@@ -201,11 +196,7 @@ export default function PublicationActionRow({ item, onChanged }: PublicationAct
             <button
               type="button"
               disabled={busy}
-              onClick={() =>
-                handleAction(async () => {
-                  await deletePublication(item.id);
-                })
-              }
+              onClick={() => handleAction(() => deletePublication(item.id))}
               className="px-2.5 py-0.5 text-xs text-gray-600 hover:text-gray-900"
             >
               삭제
@@ -269,104 +260,30 @@ function formatHeldUntil(heldUntil: string): string {
     now.getDate(),
   ).getTime();
   const diffDays = Math.round((targetDay - todayDay) / dayMs);
-  if (diffDays < 0) return "만료됨 — 큐 복귀 대기";
+  if (diffDays < 0) return "만료됨 · 복구 대기";
   if (diffDays === 0) return "오늘 만료";
-  if (diffDays === 1) return "내일 큐 복귀";
-  return `${diffDays}일 후 재확인`;
+  if (diffDays === 1) return "내일 복구";
+  return `${diffDays}일 후 복구`;
 }
 
 type DiagnosisLike = NonNullable<QueueItem["latest_diagnosis"]>;
 
-function formatDiagnosisLines(reason: string, m: Record<string, unknown>): string[] {
-  const lines: string[] = [];
-  const num = (k: string) => (typeof m[k] === "number" ? (m[k] as number) : undefined);
-  const str = (k: string) => (typeof m[k] === "string" ? (m[k] as string) : undefined);
-  switch (reason) {
-    case "lost_visibility": {
-      const streak = num("null_streak");
-      const bestPos = num("best_position");
-      const bestSec = str("best_section");
-      const lastSeen = str("last_seen_at");
-      const hist = num("historical_count");
-      if (streak !== undefined) lines.push(`최근 ${streak}회 측정 미노출`);
-      if (bestPos !== undefined) {
-        const d = lastSeen
-          ? new Date(lastSeen).toLocaleDateString("ko-KR", {
-              month: "numeric",
-              day: "numeric",
-            })
-          : null;
-        lines.push(
-          `마지막 노출: ${bestSec ?? "?"} ${bestPos}위${d ? ` (${d})` : ""}`,
-        );
-      }
-      if (hist !== undefined) lines.push(`과거 ${hist}회 노출 이력`);
-      break;
-    }
-    case "never_indexed": {
-      const days = num("days_since_publish");
-      const mc = num("measurement_count");
-      if (days !== undefined) lines.push(`발행 후 D+${days}`);
-      if (mc !== undefined) lines.push(`총 ${mc}회 측정 모두 미노출`);
-      break;
-    }
-    case "cannibalization": {
-      const rank = num("competing_rank");
-      const sec = str("competing_section");
-      const sa = num("same_author_count");
-      if (rank !== undefined)
-        lines.push(`동일 작성자 다른 글이 ${sec ?? "?"} ${rank}위 점유`);
-      if (sa !== undefined && sa > 1)
-        lines.push(`동일 작성자 다른 글 ${sa}개 발견`);
-      break;
-    }
-    case "no_measurement": {
-      const sc = num("snapshot_count");
-      if (sc !== undefined) lines.push(`측정 기록 ${sc}회`);
-      break;
-    }
-  }
-  return lines;
-}
-
 function DiagnosisBadge({ diagnosis }: { diagnosis: DiagnosisLike }) {
   const label = REASON_LABELS[diagnosis.reason] ?? diagnosis.reason;
   const confidence = Math.round(diagnosis.confidence * 100);
-  const detailLines = formatDiagnosisLines(diagnosis.reason, diagnosis.metrics);
+  const title = [
+    `${label} · 신뢰도 ${confidence}%`,
+    ...diagnosis.evidence,
+    diagnosis.recommended_action ? `추천: ${diagnosis.recommended_action}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
   return (
-    <span className="relative group shrink-0">
-      <span className="text-[11px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-medium cursor-help">
-        {label} ({confidence}%)
-      </span>
-      <div className="absolute left-0 top-full mt-1 hidden group-hover:block z-30 w-[320px] bg-white border border-gray-300 rounded shadow-lg p-3 text-xs text-gray-800">
-        <div className="font-semibold text-gray-900 mb-1">
-          {label} <span className="text-gray-500 font-normal">· 신뢰도 {confidence}%</span>
-        </div>
-        {detailLines.length > 0 && (
-          <ul className="list-disc list-inside text-gray-700 space-y-0.5 mb-2">
-            {detailLines.map((line, i) => (
-              <li key={i}>{line}</li>
-            ))}
-          </ul>
-        )}
-        {diagnosis.evidence.length > 0 && (
-          <div className="border-t border-gray-100 pt-2 mb-2">
-            <div className="text-[10px] uppercase text-gray-500 font-semibold mb-1">
-              근거
-            </div>
-            <ul className="list-disc list-inside text-gray-700 space-y-0.5">
-              {diagnosis.evidence.map((e, i) => (
-                <li key={i}>{e}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {diagnosis.recommended_action && (
-          <div className="border-t border-gray-100 pt-2 text-blue-800">
-            → {diagnosis.recommended_action}
-          </div>
-        )}
-      </div>
+    <span
+      className="text-[11px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-medium cursor-help shrink-0"
+      title={title}
+    >
+      {label} ({confidence}%)
     </span>
   );
 }
@@ -404,6 +321,64 @@ function VisibilityBadge({ status }: { status: string }) {
   return (
     <span className="px-1.5 py-0.5 text-[10px] rounded bg-gray-50 text-gray-600">
       {VIS_LABELS[status] ?? status}
+    </span>
+  );
+}
+
+type DifficultyLike = QueueItem["keyword_difficulty"];
+
+function KeywordDifficultyBadge({ difficulty }: { difficulty: DifficultyLike }) {
+  if (!difficulty) {
+    return (
+      <span
+        className="px-1.5 py-0.5 text-[10px] rounded bg-gray-100 text-gray-500"
+        title="이 키워드의 노출 난이도 스냅샷이 아직 없습니다."
+      >
+        난이도 미등록
+      </span>
+    );
+  }
+
+  const gradeMap: Record<string, { label: string; className: string }> = {
+    missing: { label: "노출 불가", className: "bg-gray-100 text-gray-700" },
+    high: { label: "난이도 상", className: "bg-rose-100 text-rose-800" },
+    medium: { label: "난이도 중", className: "bg-amber-100 text-amber-800" },
+    low: { label: "난이도 하", className: "bg-emerald-100 text-emerald-800" },
+  };
+  const grade = gradeMap[difficulty.grade] ?? {
+    label: difficulty.grade,
+    className: "bg-gray-100 text-gray-700",
+  };
+  const volume =
+    difficulty.monthly_total_search === null
+      ? "검색량 없음"
+      : `월 ${difficulty.monthly_total_search.toLocaleString("ko-KR")}`;
+  const title = [
+    `${difficulty.keyword} / ${grade.label}`,
+    `점수 ${difficulty.score}`,
+    `B ${difficulty.blog_slots} / D ${difficulty.spam_cards} / T ${difficulty.total_cards}`,
+    volume,
+    `SOV ${difficulty.sov_grade}`,
+    difficulty.checked_at
+      ? `측정 ${new Date(difficulty.checked_at).toLocaleDateString("ko-KR")}`
+      : "측정일 없음",
+  ].join("\n");
+
+  return (
+    <span className="inline-flex items-center gap-1 shrink-0" title={title}>
+      <span className={`px-1.5 py-0.5 text-[10px] rounded ${grade.className}`}>
+        {grade.label}
+      </span>
+      {difficulty.monthly_total_search !== null && (
+        <span className="px-1.5 py-0.5 text-[10px] rounded bg-blue-50 text-blue-700">
+          {difficulty.monthly_total_search.toLocaleString("ko-KR")}
+        </span>
+      )}
+      {difficulty.is_stale && (
+        <span className="px-1.5 py-0.5 text-[10px] rounded bg-gray-100 text-gray-600">
+          재측정
+        </span>
+      )}
     </span>
   );
 }

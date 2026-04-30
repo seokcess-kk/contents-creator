@@ -1,14 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import BulkCheckDialog from "@/components/BulkCheckDialog";
 import BulkRegisterDialog from "@/components/BulkRegisterDialog";
 import ExternalUrlForm from "@/components/ExternalUrlForm";
 import PublicationActionRow from "@/components/PublicationActionRow";
 import {
-  getOperationsSummary,
   getOperationsQueue,
+  getOperationsSummary,
   type OperationsSummary,
   type QueueItem,
   type QueueTab,
@@ -42,22 +42,22 @@ function sortItems(items: QueueItem[], sortBy: SortKey): QueueItem[] {
   const copy = [...items];
   switch (sortBy) {
     case "diagnosis_recent":
-      return copy.sort((a, b) => {
-        const aTs = a.latest_diagnosis?.diagnosed_at ?? "";
-        const bTs = b.latest_diagnosis?.diagnosed_at ?? "";
-        return bTs.localeCompare(aTs); // desc, 빈 문자열은 뒤로
-      });
+      return copy.sort((a, b) =>
+        (b.latest_diagnosis?.diagnosed_at ?? "").localeCompare(
+          a.latest_diagnosis?.diagnosed_at ?? "",
+        ),
+      );
     case "rank_best":
       return copy.sort((a, b) => {
         const aRank = a.latest_snapshot?.position ?? 999;
         const bRank = b.latest_snapshot?.position ?? 999;
-        return aRank - bRank; // asc — 1위가 위로
+        return aRank - bRank;
       });
     case "rank_worst":
       return copy.sort((a, b) => {
         const aRank = a.latest_snapshot?.position ?? 0;
         const bRank = b.latest_snapshot?.position ?? 0;
-        return bRank - aRank; // desc — 100위가 위로, 미측정(0)은 아래
+        return bRank - aRank;
       });
     case "keyword_asc":
       return copy.sort((a, b) => a.keyword.localeCompare(b.keyword, "ko"));
@@ -68,11 +68,6 @@ function sortItems(items: QueueItem[], sortBy: SortKey): QueueItem[] {
   }
 }
 
-/**
- * 운영 홈 — 키워드 포트폴리오 운영 OS 의 메인 진입점.
- * 사용자가 매일 처리할 작업 큐 중심 UI.
- * SPEC-RANKING.md Phase 1 운영 홈.
- */
 export default function OperationsHomePage() {
   const [summary, setSummary] = useState<OperationsSummary | null>(null);
   const [tab, setTab] = useState<QueueTab>("action_required");
@@ -105,24 +100,24 @@ export default function OperationsHomePage() {
     void load();
   }, [load]);
 
-  const filterLower = filter.trim().toLowerCase();
-  const filtered = sortItems(
-    filterLower
+  const filtered = useMemo(() => {
+    const filterLower = filter.trim().toLowerCase();
+    const visible = filterLower
       ? items.filter(
           (i) =>
             i.keyword.toLowerCase().includes(filterLower) ||
             (i.slug ?? "").toLowerCase().includes(filterLower) ||
             (i.url ?? "").toLowerCase().includes(filterLower),
         )
-      : items,
-    sortBy,
-  );
+      : items;
+    return sortItems(visible, sortBy);
+  }, [filter, items, sortBy]);
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <Link href="/" className="text-sm text-blue-700 hover:underline">
-          ← 대시보드
+          대시보드
         </Link>
         <h1 className="text-lg font-bold text-gray-900">운영 홈</h1>
         <div className="flex items-center gap-3">
@@ -131,20 +126,18 @@ export default function OperationsHomePage() {
             onClick={() => setBulkCheckOpen(true)}
             className="text-sm text-amber-700 hover:underline"
           >
-            🔄 일괄 측정
+            순위 일괄 측정
           </button>
           <Link
             href="/rankings/calendar"
             className="text-sm text-blue-700 hover:underline"
           >
-            월별 캘린더 →
+            월별 캘린더
           </Link>
         </div>
       </div>
 
-      {bulkCheckOpen && (
-        <BulkCheckDialog onClose={() => setBulkCheckOpen(false)} />
-      )}
+      {bulkCheckOpen && <BulkCheckDialog onClose={() => setBulkCheckOpen(false)} />}
 
       {summary && <SummaryCards summary={summary} />}
 
@@ -156,9 +149,9 @@ export default function OperationsHomePage() {
           type="button"
           onClick={() => setBulkOpen(true)}
           className="shrink-0 px-3 py-2 text-xs border border-emerald-300 text-emerald-800 rounded hover:bg-emerald-50"
-          title="외부 URL 대량 등록 (CSV/TSV 붙여넣기)"
+          title="외부 URL 대량 등록"
         >
-          📋 대량 등록
+          대량 등록
         </button>
       </div>
 
@@ -254,9 +247,11 @@ function SummaryCards({ summary }: { summary: OperationsSummary }) {
     { label: "보류 중", value: summary.held, color: "bg-gray-50 text-gray-800" },
     { label: "노출 중", value: summary.active, color: "bg-emerald-50 text-emerald-800" },
     { label: "총 등록", value: summary.total, color: "bg-blue-50 text-blue-800" },
+    { label: "난이도 미등록", value: summary.difficulty_missing, color: "bg-slate-50 text-slate-800" },
+    { label: "재측정 필요", value: summary.difficulty_stale, color: "bg-violet-50 text-violet-800" },
   ];
   return (
-    <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+    <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
       {cards.map((c) => (
         <div key={c.label} className={`rounded p-3 ${c.color}`}>
           <div className="text-xs">{c.label}</div>
