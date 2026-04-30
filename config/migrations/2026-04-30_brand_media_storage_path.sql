@@ -5,3 +5,9 @@
 alter table brand_media_assets
     add column if not exists storage_path text,
     add column if not exists file_size_bytes bigint;
+
+-- file_path 의 NOT NULL 제약 해제 (presigned 업로드는 file_path 가 null 이고
+-- storage_path 만 채워진다). 데이터 정합성은 application 레이어에서 둘 중
+-- 적어도 하나가 채워져야 함을 보장.
+alter table brand_media_assets
+    alter column file_path drop not null;

@@ -119,8 +119,10 @@ create table if not exists brand_media_assets (
     id uuid primary key default gen_random_uuid(),
     brand_id uuid references brand_profiles(id) on delete cascade,
     type text not null,                -- doctor | facility | equipment | cert | other
-    file_path text not null,
+    file_path text,                    -- 로컬 디스크 경로 (multipart legacy)
+    storage_path text,                 -- Supabase Storage 객체 키 (presigned 권장)
     file_sha256 text not null,         -- 중복 업로드 검출용
+    file_size_bytes bigint,
     title text,
     description text,
     orientation text,                  -- portrait | landscape | square
