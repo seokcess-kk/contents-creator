@@ -39,6 +39,7 @@ class Publication(BaseModel):
     parent_publication_id: str | None = None
     priority_score: float | None = None
     republishing_started_at: datetime | None = None
+    keyword_difficulty_snapshot_id: str | None = None
 
 
 class RankingSnapshot(BaseModel):

@@ -118,6 +118,7 @@ class SearchVolume(BaseModel):
 class KeywordDifficulty(BaseModel):
     """단일 키워드 난이도 분석 결과 — `scorer.score_difficulty` 의 반환값."""
 
+    id: str | None = None
     keyword: str
     score: float
     grade: DifficultyGrade

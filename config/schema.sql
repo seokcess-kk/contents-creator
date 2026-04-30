@@ -461,6 +461,15 @@ create index if not exists idx_keyword_difficulty_kw
 create index if not exists idx_keyword_difficulty_grade
     on keyword_difficulty_snapshots (grade, checked_at desc);
 
+-- publications 와 발행 시점 키워드 난이도 스냅샷 연결.
+-- 발행 이후 SERP가 바뀌어도 당시 사전 난이도를 고정해 성과 분석에 사용한다.
+alter table publications
+    add column if not exists keyword_difficulty_snapshot_id uuid
+        references keyword_difficulty_snapshots(id) on delete set null;
+
+create index if not exists idx_publications_keyword_difficulty_snapshot
+    on publications (keyword_difficulty_snapshot_id);
+
 create index if not exists idx_publication_actions_action
     on publication_actions (action, created_at desc);
 

@@ -140,6 +140,7 @@ def _row_to_diff(row: dict[str, Any]) -> KeywordDifficulty:
         sov_grade = SovValueGrade.UNKNOWN
 
     return KeywordDifficulty(
+        id=row.get("id"),
         keyword=row["keyword"],
         score=float(row["score"]),
         grade=DifficultyGrade(row["grade"]),

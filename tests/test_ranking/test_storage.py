@@ -48,6 +48,7 @@ def _publication_row() -> dict[str, Any]:
         "url": "https://m.blog.naver.com/u/123456789",
         "published_at": None,
         "created_at": "2026-04-24T00:00:00+00:00",
+        "keyword_difficulty_snapshot_id": None,
     }
 
 
@@ -156,6 +157,20 @@ class TestUpdatePublication:
         assert result.id == "pub-1"
         # update 호출 안 됨
         table.update.assert_not_called()
+
+    def test_update_keyword_difficulty_snapshot_id(self, mock_client: MagicMock) -> None:
+        row = _publication_row()
+        row["keyword_difficulty_snapshot_id"] = "kd-1"
+        table = MagicMock()
+        table.update.return_value.eq.return_value.execute.return_value = MagicMock(data=[row])
+        mock_client.table.return_value = table
+
+        result = storage.update_publication_keyword_difficulty("pub-1", "kd-1")
+
+        assert result is not None
+        assert result.keyword_difficulty_snapshot_id == "kd-1"
+        called_payload = table.update.call_args.args[0]
+        assert called_payload == {"keyword_difficulty_snapshot_id": "kd-1"}
 
 
 class TestDeletePublication:

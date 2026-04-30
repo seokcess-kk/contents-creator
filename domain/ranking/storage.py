@@ -98,6 +98,24 @@ def update_publication(
     return _row_to_publication(cast("dict[str, Any]", rows[0]))
 
 
+def update_publication_keyword_difficulty(
+    publication_id: str,
+    keyword_difficulty_snapshot_id: str,
+) -> Publication | None:
+    """발행 시점 키워드 난이도 스냅샷을 publication에 연결."""
+    client = get_client()
+    result = (
+        client.table(_PUB_TABLE)
+        .update({"keyword_difficulty_snapshot_id": keyword_difficulty_snapshot_id})
+        .eq("id", publication_id)
+        .execute()
+    )
+    rows = result.data or []
+    if not rows:
+        return None
+    return _row_to_publication(cast("dict[str, Any]", rows[0]))
+
+
 def delete_publication(publication_id: str) -> bool:
     """publications row 삭제. ranking_snapshots 는 ON DELETE CASCADE 로 동반 삭제.
 
@@ -307,6 +325,8 @@ def _publication_to_payload(p: Publication) -> dict[str, Any]:
         payload["priority_score"] = p.priority_score
     if p.republishing_started_at is not None:
         payload["republishing_started_at"] = p.republishing_started_at.isoformat()
+    if p.keyword_difficulty_snapshot_id is not None:
+        payload["keyword_difficulty_snapshot_id"] = p.keyword_difficulty_snapshot_id
     return payload
 
 
@@ -339,6 +359,7 @@ def _row_to_publication(row: dict[str, Any]) -> Publication:
         parent_publication_id=row.get("parent_publication_id"),
         priority_score=row.get("priority_score"),
         republishing_started_at=row.get("republishing_started_at"),
+        keyword_difficulty_snapshot_id=row.get("keyword_difficulty_snapshot_id"),
     )
 
 

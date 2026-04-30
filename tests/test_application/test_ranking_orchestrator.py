@@ -23,6 +23,17 @@ def storage_mock(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     return mock
 
 
+@pytest.fixture(autouse=True)
+def keyword_difficulty_mock(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    from application import keyword_difficulty_orchestrator
+
+    diff = MagicMock()
+    diff.id = "kd-1"
+    analyze_mock = MagicMock(return_value=diff)
+    monkeypatch.setattr(keyword_difficulty_orchestrator, "analyze_keyword", analyze_mock)
+    return analyze_mock
+
+
 @pytest.fixture
 def brightdata_mock(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     """BrightDataClient 생성자 자체를 mock."""
@@ -106,6 +117,26 @@ class TestRegisterPublication:
         passed = storage_mock.insert_publication.call_args.args[0]
         assert passed.slug is None
         assert result.slug is None
+
+    def test_attaches_keyword_difficulty_for_published_url(
+        self, storage_mock: MagicMock, keyword_difficulty_mock: MagicMock
+    ) -> None:
+        publication = _publication()
+        storage_mock.insert_publication.return_value = publication
+
+        ranking_orchestrator.register_publication(
+            keyword="kw", slug="s", url="https://blog.naver.com/u/123456789"
+        )
+
+        keyword_difficulty_mock.assert_called_once_with("kw", persist=True)
+        storage_mock.update_publication_keyword_difficulty.assert_called_once_with("pub-1", "kd-1")
+
+    def test_draft_does_not_attach_keyword_difficulty(self, storage_mock: MagicMock) -> None:
+        storage_mock.insert_publication.return_value = _publication(url=None, slug=None)
+
+        ranking_orchestrator.register_publication(keyword="kw", url=None)
+
+        storage_mock.update_publication_keyword_difficulty.assert_not_called()
 
 
 class TestBulkRegisterPublications:
@@ -198,6 +229,22 @@ class TestUpdatePublication:
             "pub-1", workflow_status="active"
         )
 
+    def test_draft_activation_attaches_keyword_difficulty(
+        self, storage_mock: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        storage_mock.get_publication.return_value = _publication(url=None, workflow_status="draft")
+        storage_mock.update_publication.return_value = _publication(workflow_status="draft")
+        activated = _publication(workflow_status="active")
+        storage_mock.update_publication_workflow_state.return_value = activated
+        monkeypatch.setattr(
+            "domain.ranking.publication_actions.insert_action",
+            MagicMock(),
+        )
+
+        ranking_orchestrator.update_publication("pub-1", url="https://blog.naver.com/u/123456789")
+
+        storage_mock.update_publication_keyword_difficulty.assert_called_once_with("pub-1", "kd-1")
+
     def test_active_publication_url_change_keeps_status(
         self, storage_mock: MagicMock, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -214,6 +261,30 @@ class TestUpdatePublication:
 
         actions_mock.assert_not_called()
         storage_mock.update_publication_workflow_state.assert_not_called()
+
+
+class TestKeywordDifficultyAttach:
+    def test_attach_analyzes_and_links_snapshot(
+        self, storage_mock: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from application import keyword_difficulty_orchestrator
+
+        diff = MagicMock()
+        diff.id = "kd-1"
+        analyze_mock = MagicMock(return_value=diff)
+        monkeypatch.setattr(keyword_difficulty_orchestrator, "analyze_keyword", analyze_mock)
+
+        ranking_orchestrator._ensure_keyword_difficulty_attached(_publication())
+
+        analyze_mock.assert_called_once_with("kw", persist=True)
+        storage_mock.update_publication_keyword_difficulty.assert_called_once_with("pub-1", "kd-1")
+
+    def test_attach_skips_existing_snapshot(self, storage_mock: MagicMock) -> None:
+        publication = _publication(keyword_difficulty_snapshot_id="kd-existing")
+
+        ranking_orchestrator._ensure_keyword_difficulty_attached(publication)
+
+        storage_mock.update_publication_keyword_difficulty.assert_not_called()
 
 
 class TestDeletePublication:

@@ -88,7 +88,7 @@ def register_publication(
         workflow_status="active",
     )
     try:
-        return storage.insert_publication(publication)
+        inserted = storage.insert_publication(publication)
     except RankingDuplicateUrlError:
         existing = storage.get_publication_by_url(normalized)
         if existing is None:
@@ -96,7 +96,10 @@ def register_publication(
         logger.info(
             "publication.duplicate keyword=%r url=%s — returning existing", keyword, normalized
         )
+        _ensure_keyword_difficulty_attached(existing)
         return existing
+    _ensure_keyword_difficulty_attached(inserted)
+    return inserted
 
 
 def bulk_register_publications(
@@ -244,7 +247,38 @@ def update_publication(
         )
         if refreshed is not None:
             updated = refreshed
+        _ensure_keyword_difficulty_attached(updated)
+    elif updated.url is not None and (keyword is not None or normalized_url is not None):
+        _ensure_keyword_difficulty_attached(updated, force=keyword is not None)
     return updated
+
+
+def _ensure_keyword_difficulty_attached(publication: Publication, *, force: bool = False) -> None:
+    """발행 publication에 발행 시점 키워드 난이도 스냅샷을 best-effort로 연결."""
+    if publication.id is None or publication.url is None:
+        return
+    if publication.keyword_difficulty_snapshot_id and not force:
+        return
+
+    try:
+        from application import keyword_difficulty_orchestrator
+
+        diff = keyword_difficulty_orchestrator.analyze_keyword(publication.keyword, persist=True)
+        if diff.id is None:
+            logger.warning(
+                "publication.keyword_difficulty_no_snapshot_id publication_id=%s keyword=%r",
+                publication.id,
+                publication.keyword,
+            )
+            return
+        storage.update_publication_keyword_difficulty(publication.id, diff.id)
+    except Exception:
+        logger.warning(
+            "publication.keyword_difficulty_attach_failed publication_id=%s keyword=%r",
+            publication.id,
+            publication.keyword,
+            exc_info=True,
+        )
 
 
 def _activate_after_url_registration(publication_id: str, url: str) -> None:
