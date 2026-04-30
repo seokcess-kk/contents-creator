@@ -47,3 +47,10 @@ class TestParseSourceBytes:
         path = _FIXTURES / "sample.txt"
         text = parse_source_bytes(".TXT", path.read_bytes())
         assert "대구 다이어트 한의원" in text
+
+    def test_null_byte_stripped(self) -> None:
+        """PDF 추출 결과에 끼어드는 \\x00 을 제거해 PostgreSQL 22P05 회피."""
+        polluted = "before\x00after\x00\x00 끝".encode()
+        text = parse_source_bytes(".txt", polluted)
+        assert "\x00" not in text
+        assert "before" in text and "after" in text and "끝" in text

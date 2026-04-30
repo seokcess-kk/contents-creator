@@ -32,6 +32,7 @@ def parse_source_file(path: Path) -> str:
     """파일 1개 → plain text. 확장자별 분기.
 
     Returns: 추출된 텍스트 (빈 문자열 가능 — 빈 파일이거나 텍스트 없는 PDF).
+    NULL byte (`\\x00`) 는 PostgreSQL `text` 컬럼이 거부(22P05)하므로 항상 제거한다.
 
     Raises:
         UnsupportedSourceError: 지원 안 되는 확장자.
@@ -45,6 +46,10 @@ def parse_source_file(path: Path) -> str:
         raise UnsupportedSourceError(
             f"확장자 {suffix!r} 미지원. 허용: {sorted(_SUPPORTED_EXTENSIONS)}"
         )
+    return _sanitize_text(_dispatch_parser(path, suffix))
+
+
+def _dispatch_parser(path: Path, suffix: str) -> str:
     if suffix in (".txt", ".md"):
         return _parse_text(path)
     if suffix == ".docx":
@@ -52,6 +57,17 @@ def parse_source_file(path: Path) -> str:
     if suffix == ".pdf":
         return _parse_pdf(path)
     return _parse_html(path)
+
+
+def _sanitize_text(text: str) -> str:
+    """PostgreSQL `text` 컬럼이 거부하는 NULL byte (`\\x00`) 제거.
+
+    PDF 텍스트 추출 시 자주 끼어 들어가 `22P05 unsupported Unicode escape sequence`
+    에러를 유발한다. parse_* 함수 결과에 일괄 적용.
+    """
+    if not text:
+        return text
+    return text.replace("\x00", "")
 
 
 def parse_source_bytes(suffix: str, data: bytes) -> str:
