@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -15,6 +17,10 @@ from domain.brand_card.model import (
     CardBlock,
     CardCampaignInput,
     StatusTransitionError,
+)
+from domain.brand_card.storage_signed import (
+    SignedUploadUrl,
+    StorageSignedError,
 )
 
 
@@ -246,6 +252,189 @@ class TestSources:
         assert body["id"] == "s-new"
         assert captured["record"].source_type == "campaign"
         assert "안녕" in (captured["record"].content_text or "")
+
+
+# ── 3-4b. sources presigned (init/confirm) ───────────────────
+
+
+class TestSourcesPresigned:
+    def _payload(self, **overrides: Any) -> dict[str, Any]:
+        sha = hashlib.sha256(b"hello world").hexdigest()
+        base: dict[str, Any] = {
+            "file_name": "doc.txt",
+            "file_size": 11,
+            "sha256": sha,
+            "source_type": "brand_common",
+        }
+        base.update(overrides)
+        return base
+
+    def test_init_unknown_brand_404(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_brand", lambda _id: None)
+        resp = client.post("/api/brand-studio/brands/missing/sources/init", json=self._payload())
+        assert resp.status_code == 404
+
+    def test_init_invalid_source_type_422(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_brand", lambda _id: _profile())
+        resp = client.post(
+            "/api/brand-studio/brands/brand-1/sources/init",
+            json=self._payload(source_type="hack"),
+        )
+        assert resp.status_code == 422
+
+    def test_init_too_large_413(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_brand", lambda _id: _profile())
+        monkeypatch.setattr("config.settings.settings.brand_sources_max_bytes", 100)
+        resp = client.post(
+            "/api/brand-studio/brands/brand-1/sources/init",
+            json=self._payload(file_size=999_999),
+        )
+        assert resp.status_code == 413
+
+    def test_init_unsupported_suffix_415(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_brand", lambda _id: _profile())
+        resp = client.post(
+            "/api/brand-studio/brands/brand-1/sources/init",
+            json=self._payload(file_name="evil.exe"),
+        )
+        assert resp.status_code == 415
+
+    def test_init_returns_signed_url(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_brand", lambda _id: _profile())
+
+        def fake_create(brand_id: str, sha256: str, suffix: str) -> SignedUploadUrl:
+            return SignedUploadUrl(
+                upload_url="https://supabase.example/sign/PUT",
+                upload_token="tok-1",
+                storage_path=f"{brand_id}/sources/{sha256}{suffix}",
+                expires_at=datetime.now(UTC) + timedelta(seconds=300),
+            )
+
+        monkeypatch.setattr(brand_studio.storage_signed, "create_upload_url", fake_create)
+        resp = client.post("/api/brand-studio/brands/brand-1/sources/init", json=self._payload())
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["upload_url"].startswith("https://supabase.example/")
+        assert body["storage_path"].startswith("brand-1/sources/")
+        assert body["storage_path"].endswith(".txt")
+
+    def test_init_storage_failure_502(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_brand", lambda _id: _profile())
+
+        def fake_create(*_a: Any, **_k: Any) -> SignedUploadUrl:
+            raise StorageSignedError("supabase down")
+
+        monkeypatch.setattr(brand_studio.storage_signed, "create_upload_url", fake_create)
+        resp = client.post("/api/brand-studio/brands/brand-1/sources/init", json=self._payload())
+        assert resp.status_code == 502
+
+    def test_confirm_path_mismatch_400(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_brand", lambda _id: _profile())
+        sha = hashlib.sha256(b"x").hexdigest()
+        resp = client.post(
+            "/api/brand-studio/brands/brand-1/sources/confirm",
+            json={
+                "storage_path": "evil/../escape.txt",
+                "source_type": "brand_common",
+                "file_name": "doc.txt",
+                "sha256": sha,
+            },
+        )
+        assert resp.status_code == 400
+
+    def test_confirm_sha256_mismatch_422(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_brand", lambda _id: _profile())
+        # 클라이언트가 보낸 sha256 — 다운로드 본문과 의도적으로 다르게
+        client_sha = hashlib.sha256(b"claimed").hexdigest()
+        monkeypatch.setattr(
+            brand_studio.storage_signed,
+            "download_object",
+            lambda _p: b"actually different bytes",
+        )
+        removed: dict[str, str] = {}
+        monkeypatch.setattr(
+            brand_studio.storage_signed,
+            "remove_object",
+            lambda p: removed.setdefault("path", p) is None or True,
+        )
+        path = f"brand-1/sources/{client_sha}.txt"
+        resp = client.post(
+            "/api/brand-studio/brands/brand-1/sources/confirm",
+            json={
+                "storage_path": path,
+                "source_type": "brand_common",
+                "file_name": "doc.txt",
+                "sha256": client_sha,
+            },
+        )
+        assert resp.status_code == 422
+        assert removed.get("path") == path
+
+    def test_confirm_persists_record(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_brand", lambda _id: _profile())
+        body = "안녕하세요".encode()
+        sha = hashlib.sha256(body).hexdigest()
+        monkeypatch.setattr(brand_studio.storage_signed, "download_object", lambda _p: body)
+
+        captured: dict[str, Any] = {}
+
+        def fake_insert(record: BrandMessageSource) -> BrandMessageSource:
+            captured["record"] = record
+            return record.model_copy(update={"id": "s-confirmed"})
+
+        monkeypatch.setattr(brand_studio.storage, "insert_message_source", fake_insert)
+
+        path = f"brand-1/sources/{sha}.txt"
+        resp = client.post(
+            "/api/brand-studio/brands/brand-1/sources/confirm",
+            json={
+                "storage_path": path,
+                "source_type": "campaign",
+                "file_name": "doc.txt",
+                "sha256": sha,
+            },
+        )
+        assert resp.status_code == 201
+        record = captured["record"]
+        assert record.storage_path == path
+        assert record.file_sha256 == sha
+        assert record.file_size_bytes == len(body)
+        assert record.source_type == "campaign"
+        assert "안녕" in (record.content_text or "")
 
 
 # ── 4. campaign-inputs ──────────────────────────────────────

@@ -345,7 +345,10 @@ create table if not exists brand_message_sources (
     brand_id uuid not null references brand_profiles(id) on delete cascade,
     source_type text not null,
     file_name text,
-    file_path text,
+    file_path text,                  -- 로컬 디스크 경로 (multipart deprecated)
+    storage_path text,               -- Supabase Storage 객체 키 (presigned 권장)
+    file_sha256 text,                -- 변조 검증용
+    file_size_bytes bigint,
     content_text text,
     content_summary jsonb default '{}'::jsonb,
     created_at timestamptz default now()
@@ -353,6 +356,9 @@ create table if not exists brand_message_sources (
 
 create index if not exists idx_brand_message_sources_brand
     on brand_message_sources (brand_id, created_at desc);
+
+create index if not exists idx_brand_message_sources_sha256
+    on brand_message_sources (file_sha256);
 ```
 
 `source_type` 후보:
@@ -362,6 +368,38 @@ create index if not exists idx_brand_message_sources_brand
 - `keyword_specific`
 - `forbidden_phrases`
 - `reference`
+
+#### 업로드 흐름 — Presigned URL 패턴 (2026-04-30)
+
+Vercel 함수 페이로드 4.5MB 한계를 우회하기 위해 multipart 업로드 대신 3단계
+presigned 흐름을 사용한다. 작은 파일도 동일 흐름을 따른다.
+
+```
+브라우저
+  ① POST /api/brand-studio/brands/{id}/sources/init  (JSON, < 1KB)
+    → 백엔드: 검증 → Supabase Storage signed PUT URL 발급 (TTL 5분)
+    ← { upload_url, upload_token, storage_path, expires_at }
+  ② PUT  upload_url  (Supabase Storage 도메인 직접, Vercel 우회)
+    body: 파일 raw bytes
+  ③ POST /api/brand-studio/brands/{id}/sources/confirm  (JSON)
+    → 백엔드: storage_path 패턴 검증 → download → sha256 재검증 →
+      source_parser → INSERT brand_message_sources
+    ← BrandMessageSource
+```
+
+검증 게이트:
+- init: brand 존재, source_type enum, file_size ≤ `brand_sources_max_bytes`,
+  suffix ∈ `brand_sources_allowed_suffixes`
+- confirm: storage_path = `{brand_id}/sources/{sha256}{suffix}` 정확 일치
+  (path traversal 방어), 다운로드 본문의 sha256 = req.sha256 (변조 방어)
+- sha256 mismatch 시 storage 객체 즉시 삭제 + 422 반환
+
+기존 `POST /sources` (multipart) 는 deprecated. CLI/테스트 호환을 위해 유지하되
+호출 시 `logger.warning(brand_sources.multipart_upload_deprecated)`. 큰 파일은
+이 엔드포인트로 보내면 Vercel 함수에서 4.5MB 컷에 걸린다.
+
+인프라 사전 작업 (1회): `tasks/brand_sources_supabase_setup.md` 참조 — 버킷
+`brand-sources` 신설, RLS service_role 정책, CORS 허용 origin.
 
 ### `card_campaign_inputs`
 

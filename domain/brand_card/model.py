@@ -102,13 +102,24 @@ class BrandMediaAsset(BaseModel):
 
 
 class BrandMessageSource(BaseModel):
-    """브랜드 메시지 파일 1건 (txt/docx/pdf/html 추출 후 보관)."""
+    """브랜드 메시지 파일 1건 (txt/docx/pdf/html 추출 후 보관).
+
+    저장 위치는 두 가지가 공존한다:
+    - `file_path`: 로컬 디스크 경로 (multipart 업로드 — deprecated, 작은 파일만)
+    - `storage_path`: Supabase Storage 객체 키 (presigned 업로드 — 권장)
+
+    신규 흐름(presigned)은 항상 `storage_path` + `file_sha256` + `file_size_bytes`
+    를 채운다. Vercel 함수 4.5MB 페이로드 한계 우회를 위한 변경.
+    """
 
     id: str | None = None
     brand_id: str
     source_type: str  # MessageSourceType 값
     file_name: str | None = None
     file_path: str | None = None
+    storage_path: str | None = None
+    file_sha256: str | None = None
+    file_size_bytes: int | None = None
     content_text: str | None = None
     content_summary: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime | None = None

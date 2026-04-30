@@ -79,6 +79,21 @@ class Settings(BaseSettings):
     # Supabase Storage (결과물 영속화 — Render 컨테이너 파일시스템 휘발 대응)
     storage_bucket: str = "results"
 
+    # 브랜드 sources presigned upload (Vercel 함수 4.5MB 페이로드 한계 우회)
+    # 흐름: 프론트 → /sources/init → Supabase Storage signed URL → PUT 직접 → /sources/confirm
+    brand_sources_bucket: str = "brand-sources"
+    brand_sources_max_bytes: int = 50 * 1024 * 1024  # 50 MB
+    brand_sources_signed_url_ttl_seconds: int = 300  # 5 분
+    # parser 단계와 일치 — domain/brand_card/source_parser.py _SUPPORTED_EXTENSIONS
+    brand_sources_allowed_suffixes: tuple[str, ...] = (
+        ".txt",
+        ".md",
+        ".docx",
+        ".pdf",
+        ".html",
+        ".htm",
+    )
+
     # API 비용 (USD per 1M tokens, 2026-04 기준)
     cost_anthropic_opus_input: float = 15.0
     cost_anthropic_opus_output: float = 75.0

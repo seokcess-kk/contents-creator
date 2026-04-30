@@ -54,6 +54,9 @@ export interface BrandMessageSource {
   source_type: string; // "brand_common" | "campaign" | "keyword_specific" | "reference"
   file_name: string | null;
   file_path: string | null;
+  storage_path?: string | null;
+  file_sha256?: string | null;
+  file_size_bytes?: number | null;
   content_text: string | null;
   content_summary?: Record<string, unknown>;
   created_at: string | null;
@@ -143,17 +146,89 @@ export function listSources(brandId: string): Promise<BrandMessageSource[]> {
   return request(`/brands/${encodeURIComponent(brandId)}/sources`);
 }
 
-export function uploadSource(
+// ── presigned upload (Vercel 함수 4.5MB 페이로드 한계 우회) ──
+//
+// 흐름: 1) /sources/init → signed PUT URL  2) PUT Supabase 직접  3) /sources/confirm
+// init/confirm 은 작은 JSON 만 전송하므로 Vercel 함수 페이로드 한계와 무관.
+// PUT 단계는 same-origin 이 아니라 Supabase Storage 도메인으로 직접 — Vercel 우회.
+
+export interface SourceUploadInitResponse {
+  upload_url: string;
+  upload_token: string | null;
+  storage_path: string;
+  expires_at: string;
+}
+
+export function initSourceUpload(
+  brandId: string,
+  payload: {
+    file_name: string;
+    file_size: number;
+    sha256: string;
+    source_type: string;
+  },
+): Promise<SourceUploadInitResponse> {
+  return request(`/brands/${encodeURIComponent(brandId)}/sources/init`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function confirmSourceUpload(
+  brandId: string,
+  payload: {
+    storage_path: string;
+    source_type: string;
+    file_name: string;
+    sha256: string;
+  },
+): Promise<BrandMessageSource> {
+  return request(`/brands/${encodeURIComponent(brandId)}/sources/confirm`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+async function sha256Hex(file: File): Promise<string> {
+  const buf = await file.arrayBuffer();
+  const digest = await crypto.subtle.digest("SHA-256", buf);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+export async function uploadSource(
   brandId: string,
   file: File,
   sourceType: string,
 ): Promise<BrandMessageSource> {
-  const fd = new FormData();
-  fd.append("file", file);
-  fd.append("source_type", sourceType);
-  return request(`/brands/${encodeURIComponent(brandId)}/sources`, {
-    method: "POST",
-    body: fd,
+  const sha256 = await sha256Hex(file);
+
+  const init = await initSourceUpload(brandId, {
+    file_name: file.name,
+    file_size: file.size,
+    sha256,
+    source_type: sourceType,
+  });
+
+  const putRes = await fetch(init.upload_url, {
+    method: "PUT",
+    body: file,
+    headers: { "Content-Type": file.type || "application/octet-stream" },
+  });
+  if (!putRes.ok) {
+    const text = await putRes.text().catch(() => "");
+    throw new BrandStudioApiError(
+      putRes.status,
+      `Supabase Storage PUT 실패: ${text || putRes.statusText}`,
+    );
+  }
+
+  return confirmSourceUpload(brandId, {
+    storage_path: init.storage_path,
+    source_type: sourceType,
+    file_name: file.name,
+    sha256,
   });
 }
 

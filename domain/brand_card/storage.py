@@ -371,6 +371,12 @@ def _source_to_payload(s: BrandMessageSource) -> dict[str, Any]:
         payload["file_name"] = s.file_name
     if s.file_path is not None:
         payload["file_path"] = s.file_path
+    if s.storage_path is not None:
+        payload["storage_path"] = s.storage_path
+    if s.file_sha256 is not None:
+        payload["file_sha256"] = s.file_sha256
+    if s.file_size_bytes is not None:
+        payload["file_size_bytes"] = s.file_size_bytes
     if s.content_text is not None:
         payload["content_text"] = s.content_text
     return payload
@@ -383,6 +389,9 @@ def _row_to_source(row: dict[str, Any]) -> BrandMessageSource:
         source_type=row["source_type"],
         file_name=row.get("file_name"),
         file_path=row.get("file_path"),
+        storage_path=row.get("storage_path"),
+        file_sha256=row.get("file_sha256"),
+        file_size_bytes=row.get("file_size_bytes"),
         content_text=row.get("content_text"),
         content_summary=row.get("content_summary") or {},
         created_at=_parse_dt(row.get("created_at")),

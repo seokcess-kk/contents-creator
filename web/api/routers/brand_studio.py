@@ -40,7 +40,7 @@ from pydantic import BaseModel, Field
 from application import brand_card_orchestrator as orch
 from application.brand_card_orchestrator import PlanEditNotAllowedError
 from config.settings import settings
-from domain.brand_card import source_parser, storage
+from domain.brand_card import source_parser, storage, storage_signed
 from domain.brand_card.model import (
     BrandCardError,
     BrandCardPlan,
@@ -52,6 +52,7 @@ from domain.brand_card.model import (
     StatusTransitionError,
 )
 from domain.brand_card.storage import BrandSlugConflictError
+from domain.brand_card.storage_signed import StorageSignedError
 from web.api.auth import require_api_key
 from web.api.schemas import JobSubmitResponse
 
@@ -172,10 +173,18 @@ async def upload_source(
     file: UploadFile = File(...),  # noqa: B008
     source_type: str = Form("brand_common"),
 ) -> BrandMessageSource:
-    """multipart 업로드 → source_parser → DB 저장.
+    """[DEPRECATED] multipart 업로드 → source_parser → DB 저장.
+
+    Vercel 함수 페이로드 4.5MB 한계로 큰 파일은 실패한다. 신규 흐름은
+    `/sources/init` + Supabase Storage PUT + `/sources/confirm`. 본 엔드포인트는
+    CLI/기존 클라이언트 호환을 위해 유지하되, 호출 시 deprecation 경고를 남긴다.
 
     저장 경로: output/brand_assets/{brand_id}/sources/{sha256}{suffix}
     """
+    logger.warning(
+        "brand_sources.multipart_upload_deprecated brand_id=%s — use /sources/init+confirm",
+        brand_id,
+    )
     if storage.get_brand(brand_id) is None:
         raise HTTPException(status_code=404, detail="Brand not found")
 
@@ -204,9 +213,144 @@ async def upload_source(
         source_type=source_type,
         file_name=safe_name,
         file_path=str(save_path),
+        file_sha256=digest,
+        file_size_bytes=len(raw),
         content_text=text,
     )
     return storage.insert_message_source(record)
+
+
+# ── 2-3b. brand sources presigned upload (Vercel 4.5MB 우회) ──
+
+
+_VALID_SOURCE_TYPES = {"brand_common", "campaign", "keyword_specific", "reference"}
+
+
+class SourceUploadInitRequest(BaseModel):
+    """프론트가 업로드 의도를 알리고 signed PUT URL 을 발급받는 요청."""
+
+    file_name: str = Field(min_length=1, max_length=255)
+    file_size: int = Field(gt=0)
+    sha256: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    source_type: str = Field(default="brand_common")
+
+
+class SourceUploadInitResponse(BaseModel):
+    """signed PUT URL + storage_path. 브라우저는 upload_url 로 PUT, 이후
+    confirm 호출 시 storage_path 를 그대로 echo 한다.
+    """
+
+    upload_url: str
+    upload_token: str | None
+    storage_path: str
+    expires_at: str
+
+
+class SourceUploadConfirmRequest(BaseModel):
+    """업로드 완료 후 백엔드에 다운로드 + 파싱 + DB INSERT 를 트리거.
+
+    storage_path 는 init 에서 발급한 패턴과 정확히 일치해야 한다 (path traversal
+    방어). sha256 은 확정 단계에서 다운로드 본문과 재검증해 변조를 차단한다.
+    """
+
+    storage_path: str = Field(min_length=1)
+    source_type: str = Field(default="brand_common")
+    file_name: str = Field(min_length=1, max_length=255)
+    sha256: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+
+
+@router.post("/brands/{brand_id}/sources/init", status_code=201)
+def init_source_upload(brand_id: str, req: SourceUploadInitRequest) -> SourceUploadInitResponse:
+    """[1/2] signed PUT URL 발급. 5분 TTL. 검증 후 브라우저가 직접 PUT 한다."""
+    if storage.get_brand(brand_id) is None:
+        raise HTTPException(status_code=404, detail="Brand not found")
+    _validate_source_type(req.source_type)
+
+    if req.file_size > settings.brand_sources_max_bytes:
+        max_mb = settings.brand_sources_max_bytes // (1024 * 1024)
+        raise HTTPException(
+            status_code=413,
+            detail=f"파일이 너무 큽니다. 최대 {max_mb}MB",
+        )
+
+    safe_name = _sanitize_filename(req.file_name)
+    suffix = Path(safe_name).suffix.lower()
+    if suffix not in settings.brand_sources_allowed_suffixes:
+        raise HTTPException(
+            status_code=415,
+            detail=(
+                f"지원되지 않는 형식: {suffix!r} "
+                f"(허용: {list(settings.brand_sources_allowed_suffixes)})"
+            ),
+        )
+
+    try:
+        signed = storage_signed.create_upload_url(brand_id, req.sha256, suffix)
+    except StorageSignedError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return SourceUploadInitResponse(
+        upload_url=signed.upload_url,
+        upload_token=signed.upload_token,
+        storage_path=signed.storage_path,
+        expires_at=signed.expires_at.isoformat(),
+    )
+
+
+@router.post("/brands/{brand_id}/sources/confirm", status_code=201)
+def confirm_source_upload(brand_id: str, req: SourceUploadConfirmRequest) -> BrandMessageSource:
+    """[2/2] 업로드 완료 알림 → Storage 다운로드 + 파싱 + DB INSERT."""
+    if storage.get_brand(brand_id) is None:
+        raise HTTPException(status_code=404, detail="Brand not found")
+    _validate_source_type(req.source_type)
+
+    safe_name = _sanitize_filename(req.file_name)
+    suffix = Path(safe_name).suffix.lower()
+    if suffix not in settings.brand_sources_allowed_suffixes:
+        raise HTTPException(status_code=415, detail=f"지원되지 않는 형식: {suffix!r}")
+
+    expected_path = storage_signed.build_storage_path(brand_id, req.sha256, suffix)
+    if req.storage_path != expected_path:
+        raise HTTPException(
+            status_code=400, detail="storage_path 가 init 발급 패턴과 일치하지 않습니다"
+        )
+
+    try:
+        raw = storage_signed.download_object(req.storage_path)
+    except StorageSignedError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    actual_sha = hashlib.sha256(raw).hexdigest()
+    if actual_sha != req.sha256:
+        # 변조 감지 — 스토리지에서 객체 제거 후 거부
+        storage_signed.remove_object(req.storage_path)
+        raise HTTPException(status_code=422, detail="sha256 불일치 (변조 또는 중간 손상)")
+
+    try:
+        text = source_parser.parse_source_bytes(suffix, raw)
+    except source_parser.UnsupportedSourceError as exc:
+        raise HTTPException(status_code=415, detail=str(exc)) from exc
+    except source_parser.SourceParseError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    record = BrandMessageSource(
+        brand_id=brand_id,
+        source_type=req.source_type,
+        file_name=safe_name,
+        storage_path=req.storage_path,
+        file_sha256=req.sha256,
+        file_size_bytes=len(raw),
+        content_text=text,
+    )
+    return storage.insert_message_source(record)
+
+
+def _validate_source_type(source_type: str) -> None:
+    if source_type not in _VALID_SOURCE_TYPES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"source_type 는 {sorted(_VALID_SOURCE_TYPES)} 중 하나여야 합니다",
+        )
 
 
 # ── 4. campaign-inputs ──────────────────────────────────────
