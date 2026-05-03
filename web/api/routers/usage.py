@@ -14,6 +14,8 @@ from web.api.auth import require_api_key
 router = APIRouter(prefix="/usage", tags=["usage"], dependencies=[Depends(require_api_key)])
 logger = logging.getLogger(__name__)
 
+_FREE_PROVIDERS = {"naver_searchad"}
+
 
 def _get_supabase():  # type: ignore[no-untyped-def]
     from config.supabase import get_client
@@ -82,14 +84,26 @@ def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
     total_input = sum(r.get("input_tokens", 0) or 0 for r in rows)
     total_output = sum(r.get("output_tokens", 0) or 0 for r in rows)
     total_requests = sum(r.get("requests", 0) or 0 for r in rows)
+    billable_requests = sum(
+        r.get("requests", 0) or 0 for r in rows if _is_billable_provider(r.get("provider"))
+    )
+    free_requests = total_requests - billable_requests
     total_cost = sum(float(r.get("estimated_cost_usd", 0) or 0) for r in rows)
     return {
         "input_tokens": total_input,
         "output_tokens": total_output,
         "total_tokens": total_input + total_output,
         "requests": total_requests,
+        "billable_requests": billable_requests,
+        "free_requests": free_requests,
         "estimated_cost_usd": round(total_cost, 4),
     }
+
+
+def _is_billable_provider(provider: object) -> bool:
+    if not isinstance(provider, str):
+        return True
+    return provider not in _FREE_PROVIDERS
 
 
 def _aggregate_by_provider(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -102,11 +116,19 @@ def _aggregate_by_provider(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "input_tokens": 0,
                 "output_tokens": 0,
                 "requests": 0,
+                "billable_requests": 0,
+                "free_requests": 0,
+                "billing_type": "billable" if _is_billable_provider(p) else "free",
                 "cost": 0.0,
             }
+        requests = r.get("requests", 0) or 0
         by[p]["input_tokens"] += r.get("input_tokens", 0) or 0
         by[p]["output_tokens"] += r.get("output_tokens", 0) or 0
-        by[p]["requests"] += r.get("requests", 0) or 0
+        by[p]["requests"] += requests
+        if _is_billable_provider(p):
+            by[p]["billable_requests"] += requests
+        else:
+            by[p]["free_requests"] += requests
         by[p]["cost"] += float(r.get("estimated_cost_usd", 0) or 0)
     for v in by.values():
         v["cost"] = round(v["cost"], 4)
@@ -120,8 +142,20 @@ def _aggregate_by_day(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not day:
             continue
         if day not in by:
-            by[day] = {"date": day, "requests": 0, "tokens": 0, "cost": 0.0}
-        by[day]["requests"] += r.get("requests", 0) or 0
+            by[day] = {
+                "date": day,
+                "requests": 0,
+                "billable_requests": 0,
+                "free_requests": 0,
+                "tokens": 0,
+                "cost": 0.0,
+            }
+        requests = r.get("requests", 0) or 0
+        by[day]["requests"] += requests
+        if _is_billable_provider(r.get("provider")):
+            by[day]["billable_requests"] += requests
+        else:
+            by[day]["free_requests"] += requests
         by[day]["tokens"] += (r.get("input_tokens", 0) or 0) + (r.get("output_tokens", 0) or 0)
         by[day]["cost"] += float(r.get("estimated_cost_usd", 0) or 0)
     for v in by.values():
@@ -139,10 +173,17 @@ def _recent_jobs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "job_id": r.get("job_id"),
                 "keyword": r.get("keyword", ""),
                 "requests": 0,
+                "billable_requests": 0,
+                "free_requests": 0,
                 "cost": 0.0,
                 "last_at": r.get("created_at", ""),
             }
-        by[jid]["requests"] += r.get("requests", 0) or 0
+        requests = r.get("requests", 0) or 0
+        by[jid]["requests"] += requests
+        if _is_billable_provider(r.get("provider")):
+            by[jid]["billable_requests"] += requests
+        else:
+            by[jid]["free_requests"] += requests
         by[jid]["cost"] += float(r.get("estimated_cost_usd", 0) or 0)
     for v in by.values():
         v["cost"] = round(v["cost"], 4)

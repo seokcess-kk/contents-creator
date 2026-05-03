@@ -10,11 +10,37 @@ interface UsageData {
     output_tokens: number;
     total_tokens: number;
     requests: number;
+    billable_requests: number;
+    free_requests: number;
     estimated_cost_usd: number;
   };
-  by_provider: { provider: string; input_tokens: number; output_tokens: number; requests: number; cost: number }[];
-  by_day: { date: string; requests: number; tokens: number; cost: number }[];
-  recent_jobs: { job_id: string | null; keyword: string; requests: number; cost: number; last_at: string }[];
+  by_provider: {
+    provider: string;
+    input_tokens: number;
+    output_tokens: number;
+    requests: number;
+    billable_requests: number;
+    free_requests: number;
+    billing_type: "billable" | "free";
+    cost: number;
+  }[];
+  by_day: {
+    date: string;
+    requests: number;
+    billable_requests: number;
+    free_requests: number;
+    tokens: number;
+    cost: number;
+  }[];
+  recent_jobs: {
+    job_id: string | null;
+    keyword: string;
+    requests: number;
+    billable_requests: number;
+    free_requests: number;
+    cost: number;
+    last_at: string;
+  }[];
   error?: string;
 }
 
@@ -71,7 +97,11 @@ export default function UsageDashboard() {
             value={formatNumber(t.total_tokens)}
             sub={`입력 ${formatNumber(t.input_tokens)} / 출력 ${formatNumber(t.output_tokens)}`}
           />
-          <SummaryCard label="총 요청" value={formatNumber(t.requests)} sub={`${data.count}건 기록`} />
+          <SummaryCard
+            label="유료 요청"
+            value={formatNumber(t.billable_requests)}
+            sub={`${formatNumber(t.free_requests)}건 무료 / 총 ${formatNumber(t.requests)}건`}
+          />
         </div>
       </div>
 
@@ -89,7 +119,9 @@ export default function UsageDashboard() {
                 />
               </div>
               <span className="w-20 text-right text-sm font-semibold text-gray-900">${p.cost.toFixed(3)}</span>
-              <span className="w-16 text-right text-xs text-gray-600">{p.requests}건</span>
+              <span className="w-24 text-right text-xs text-gray-600">
+                {p.billing_type === "free" ? "무료" : "유료"} {p.requests}건
+              </span>
             </div>
           ))}
         </div>
@@ -105,7 +137,8 @@ export default function UsageDashboard() {
                 <thead className="text-gray-600 text-left border-b border-gray-200 sticky top-0 bg-white">
                   <tr>
                     <th className="pb-2 font-semibold">날짜</th>
-                    <th className="pb-2 font-semibold text-right">요청</th>
+                    <th className="pb-2 font-semibold text-right">유료</th>
+                    <th className="pb-2 font-semibold text-right">무료</th>
                     <th className="pb-2 font-semibold text-right">토큰</th>
                     <th className="pb-2 font-semibold text-right">비용</th>
                   </tr>
@@ -114,7 +147,8 @@ export default function UsageDashboard() {
                   {data.by_day.slice(0, 30).map((d) => (
                     <tr key={d.date}>
                       <td className="py-1 text-gray-800">{d.date}</td>
-                      <td className="py-1 text-right text-gray-800">{d.requests}</td>
+                      <td className="py-1 text-right text-gray-800">{d.billable_requests}</td>
+                      <td className="py-1 text-right text-gray-700">{d.free_requests}</td>
                       <td className="py-1 text-right text-gray-700">{formatNumber(d.tokens)}</td>
                       <td className="py-1 text-right font-semibold text-gray-900">${d.cost.toFixed(3)}</td>
                     </tr>
@@ -133,7 +167,8 @@ export default function UsageDashboard() {
                 <thead className="text-gray-600 text-left border-b border-gray-200 sticky top-0 bg-white">
                   <tr>
                     <th className="pb-2 font-semibold">키워드</th>
-                    <th className="pb-2 font-semibold text-right">요청</th>
+                    <th className="pb-2 font-semibold text-right">유료</th>
+                    <th className="pb-2 font-semibold text-right">무료</th>
                     <th className="pb-2 font-semibold text-right">비용</th>
                   </tr>
                 </thead>
@@ -143,7 +178,8 @@ export default function UsageDashboard() {
                       <td className="py-1 text-gray-800 truncate max-w-[180px]">
                         {j.keyword || j.job_id || "CLI"}
                       </td>
-                      <td className="py-1 text-right text-gray-800">{j.requests}</td>
+                      <td className="py-1 text-right text-gray-800">{j.billable_requests}</td>
+                      <td className="py-1 text-right text-gray-700">{j.free_requests}</td>
                       <td className="py-1 text-right font-semibold text-gray-900">${j.cost.toFixed(3)}</td>
                     </tr>
                   ))}

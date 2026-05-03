@@ -1,13 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Geist_Mono } from "next/font/google";
 import localFont from "next/font/local";
 import "./globals.css";
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 // P1-#6: remove CDN dependency. Use local font for restricted egress environments.
 // Pretendard Variable woff2 (45-920 variable weight) is loaded from public/fonts/.
@@ -31,7 +25,7 @@ export default function RootLayout({
   return (
     <html
       lang="ko"
-      className={`${pretendard.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${pretendard.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-gray-50 text-gray-900">
         <header className="sticky top-0 z-30 bg-white border-b border-gray-200 px-6 py-2 flex items-center justify-between shadow-sm">
