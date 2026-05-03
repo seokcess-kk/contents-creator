@@ -27,7 +27,9 @@ jobs:
   trigger:
     name: POST /api/rankings/check-all
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # 30 분 — check-all 자체는 BackgroundTasks 라 즉시 202, 그 후 polling 으로
+    # 결과 검증까지 포함. publication 100건 × 1초 sleep 도 여유 있게 흡수.
+    timeout-minutes: 30
     steps:
       - name: Validate secrets
         run: |
@@ -61,22 +63,92 @@ jobs:
           echo "::notice::응답: $response"
           echo "response=$response" >> "$GITHUB_OUTPUT"
 
+      - name: Verify execution result
+        id: verify
+        # /check-all/last polling — succeeded + errors_count==0 + usage_save_failed_count==0
+        # 까지 도달해야 그린. 2026-05-02 silent failure (snapshot 정상 저장됐지만
+        # api_usage 0건) 사고 이후 추가된 검증 단계.
+        run: |
+          set -euo pipefail
+          # 최대 25 분 (15초 × 100회) 대기 — publication 수에 비례.
+          MAX_ATTEMPTS=100
+          SLEEP=15
+          attempt=0
+          while [ $attempt -lt $MAX_ATTEMPTS ]; do
+            attempt=$((attempt + 1))
+            sleep $SLEEP
+            body=$(curl -sS \
+              --max-time 30 \
+              -H "X-API-Key: ${{ secrets.ADMIN_API_KEY }}" \
+              "${{ secrets.API_BASE_URL }}/api/rankings/check-all/last")
+            status=$(echo "$body" | jq -r '.status // "unknown"')
+            echo "[$attempt/$MAX_ATTEMPTS] status=$status body=$body"
+            case "$status" in
+              succeeded)
+                errors=$(echo "$body" | jq -r '.errors_count // 0')
+                usage_failed=$(echo "$body" | jq -r '.usage_save_failed_count // 0')
+                checked=$(echo "$body" | jq -r '.checked_count // 0')
+                {
+                  echo "checked=$checked"
+                  echo "errors=$errors"
+                  echo "usage_failed=$usage_failed"
+                  echo "body<<EOF"
+                  echo "$body"
+                  echo "EOF"
+                } >> "$GITHUB_OUTPUT"
+                if [ "$errors" -gt 0 ] || [ "$usage_failed" -gt 0 ]; then
+                  echo "::error::측정은 끝났으나 errors=$errors usage_save_failed=$usage_failed"
+                  exit 1
+                fi
+                echo "::notice::정상 종료: checked=$checked errors=0 usage_save_failed=0"
+                exit 0
+                ;;
+              failed)
+                echo "::error::orchestrator 가 raise — body=$body"
+                {
+                  echo "body<<EOF"
+                  echo "$body"
+                  echo "EOF"
+                } >> "$GITHUB_OUTPUT"
+                exit 1
+                ;;
+              running|never_run)
+                # 계속 polling
+                ;;
+              *)
+                echo "::warning::예상치 못한 status=$status"
+                ;;
+            esac
+          done
+          echo "::error::polling timeout — $((MAX_ATTEMPTS * SLEEP))초 안에 결과 미수신"
+          exit 1
+
       - name: Open issue on failure
         if: failure()
         uses: actions/github-script@v7
         with:
           script: |
             const today = new Date().toISOString().slice(0, 10);
+            const verifyBody = `${{ steps.verify.outputs.body || '' }}`;
+            const errors = `${{ steps.verify.outputs.errors || '?' }}`;
+            const usageFailed = `${{ steps.verify.outputs.usage_failed || '?' }}`;
+            const checked = `${{ steps.verify.outputs.checked || '?' }}`;
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `[ranking-cron] ${today} 발화 실패`,
+              title: `[ranking-cron] ${today} 발화/검증 실패`,
               body: [
                 `Workflow run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
                 ``,
-                `매일 09:00 KST 자동 발화 실패. Render 백엔드 상태를 확인하세요.`,
+                `**카운터**: checked=${checked}, errors=${errors}, usage_save_failed=${usageFailed}`,
                 ``,
-                `즉시 보강 실행: GitHub Actions UI 의 "Run workflow" 버튼.`,
+                `**검증 응답 본문**:`,
+                '```json',
+                verifyBody || '(no response body)',
+                '```',
+                ``,
+                `즉시 조치: Render Logs 의 \`api_usage 저장 실패\` 또는 \`ranking.check_failed\` 검색.`,
+                `재실행: GitHub Actions UI 의 "Run workflow" 버튼.`,
               ].join("\n"),
               labels: ["incident", "ranking-cron"],
             });

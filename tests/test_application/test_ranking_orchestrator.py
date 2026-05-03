@@ -526,6 +526,36 @@ class TestCheckAllActiveRankings:
         assert summary.found_count == 1
         assert summary.errors_count == 1
 
+    def test_usage_save_failures_propagate_to_summary(
+        self,
+        storage_mock: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """save_usage_to_supabase 실패가 RankingCheckSummary 의
+        usage_save_failed_count 로 전파되어야 한다 — 2026-05-02 silent failure
+        사고 회귀 방지."""
+        storage_mock.list_publications.return_value = [
+            _publication(id="p1"),
+            _publication(id="p2", url="https://m.blog.naver.com/u/222222222"),
+        ]
+
+        # 카운터를 먼저 reset 한 뒤 두 번 실패 기록 → check_all 이 reset 후 재시작
+        ranking_orchestrator._reset_check_all_counters()
+
+        def fake_check(_id: str) -> RankingSnapshot:
+            # 실제 저장 실패를 시뮬레이션 — 측정은 성공했지만 usage 저장만 실패
+            ranking_orchestrator._record_usage_save_failure()
+            return RankingSnapshot(publication_id=_id, position=1)
+
+        monkeypatch.setattr(ranking_orchestrator, "check_rankings_for_publication", fake_check)
+        monkeypatch.setattr(ranking_orchestrator.settings, "ranking_check_sleep_seconds", 0.0)
+
+        summary = ranking_orchestrator.check_all_active_rankings()
+        assert summary.checked_count == 2
+        assert summary.usage_save_failed_count == 2
+        # 측정 자체는 정상이므로 errors_count 와 분리되어 노출
+        assert summary.errors_count == 0
+
 
 class TestGetPublicationTimeline:
     def test_returns_none_when_publication_missing(self, storage_mock: MagicMock) -> None:

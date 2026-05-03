@@ -44,6 +44,9 @@ logger = logging.getLogger(__name__)
 # 단일 컨테이너 전제 — 멀티 인스턴스 전환 시 Supabase advisory lock 으로 교체.
 _check_all_lock = threading.Lock()
 _check_all_running = False
+# 마지막 check-all 실행 결과 — workflow 검증 단계가 polling 으로 읽어
+# errors_count 또는 usage_save_failed_count > 0 이면 자동 fail + issue.
+_last_check_all_result: dict[str, Any] = {"status": "never_run"}
 
 router = APIRouter(
     prefix="/rankings",
@@ -469,28 +472,72 @@ def trigger_check_all(background_tasks: BackgroundTasks) -> dict[str, Any]:
         _check_all_running = True
 
     started_at = datetime.now(UTC).isoformat()
-    background_tasks.add_task(_run_check_all_safely)
+    _last_check_all_result.clear()
+    _last_check_all_result.update({"status": "running", "started_at": started_at})
+    background_tasks.add_task(_run_check_all_safely, started_at)
     logger.info("rankings.check_all_accepted started_at=%s", started_at)
     return {"status": "accepted", "started_at": started_at}
 
 
-def _run_check_all_safely() -> None:
-    """BackgroundTasks 실행 본체. 종료 후 lock 해제 보장."""
+def _run_check_all_safely(started_at: str) -> None:
+    """BackgroundTasks 실행 본체. 종료 후 lock 해제 + 결과 저장 보장."""
     global _check_all_running
     try:
         summary = ranking_orchestrator.check_all_active_rankings()
+        finished_at = datetime.now(UTC).isoformat()
+        result: dict[str, Any] = {
+            "status": "succeeded",
+            "started_at": started_at,
+            "finished_at": finished_at,
+            "checked_count": summary.checked_count,
+            "found_count": summary.found_count,
+            "errors_count": summary.errors_count,
+            "usage_save_failed_count": summary.usage_save_failed_count,
+            "duration_seconds": summary.duration_seconds,
+        }
+        _last_check_all_result.clear()
+        _last_check_all_result.update(result)
         logger.info(
-            "rankings.check_all_done checked=%d found=%d errors=%d duration=%.1fs",
+            "rankings.check_all_done checked=%d found=%d errors=%d "
+            "usage_save_failed=%d duration=%.1fs",
             summary.checked_count,
             summary.found_count,
             summary.errors_count,
+            summary.usage_save_failed_count,
             summary.duration_seconds,
         )
-    except Exception:
+    except Exception as exc:
+        _last_check_all_result.clear()
+        _last_check_all_result.update(
+            {
+                "status": "failed",
+                "started_at": started_at,
+                "finished_at": datetime.now(UTC).isoformat(),
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            }
+        )
         logger.exception("rankings.check_all_failed")
     finally:
         with _check_all_lock:
             _check_all_running = False
+
+
+@router.get("/check-all/last")
+def get_last_check_all_result() -> dict[str, Any]:
+    """마지막 check-all 실행 결과. **GitHub Actions 검증 단계가 polling**.
+
+    workflow 가 호출 후 적절한 wait 뒤 이 endpoint 를 polling 해 status="succeeded"
+    + errors_count == 0 + usage_save_failed_count == 0 인지 확인. 어느 하나라도
+    어긋나면 workflow 가 fail + GitHub Issue 자동 생성.
+
+    응답 status:
+    - "never_run" — 서비스 시작 후 아직 호출 없음
+    - "running"   — 현재 실행 중
+    - "succeeded" — 정상 종료 (errors_count·usage_save_failed_count 별도 확인 필요)
+    - "failed"    — orchestrator 가 raise 한 예외 종료
+    """
+    return dict(_last_check_all_result)
 
 
 @router.get("/{publication_id}")

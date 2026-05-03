@@ -312,6 +312,84 @@ class TestTriggerCheckAll:
         assert rankings_router._check_all_running is False  # finally 로 해제 확인
 
 
+class TestGetLastCheckAllResult:
+    """/check-all/last polling — GitHub Actions 검증 단계가 사용."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_state(self) -> None:
+        from web.api.routers import rankings as rankings_router
+
+        rankings_router._check_all_running = False
+        rankings_router._last_check_all_result.clear()
+        rankings_router._last_check_all_result.update({"status": "never_run"})
+
+    def test_initial_status_is_never_run(self, client: TestClient) -> None:
+        resp = client.get("/api/rankings/check-all/last")
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "never_run"}
+
+    def test_records_succeeded_with_counters(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """check-all 정상 종료 후 last 가 카운터를 모두 노출."""
+        monkeypatch.setattr(
+            ranking_orchestrator,
+            "check_all_active_rankings",
+            lambda: RankingCheckSummary(
+                checked_count=10,
+                found_count=7,
+                errors_count=0,
+                usage_save_failed_count=0,
+                duration_seconds=12.3,
+            ),
+        )
+        client.post("/api/rankings/check-all")  # BackgroundTasks sync 실행
+        resp = client.get("/api/rankings/check-all/last")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "succeeded"
+        assert body["checked_count"] == 10
+        assert body["found_count"] == 7
+        assert body["errors_count"] == 0
+        assert body["usage_save_failed_count"] == 0
+        assert "started_at" in body and "finished_at" in body
+
+    def test_records_usage_save_failure_counter(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """workflow 가 fail 처리해야 할 케이스 — usage_save_failed_count > 0."""
+        monkeypatch.setattr(
+            ranking_orchestrator,
+            "check_all_active_rankings",
+            lambda: RankingCheckSummary(
+                checked_count=5,
+                found_count=3,
+                errors_count=0,
+                usage_save_failed_count=5,  # 모두 silent failure
+                duration_seconds=8.0,
+            ),
+        )
+        client.post("/api/rankings/check-all")
+        body = client.get("/api/rankings/check-all/last").json()
+        assert body["status"] == "succeeded"
+        assert body["usage_save_failed_count"] == 5
+
+    def test_records_failed_status_when_orchestrator_raises(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """orchestrator 가 raise 하면 last.status='failed' + error_type 기록."""
+
+        def _boom() -> RankingCheckSummary:
+            raise RuntimeError("brightdata gateway timeout")
+
+        monkeypatch.setattr(ranking_orchestrator, "check_all_active_rankings", _boom)
+        client.post("/api/rankings/check-all")
+        body = client.get("/api/rankings/check-all/last").json()
+        assert body["status"] == "failed"
+        assert body["error_type"] == "RuntimeError"
+        assert "brightdata gateway timeout" in body["error"]
+
+
 class TestListSnapshots:
     def test_404_when_publication_missing(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch

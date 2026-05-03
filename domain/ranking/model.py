@@ -72,6 +72,9 @@ class RankingCheckSummary(BaseModel):
     checked_count: int = Field(ge=0)
     found_count: int = Field(ge=0)  # position 이 NOT NULL 인 건수
     errors_count: int = Field(ge=0)
+    # 측정은 정상이었으나 api_usage INSERT 가 재시도 후에도 실패한 publication 수.
+    # 2026-05-02 silent failure 사고 이후 명시 노출. 0 이 아니면 운영자 알림 필요.
+    usage_save_failed_count: int = Field(default=0, ge=0)
     duration_seconds: float = Field(ge=0)
 
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import calendar as _calendar
 import logging
+import threading
 import time
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
@@ -41,6 +42,30 @@ from domain.ranking.url_match import normalize_any_url, normalize_blog_url
 KST = timezone(timedelta(hours=9))
 
 logger = logging.getLogger(__name__)
+
+# 2026-05-02 silent-failure 사고 후속 — check_all_active_rankings 사이클 동안의
+# api_usage 저장 실패 건수를 thread-safe 로 누적해 summary 에 노출한다.
+_check_all_counters_lock = threading.Lock()
+_check_all_usage_save_failures = 0
+
+
+def _reset_check_all_counters() -> None:
+    """check_all_active_rankings 진입 시 호출 — 카운터 초기화."""
+    global _check_all_usage_save_failures
+    with _check_all_counters_lock:
+        _check_all_usage_save_failures = 0
+
+
+def _record_usage_save_failure() -> None:
+    """save_usage_to_supabase 가 False 반환 시 호출 — 카운터 +1."""
+    global _check_all_usage_save_failures
+    with _check_all_counters_lock:
+        _check_all_usage_save_failures += 1
+
+
+def _read_usage_save_failures() -> int:
+    with _check_all_counters_lock:
+        return _check_all_usage_save_failures
 
 
 def register_publication(
@@ -366,7 +391,15 @@ def check_rankings_for_publication(publication_id: str) -> RankingSnapshot:
         client.close()
         usages = collect_usage()
         if usages:
-            save_usage_to_supabase(usages, keyword=publication.keyword, stage="ranking_check")
+            ok = save_usage_to_supabase(usages, keyword=publication.keyword, stage="ranking_check")
+            if not ok:
+                _record_usage_save_failure()
+                logger.warning(
+                    "ranking.usage_save_failed publication_id=%s keyword=%r — "
+                    "측정은 정상이지만 api_usage INSERT 실패. summary 에 누적.",
+                    publication_id,
+                    publication.keyword,
+                )
 
     snapshot = _parse_and_match(html, publication, publication_id)
     saved = storage.insert_snapshot(snapshot)
@@ -441,6 +474,7 @@ def check_all_active_rankings() -> RankingCheckSummary:
     Bright Data rate 보호 위해 publication 간 sleep.
     """
     started = time.monotonic()
+    _reset_check_all_counters()
     publications = storage.list_publications(limit=10_000)
     # 측정 대상 필터 — draft/held/republishing/dismissed 는 제외, URL 있는 active 계열만
     measurable = [
@@ -480,17 +514,21 @@ def check_all_active_rankings() -> RankingCheckSummary:
         logger.warning("state.sweep_workflow_failed", exc_info=True)
 
     duration = time.monotonic() - started
+    usage_save_failures = _read_usage_save_failures()
     summary = RankingCheckSummary(
         checked_count=checked,
         found_count=found,
         errors_count=errors,
+        usage_save_failed_count=usage_save_failures,
         duration_seconds=duration,
     )
-    logger.info(
-        "ranking.check_all_done checked=%d found=%d errors=%d duration=%.1fs",
+    log_method = logger.warning if usage_save_failures > 0 else logger.info
+    log_method(
+        "ranking.check_all_done checked=%d found=%d errors=%d usage_save_failed=%d duration=%.1fs",
         checked,
         found,
         errors,
+        usage_save_failures,
         duration,
     )
     return summary

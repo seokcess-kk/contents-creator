@@ -2,6 +2,10 @@
 
 도메인 함수가 `record_usage()` 로 기록한 사용량을
 stage_runner 가 `collect_usage()` 로 수확한 뒤 이 모듈로 저장한다.
+
+저장 실패는 silent 가 아니어야 한다 — 2026-05-02 사고에서 ranking_snapshots 48건이
+정상 INSERT 됐는데 같은 호출 사이클의 api_usage 가 0 건 (모두 실패 + except swallow)
+이었던 사례 이후 retry + 명시적 ERROR + caller 인지로 보강.
 """
 
 from __future__ import annotations
@@ -9,10 +13,22 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from tenacity import (
+    RetryError,
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+)
+
 from config.settings import settings
 from domain.common.usage import ApiUsage
 
 logger = logging.getLogger(__name__)
+
+# Supabase 일시 장애·rate limit 흡수. 1s → 2s → 4s = 총 3 시도, 약 7 초 안에 복구 또는 포기.
+_INSERT_MAX_ATTEMPTS = 3
+_INSERT_WAIT_MIN = 1
+_INSERT_WAIT_MAX = 4
 
 # 모델별 비용 매핑 (USD per 1 token)
 _COST_MAP: dict[str, tuple[float, float]] = {}
@@ -55,6 +71,45 @@ def estimate_cost(usage: ApiUsage) -> float:
     return 0.0
 
 
+def _build_rows(
+    usages: list[ApiUsage],
+    *,
+    job_id: str | None,
+    keyword: str | None,
+    stage: str | None,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for u in usages:
+        cost = estimate_cost(u)
+        rows.append(
+            {
+                "job_id": job_id,
+                "keyword": keyword,
+                "stage": stage,
+                "provider": u.provider,
+                "model": u.model,
+                "input_tokens": u.input_tokens,
+                "output_tokens": u.output_tokens,
+                "requests": u.requests,
+                "estimated_cost_usd": round(cost, 6),
+            }
+        )
+    return rows
+
+
+@retry(
+    stop=stop_after_attempt(_INSERT_MAX_ATTEMPTS),
+    wait=wait_exponential(multiplier=1, min=_INSERT_WAIT_MIN, max=_INSERT_WAIT_MAX),
+    reraise=True,
+)
+def _insert_with_retry(rows: list[dict[str, Any]]) -> None:
+    """Supabase api_usage INSERT — 일시 장애 흡수 (1s→2s→4s, 3 시도)."""
+    from config.supabase import get_client
+
+    client = get_client()
+    client.table("api_usage").insert(rows).execute()
+
+
 def save_usage_to_supabase(
     usages: list[ApiUsage],
     *,
@@ -64,9 +119,12 @@ def save_usage_to_supabase(
 ) -> bool:
     """사용량 레코드들을 Supabase api_usage 테이블에 저장.
 
+    재시도 3회 후에도 실패하면 ERROR 로그 + False 반환. 호출자(orchestrator)가
+    summary 의 usage_save_failed_count 에 누적해 운영자가 인지하도록 한다.
+
     Returns:
-        True — 저장 성공 또는 Supabase 미설정(정상 스킵).
-        False — 저장 시도했으나 예외 발생. 호출자가 summary 에 보고해 운영자가 인지.
+        True — 저장 성공 또는 Supabase 미설정·빈 입력(정상 스킵).
+        False — 재시도 후에도 INSERT 실패. caller 가 summary 에 보고.
     """
     if not usages:
         return True
@@ -75,36 +133,40 @@ def save_usage_to_supabase(
         logger.debug("Supabase 미설정, usage 저장 스킵")
         return True
 
-    try:
-        from config.supabase import get_client
+    rows = _build_rows(usages, job_id=job_id, keyword=keyword, stage=stage)
 
-        client = get_client()
-        rows: list[dict[str, Any]] = []
-        for u in usages:
-            cost = estimate_cost(u)
-            rows.append(
-                {
-                    "job_id": job_id,
-                    "keyword": keyword,
-                    "stage": stage,
-                    "provider": u.provider,
-                    "model": u.model,
-                    "input_tokens": u.input_tokens,
-                    "output_tokens": u.output_tokens,
-                    "requests": u.requests,
-                    "estimated_cost_usd": round(cost, 6),
-                }
-            )
-        client.table("api_usage").insert(rows).execute()
+    try:
+        _insert_with_retry(rows)
         return True
-    except Exception:
-        logger.error(
-            "api_usage 저장 실패 job=%s stage=%s (파이프라인은 계속)",
-            job_id,
-            stage,
-            exc_info=True,
-        )
+    except RetryError as exc:
+        last = exc.last_attempt.exception() if exc.last_attempt else exc
+        _log_insert_failure(rows, job_id=job_id, stage=stage, exception=last)
         return False
+    except Exception as exc:
+        _log_insert_failure(rows, job_id=job_id, stage=stage, exception=exc)
+        return False
+
+
+def _log_insert_failure(
+    rows: list[dict[str, Any]],
+    *,
+    job_id: str | None,
+    stage: str | None,
+    exception: BaseException | None,
+) -> None:
+    """save 실패의 ERROR 로그 — 사후 진단에 필요한 정보를 모두 포함."""
+    sample = rows[0] if rows else {}
+    logger.error(
+        "api_usage 저장 실패 — row_count=%d job=%s stage=%s exc_type=%s "
+        "first_row_provider=%s first_row_keyword=%s",
+        len(rows),
+        job_id,
+        stage,
+        type(exception).__name__ if exception else "unknown",
+        sample.get("provider"),
+        sample.get("keyword"),
+        exc_info=exception if isinstance(exception, BaseException) else None,
+    )
 
 
 def summarize_usages(usages: list[ApiUsage]) -> dict[str, Any]:
