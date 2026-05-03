@@ -126,9 +126,11 @@ class Settings(BaseSettings):
     # 브랜드 카드 — AI 이미지 예산 (R1 카드 세트당 호출 상한)
     brand_card_image_budget_per_set: int = 6  # 카드 세트당 Gemini 호출 상한
 
-    # 순위 추적 (SPEC-RANKING.md). False 면 스케줄러 비활성 (테스트·디버깅용)
-    ranking_scheduler_enabled: bool = True
-    ranking_scheduler_hour: int = 9  # KST 매일 실행 시각
+    # 순위 추적 (SPEC-RANKING.md). 운영은 외부 cron(GitHub Actions) 이 정식 경로.
+    # in-process APScheduler 는 컨테이너 재시작에 취약 (2026-04-30/05-01 누락 사고).
+    # 로컬 개발자가 in-process 스케줄러로 실험할 때만 RANKING_SCHEDULER_ENABLED=true.
+    ranking_scheduler_enabled: bool = False
+    ranking_scheduler_hour: int = 9  # KST 매일 실행 시각 (in-process 모드 한정)
     ranking_scheduler_minute: int = 0
     # publication 간 대기 (Bright Data rate 보호)
     ranking_check_sleep_seconds: float = 1.0

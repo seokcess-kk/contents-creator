@@ -11,6 +11,7 @@ from application import ranking_orchestrator
 from domain.ranking import storage
 from domain.ranking.model import (
     Publication,
+    RankingCheckSummary,
     RankingMatchError,
     RankingSnapshot,
     RankingTimeline,
@@ -108,8 +109,12 @@ class TestListPublications:
 
 
 class TestGetPublicationBySlug:
-    def test_returns_latest_publication(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(storage, "get_latest_publication_by_slug", lambda slug: _publication(slug=slug))
+    def test_returns_latest_publication(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            storage, "get_latest_publication_by_slug", lambda slug: _publication(slug=slug)
+        )
 
         resp = client.get("/api/rankings/publications/by-slug/kw-slug")
 
@@ -242,6 +247,69 @@ class TestTriggerCheck:
         monkeypatch.setattr(ranking_orchestrator, "check_rankings_for_publication", _raise)
         resp = client.post("/api/rankings/check/pub-1")
         assert resp.status_code == 502
+
+
+class TestTriggerCheckAll:
+    """외부 cron(GitHub Actions) 진입점 — 컨테이너 재시작 누락 사고(2026-04-30/05-01)
+    이후 in-process APScheduler 대체."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_lock(self) -> None:
+        """모듈 전역 lock state 를 테스트 간 초기화."""
+        from web.api.routers import rankings as rankings_router
+
+        rankings_router._check_all_running = False
+
+    def test_202_and_runs_orchestrator(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """202 즉시 응답 + BackgroundTasks 가 orchestrator 호출."""
+        called: dict[str, bool] = {"yes": False}
+
+        def _stub() -> RankingCheckSummary:
+            called["yes"] = True
+            return RankingCheckSummary(
+                checked_count=3, found_count=2, errors_count=0, duration_seconds=12.3
+            )
+
+        monkeypatch.setattr(ranking_orchestrator, "check_all_active_rankings", _stub)
+        resp = client.post("/api/rankings/check-all")
+        assert resp.status_code == 202
+        body = resp.json()
+        assert body["status"] == "accepted"
+        assert "started_at" in body
+        # TestClient 는 BackgroundTasks 를 응답 후 동기 실행
+        assert called["yes"] is True
+
+    def test_409_when_already_running(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """이전 배치가 끌리는 동안 두 번째 호출은 409 로 거절."""
+        from web.api.routers import rankings as rankings_router
+
+        rankings_router._check_all_running = True
+        # orchestrator 가 호출돼선 안 됨 — 호출되면 RuntimeError
+        monkeypatch.setattr(
+            ranking_orchestrator,
+            "check_all_active_rankings",
+            lambda: (_ for _ in ()).throw(RuntimeError("must not run")),
+        )
+        resp = client.post("/api/rankings/check-all")
+        assert resp.status_code == 409
+
+    def test_lock_released_after_run(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """orchestrator 가 raise 해도 다음 호출이 가능해야 함 (finally 가드)."""
+        from web.api.routers import rankings as rankings_router
+
+        def _boom() -> RankingCheckSummary:
+            raise RuntimeError("brightdata down")
+
+        monkeypatch.setattr(ranking_orchestrator, "check_all_active_rankings", _boom)
+        resp = client.post("/api/rankings/check-all")
+        assert resp.status_code == 202
+        assert rankings_router._check_all_running is False  # finally 로 해제 확인
 
 
 class TestListSnapshots:

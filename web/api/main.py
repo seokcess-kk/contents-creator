@@ -25,6 +25,15 @@ from web.api.routers import (
     ws,
 )
 
+# uvicorn 의 기본 로깅은 자기 logger 만 INFO 로 설정하고 root 는 WARNING 으로 둔다.
+# 그래서 application.* / web.* 의 logger.info(...) 가 silent 가 되어 cron tick·
+# lifespan 시작 로그가 모두 안 보이는 사고가 있었다(2026-04-30/05-01 사후 분석).
+# basicConfig 를 명시 호출해 INFO 가 stdout 으로 나가도록 강제한다.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+
 logger = logging.getLogger(__name__)
 
 job_manager = JobManager()
@@ -32,7 +41,11 @@ job_manager = JobManager()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """앱 시작/종료 시 리소스 관리. APScheduler 도 lifecycle 에 통합."""
+    """앱 시작/종료 시 리소스 관리.
+
+    순위 수집은 외부 cron(GitHub Actions → POST /api/rankings/check-all)이 정식 경로.
+    in-process APScheduler 는 default off, 로컬 개발용으로만 settings 로 토글 가능.
+    """
     loop = asyncio.get_running_loop()
     job_manager.set_loop(loop)
 
@@ -53,9 +66,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     ranking_scheduler = None
     if settings.ranking_scheduler_enabled:
+        # default False — 로컬 개발자가 명시적으로 켤 때만 in-process cron 동작.
+        # 운영(Render)에서는 외부 GitHub Actions cron 을 사용한다.
         from application.scheduler import start_scheduler
 
         ranking_scheduler = start_scheduler()
+        logger.info("ranking.scheduler.in_process_enabled — local dev mode")
 
     logger.info("Contents Creator API started")
     yield

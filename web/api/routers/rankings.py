@@ -27,10 +27,11 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+import threading
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field, field_validator
 
 from application import ranking_orchestrator
@@ -38,6 +39,11 @@ from domain.ranking.model import RankingDuplicateUrlError, RankingMatchError
 from web.api.auth import require_api_key
 
 logger = logging.getLogger(__name__)
+
+# 외부 cron(GitHub Actions)이 매일 호출하는 /check-all 의 동시 실행 가드.
+# 단일 컨테이너 전제 — 멀티 인스턴스 전환 시 Supabase advisory lock 으로 교체.
+_check_all_lock = threading.Lock()
+_check_all_running = False
 
 router = APIRouter(
     prefix="/rankings",
@@ -440,6 +446,51 @@ def trigger_check(publication_id: str) -> dict[str, Any]:
     except RankingMatchError as exc:
         raise HTTPException(status_code=502, detail=f"SERP 측정 실패: {exc}") from exc
     return snapshot.model_dump(mode="json")
+
+
+@router.post("/check-all", status_code=202)
+def trigger_check_all(background_tasks: BackgroundTasks) -> dict[str, Any]:
+    """전체 활성 publication 일괄 SERP 체크. **외부 cron 진입점**.
+
+    GitHub Actions 가 매일 09:00 KST 에 호출. 즉시 202 + 백그라운드 실행.
+    중복 호출(이전 배치가 1시간 넘게 끌리는 등)은 in-memory lock 으로 409.
+
+    in-process APScheduler 가 컨테이너 재시작에 취약했던 문제(2026-04-30·05-01
+    누락 실측)를 해결하려고 외부 cron 진입점으로 설계. 컨테이너 lifecycle 과
+    무관하게 정확히 한 번 발화한다.
+    """
+    global _check_all_running
+    with _check_all_lock:
+        if _check_all_running:
+            raise HTTPException(
+                status_code=409,
+                detail="check-all 이 이미 실행 중입니다. 이전 배치 종료 후 재시도하세요.",
+            )
+        _check_all_running = True
+
+    started_at = datetime.now(UTC).isoformat()
+    background_tasks.add_task(_run_check_all_safely)
+    logger.info("rankings.check_all_accepted started_at=%s", started_at)
+    return {"status": "accepted", "started_at": started_at}
+
+
+def _run_check_all_safely() -> None:
+    """BackgroundTasks 실행 본체. 종료 후 lock 해제 보장."""
+    global _check_all_running
+    try:
+        summary = ranking_orchestrator.check_all_active_rankings()
+        logger.info(
+            "rankings.check_all_done checked=%d found=%d errors=%d duration=%.1fs",
+            summary.checked_count,
+            summary.found_count,
+            summary.errors_count,
+            summary.duration_seconds,
+        )
+    except Exception:
+        logger.exception("rankings.check_all_failed")
+    finally:
+        with _check_all_lock:
+            _check_all_running = False
 
 
 @router.get("/{publication_id}")

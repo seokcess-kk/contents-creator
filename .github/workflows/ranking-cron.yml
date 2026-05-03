@@ -1,0 +1,82 @@
+name: ranking-daily-check
+
+# 매일 09:00 KST = 00:00 UTC 에 발화.
+# in-process APScheduler 는 컨테이너 재시작·OOM 으로 누락이 발생해
+# (2026-04-30, 2026-05-01 실측 사고) 외부 cron 으로 분리한다.
+# GitHub Actions 는 우리 컨테이너 lifecycle 과 완전히 독립이라 누락 불가능.
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch: # 운영자 수동 트리거용
+    inputs:
+      reason:
+        description: "수동 실행 사유 (감사 로그)"
+        required: false
+        default: "manual run"
+
+permissions:
+  contents: read
+  issues: write # 실패 시 이슈 자동 생성
+
+concurrency:
+  # 매일 cron 이 겹치면 의미 없음 — 동시 실행 차단
+  group: ranking-daily-check
+  cancel-in-progress: false
+
+jobs:
+  trigger:
+    name: POST /api/rankings/check-all
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate secrets
+        run: |
+          if [ -z "${{ secrets.API_BASE_URL }}" ]; then
+            echo "::error::API_BASE_URL secret 이 설정되지 않았습니다."
+            exit 1
+          fi
+          if [ -z "${{ secrets.ADMIN_API_KEY }}" ]; then
+            echo "::error::ADMIN_API_KEY secret 이 설정되지 않았습니다."
+            exit 1
+          fi
+
+      - name: Trigger ranking check
+        id: trigger
+        run: |
+          # --fail-with-body: 4xx/5xx 일 때 본문도 보고 exit 1
+          # --retry 3 --retry-delay 60: Render cold start / 일시적 503 흡수
+          # --retry-all-errors: 응답 실패뿐 아니라 네트워크 에러도 재시도
+          # --max-time 60: HTTP 응답 자체는 즉시 202 라 60초면 충분
+          set -euo pipefail
+          response=$(curl -sS \
+            --fail-with-body \
+            --retry 3 \
+            --retry-delay 60 \
+            --retry-all-errors \
+            --max-time 60 \
+            -X POST \
+            -H "X-API-Key: ${{ secrets.ADMIN_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            "${{ secrets.API_BASE_URL }}/api/rankings/check-all")
+          echo "::notice::응답: $response"
+          echo "response=$response" >> "$GITHUB_OUTPUT"
+
+      - name: Open issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const today = new Date().toISOString().slice(0, 10);
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[ranking-cron] ${today} 발화 실패`,
+              body: [
+                `Workflow run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+                ``,
+                `매일 09:00 KST 자동 발화 실패. Render 백엔드 상태를 확인하세요.`,
+                ``,
+                `즉시 보강 실행: GitHub Actions UI 의 "Run workflow" 버튼.`,
+              ].join("\n"),
+              labels: ["incident", "ranking-cron"],
+            });
