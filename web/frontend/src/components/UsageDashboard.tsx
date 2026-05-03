@@ -95,16 +95,16 @@ export default function UsageDashboard() {
           ))}
         </div>
         <div className="col-span-12 lg:col-span-9 grid grid-cols-3 gap-3">
-          <SummaryCard label="총 비용" value={`$${numberOrZero(t.estimated_cost_usd).toFixed(2)}`} sub="USD" />
+          <SummaryCard label="총 비용" value={`$${formatCost(numberOrZero(t.estimated_cost_usd))}`} sub="USD" />
           <SummaryCard
             label="총 토큰"
             value={formatNumber(totals.totalTokens)}
             sub={`입력 ${formatNumber(totals.inputTokens)} / 출력 ${formatNumber(totals.outputTokens)}`}
           />
           <SummaryCard
-            label="유료 요청"
-            value={formatNumber(totals.billableRequests)}
-            sub={`${formatNumber(totals.freeRequests)}건 무료 / 총 ${formatNumber(totals.requests)}건`}
+            label="총 호출"
+            value={formatNumber(totals.requests)}
+            sub={`유료 ${formatNumber(totals.billableRequests)} / 무료 ${formatNumber(totals.freeRequests)}`}
           />
         </div>
       </div>
@@ -139,7 +139,7 @@ export default function UsageDashboard() {
                   <td className="py-2 text-right text-gray-800">{p.billableRequests}</td>
                   <td className="py-2 text-right text-gray-700">{p.freeRequests}</td>
                   <td className="py-2 text-right text-gray-700">{p.requests}</td>
-                  <td className="py-2 text-right font-semibold text-gray-900">${p.cost.toFixed(3)}</td>
+                  <td className="py-2 text-right font-semibold text-gray-900">${formatCost(p.cost)}</td>
                 </tr>
               ))}
             </tbody>
@@ -170,7 +170,7 @@ export default function UsageDashboard() {
                       <td className="py-1 text-right text-gray-800">{d.billableRequests}</td>
                       <td className="py-1 text-right text-gray-700">{d.freeRequests}</td>
                       <td className="py-1 text-right text-gray-700">{formatNumber(d.tokens)}</td>
-                      <td className="py-1 text-right font-semibold text-gray-900">${d.cost.toFixed(3)}</td>
+                      <td className="py-1 text-right font-semibold text-gray-900">${formatCost(d.cost)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -200,7 +200,7 @@ export default function UsageDashboard() {
                       </td>
                       <td className="py-1 text-right text-gray-800">{j.billableRequests}</td>
                       <td className="py-1 text-right text-gray-700">{j.freeRequests}</td>
-                      <td className="py-1 text-right font-semibold text-gray-900">${j.cost.toFixed(3)}</td>
+                      <td className="py-1 text-right font-semibold text-gray-900">${formatCost(j.cost)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -227,6 +227,13 @@ function formatNumber(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return String(n);
+}
+
+// 비용은 0.01 미만이면 4자리, 그 이상은 2자리. $0.0034 가 $0.00 으로 깎이는 사고 방지.
+function formatCost(usd: number): string {
+  if (usd === 0) return "0.00";
+  if (usd < 0.01) return usd.toFixed(4);
+  return usd.toFixed(2);
 }
 
 const FREE_PROVIDERS = new Set(["naver_searchad"]);

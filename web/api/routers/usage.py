@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query
 
@@ -15,12 +16,39 @@ router = APIRouter(prefix="/usage", tags=["usage"], dependencies=[Depends(requir
 logger = logging.getLogger(__name__)
 
 _FREE_PROVIDERS = {"naver_searchad"}
+_KST = ZoneInfo("Asia/Seoul")
+# Supabase PostgREST 단일 응답 한도. 더 큰 페이지는 서버에서 잘려 위험.
+_PAGE_SIZE = 1000
+# 30일 + 다양한 작업이라도 이를 초과하면 무한루프 방지 차원에서 종료.
+_MAX_ROWS = 100_000
 
 
 def _get_supabase():  # type: ignore[no-untyped-def]
     from config.supabase import get_client
 
     return get_client()
+
+
+def _fetch_all_usage(client: Any, *, since: str, provider: str | None) -> list[dict[str, Any]]:
+    """api_usage 페이지네이션 — 30일 분량 row 가 _PAGE_SIZE 를 넘으면 잘리는 사고
+    (2026-05-03 dashboard 부분 표시) 방지. range() 로 모두 수확."""
+    rows: list[dict[str, Any]] = []
+    offset = 0
+    while offset < _MAX_ROWS:
+        q = client.table("api_usage").select("*").gte("created_at", since)
+        if provider:
+            q = q.eq("provider", provider)
+        page = (
+            q.order("created_at", desc=True).range(offset, offset + _PAGE_SIZE - 1).execute().data
+            or []
+        )
+        rows.extend(page)
+        if len(page) < _PAGE_SIZE:
+            break
+        offset += _PAGE_SIZE
+    if offset >= _MAX_ROWS:
+        logger.warning("usage._fetch_all 최대치 도달 — 범위·필터 검토 필요")
+    return rows
 
 
 @router.get("")
@@ -35,16 +63,8 @@ def get_usage_summary(
     try:
         client = _get_supabase()
         since = (datetime.now(tz=UTC) - timedelta(days=days)).isoformat()
+        rows = _fetch_all_usage(client, since=since, provider=provider)
 
-        query = client.table("api_usage").select("*").gte("created_at", since)
-        if provider:
-            query = query.eq("provider", provider)
-        query = query.order("created_at", desc=True).limit(500)
-
-        result = query.execute()
-        rows = result.data or []
-
-        # 집계
         totals = _aggregate(rows)
         by_provider = _aggregate_by_provider(rows)
         by_day = _aggregate_by_day(rows)
@@ -135,10 +155,27 @@ def _aggregate_by_provider(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return list(by.values())
 
 
+def _kst_date(created_at: object) -> str:
+    """ISO timestamptz 문자열 → KST(YYYY-MM-DD).
+
+    Supabase 가 UTC 로 저장하므로 그대로 [:10] 자르면 한국 사용자 기준 자정~오전 9시
+    호출이 전날로 집계되는 사고가 있었다(2026-05-03 dashboard 검토).
+    """
+    if not isinstance(created_at, str) or len(created_at) < 10:
+        return ""
+    try:
+        dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+    except ValueError:
+        return created_at[:10]  # 폴백: 파싱 불가 시 원문 prefix
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(_KST).strftime("%Y-%m-%d")
+
+
 def _aggregate_by_day(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     by: dict[str, dict[str, Any]] = {}
     for r in rows:
-        day = str(r.get("created_at", ""))[:10]
+        day = _kst_date(r.get("created_at"))
         if not day:
             continue
         if day not in by:
