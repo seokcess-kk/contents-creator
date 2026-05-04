@@ -44,24 +44,25 @@ jobs:
 
       - name: Trigger ranking check
         id: trigger
+        # POST 는 멱등이 아니라 retry 가 위험하다 (2026-05-04 사고: timeout 후
+        # curl --retry 가 같은 POST 재전송 → 우리 lock 과 충돌해 409 폭발).
+        # 해결: (1) endpoint 를 idempotent 하게 변경 — 이미 실행 중이면 200 +
+        # already_running. (2) 여기서도 retry 제거 + max-time 늘려 cold start 흡수.
+        # 첫 호출이 timeout/error 여도 fail 하지 않는다 — 검증은 다음 step 의
+        # /check-all/last polling 이 책임진다.
         run: |
-          # --fail-with-body: 4xx/5xx 일 때 본문도 보고 exit 1
-          # --retry 3 --retry-delay 60: Render cold start / 일시적 503 흡수
-          # --retry-all-errors: 응답 실패뿐 아니라 네트워크 에러도 재시도
-          # --max-time 60: HTTP 응답 자체는 즉시 202 라 60초면 충분
-          set -euo pipefail
+          set +e
           response=$(curl -sS \
-            --fail-with-body \
-            --retry 3 \
-            --retry-delay 60 \
-            --retry-all-errors \
-            --max-time 60 \
+            --max-time 120 \
+            -w "\n__HTTP__:%{http_code}\n" \
             -X POST \
             -H "X-API-Key: ${{ secrets.ADMIN_API_KEY }}" \
             -H "Content-Type: application/json" \
             "${{ secrets.API_BASE_URL }}/api/rankings/check-all")
-          echo "::notice::응답: $response"
-          echo "response=$response" >> "$GITHUB_OUTPUT"
+          exit_code=$?
+          echo "::notice::trigger exit=$exit_code 응답=$response"
+          # exit 0 유지 — verify step 이 진짜 결과로 판정
+          exit 0
 
       - name: Verify execution result
         id: verify

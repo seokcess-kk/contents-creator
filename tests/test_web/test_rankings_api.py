@@ -281,13 +281,20 @@ class TestTriggerCheckAll:
         # TestClient 는 BackgroundTasks 를 응답 후 동기 실행
         assert called["yes"] is True
 
-    def test_409_when_already_running(
+    def test_idempotent_when_already_running(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """이전 배치가 끌리는 동안 두 번째 호출은 409 로 거절."""
+        """이전 배치가 끌리는 동안 두 번째 호출은 **200 + already_running** (idempotent).
+
+        2026-05-04 workflow retry × 우리 lock 충돌로 409 폭발한 사고 후 변경.
+        POST 가 멱등이 아니라는 점을 외부 retry 전략에 의존하지 않고 endpoint 자체에서 흡수.
+        """
         from web.api.routers import rankings as rankings_router
 
         rankings_router._check_all_running = True
+        rankings_router._last_check_all_result.update(
+            {"status": "running", "started_at": "2026-05-04T00:00:00+00:00"}
+        )
         # orchestrator 가 호출돼선 안 됨 — 호출되면 RuntimeError
         monkeypatch.setattr(
             ranking_orchestrator,
@@ -295,7 +302,10 @@ class TestTriggerCheckAll:
             lambda: (_ for _ in ()).throw(RuntimeError("must not run")),
         )
         resp = client.post("/api/rankings/check-all")
-        assert resp.status_code == 409
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "already_running"
+        assert body["started_at"] == "2026-05-04T00:00:00+00:00"
 
     def test_lock_released_after_run(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch

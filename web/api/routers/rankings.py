@@ -451,12 +451,16 @@ def trigger_check(publication_id: str) -> dict[str, Any]:
     return snapshot.model_dump(mode="json")
 
 
-@router.post("/check-all", status_code=202)
-def trigger_check_all(background_tasks: BackgroundTasks) -> dict[str, Any]:
+@router.post("/check-all")
+def trigger_check_all(background_tasks: BackgroundTasks, response: Response) -> dict[str, Any]:
     """전체 활성 publication 일괄 SERP 체크. **외부 cron 진입점**.
 
     GitHub Actions 가 매일 09:00 KST 에 호출. 즉시 202 + 백그라운드 실행.
-    중복 호출(이전 배치가 1시간 넘게 끌리는 등)은 in-memory lock 으로 409.
+
+    **idempotent** — 이미 실행 중일 때 같은 호출이 또 와도 (workflow retry,
+    cold-start timeout 후 재전송 등) 200 + 현재 진행 정보를 반환한다. 2026-05-04
+    workflow retry × 우리 lock 충돌로 409 폭발한 사고 후 변경. POST 가 멱등이
+    아니라는 점을 외부 retry 전략에 의존하지 않고 endpoint 자체에서 흡수.
 
     in-process APScheduler 가 컨테이너 재시작에 취약했던 문제(2026-04-30·05-01
     누락 실측)를 해결하려고 외부 cron 진입점으로 설계. 컨테이너 lifecycle 과
@@ -465,10 +469,12 @@ def trigger_check_all(background_tasks: BackgroundTasks) -> dict[str, Any]:
     global _check_all_running
     with _check_all_lock:
         if _check_all_running:
-            raise HTTPException(
-                status_code=409,
-                detail="check-all 이 이미 실행 중입니다. 이전 배치 종료 후 재시도하세요.",
-            )
+            response.status_code = 200
+            return {
+                "status": "already_running",
+                "started_at": _last_check_all_result.get("started_at"),
+                "detail": "이미 실행 중인 배치가 있어 새 호출을 무시했습니다 (idempotent).",
+            }
         _check_all_running = True
 
     started_at = datetime.now(UTC).isoformat()
@@ -476,6 +482,7 @@ def trigger_check_all(background_tasks: BackgroundTasks) -> dict[str, Any]:
     _last_check_all_result.update({"status": "running", "started_at": started_at})
     background_tasks.add_task(_run_check_all_safely, started_at)
     logger.info("rankings.check_all_accepted started_at=%s", started_at)
+    response.status_code = 202
     return {"status": "accepted", "started_at": started_at}
 
 
