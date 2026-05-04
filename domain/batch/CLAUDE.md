@@ -15,7 +15,7 @@
   예외 (`CsvParseError`, `NotSupportedYetError`), Literal 타입 (`Mode`,
   `Operation`, `ItemStatus` 등)
 - `csv_parser.py` — CSV 텍스트 → `(created, skipped, failed)`. 검증·중복 제거·폴백
-- `storage.py` — Supabase CRUD. payload 변환은 본 파일에만. `update_item_status` 는 상태 머신, `update_item_result` 는 결과 메타(pattern_card_id/generated_content_id/compliance_passed) 책임 분리 (Phase B7)
+- `storage.py` — Supabase CRUD. payload 변환은 본 파일에만. `update_item_status` 는 상태 머신, `update_item_result` 는 결과 메타(pattern_card_id/generated_content_id/compliance_passed/search_volume/difficulty_grade) 책임 분리 (Phase B7+B8). `find_primary_in_cluster(batch_id, cluster_id)` 는 cluster 재사용 정책의 primary 조회 단일 출처 (Phase B8). cluster_dedupe **default OFF** — 본문 유사도 1페이지 노출 리스크 보수 처리
 
 ## 핵심 규칙
 

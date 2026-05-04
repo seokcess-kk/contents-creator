@@ -108,12 +108,17 @@ def update_item_result(
     generated_content_id: str | None = None,
     compliance_passed: bool | None = None,
     quality_score: float | None = None,
+    search_volume: int | None = None,
+    difficulty_grade: str | None = None,
 ) -> None:
     """item 결과 메타 partial update. 모든 인자 None 이면 noop (Supabase 호출 0).
 
     SPEC-BATCH §3 Phase 2 PR1 — `_run_operation` 이 회수한 id 를 batch item 에
     반영해 BatchProgressTable 의 결과 직링크를 가능하게 한다. status 머신은
     `update_item_status` 가 담당 — 책임 분리.
+
+    PR2 추가 — `search_volume`/`difficulty_grade` 는 사전 필터 결과 메타 (통과·미달
+    무관하게 저장되어 검수 큐에서 운영자가 확인).
     """
     payload: dict[str, Any] = {}
     if pattern_card_id is not None:
@@ -124,9 +129,33 @@ def update_item_result(
         payload["compliance_passed"] = compliance_passed
     if quality_score is not None:
         payload["quality_score"] = quality_score
+    if search_volume is not None:
+        payload["search_volume"] = search_volume
+    if difficulty_grade is not None:
+        payload["difficulty_grade"] = difficulty_grade
     if not payload:
         return
     get_client().table(_ITEM_TABLE).update(payload).eq("id", item_id).execute()
+
+
+def find_primary_in_cluster(batch_id: str, cluster_id: str) -> KeywordBatchItem | None:
+    """같은 batch 안에서 cluster_id 의 primary item 1건 조회.
+
+    PR2 cluster 재사용 — member 가 자기 cluster 의 primary 를 찾아 PatternCard 재사용.
+    None: primary 부재 (잘못된 CSV) 또는 cluster_id 무효.
+    """
+    result = (
+        get_client()
+        .table(_ITEM_TABLE)
+        .select("*")
+        .eq("batch_id", batch_id)
+        .eq("cluster_id", cluster_id)
+        .eq("cluster_role", "primary")
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    return _row_to_item(cast("dict[str, Any]", rows[0])) if rows else None
 
 
 def update_batch_status(

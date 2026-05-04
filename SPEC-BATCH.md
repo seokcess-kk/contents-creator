@@ -102,15 +102,25 @@ python scripts/run_batch.py --status <batch_id>
 **가치**: 100→30~50 압축 + 검수 효율 5~10배
 
 **사전 필터** (analyze 결과로 자동 분류):
-- `min_search_volume` (batch 단위, default 200) — 검색량 미달 → `skipped`
-- `max_difficulty` (batch 단위, default `MEDIUM`) — `HIGH` 는 보류
-- `cluster_dedupe` (true) — 같은 cluster 의 member 는 primary 와 같은 PatternCard 참조
+- `min_search_volume` (batch 단위, default None — 임계값 미설정 시 호출 0) — 검색량 미달 → `skipped`
+- `max_difficulty` (batch 단위, default None) — 난이도 초과 → `skipped`
+- `cluster_dedupe` (default **False** — PR2 보수 결정) — 명시적 ON 시만 같은 cluster 재사용 활성
 
 **Cluster 재사용**:
 1. `cluster_role=primary` 만 분석 → PatternCard 생성 → `keyword_batch_items.pattern_card_id` 저장
 2. 같은 cluster 의 `member` 들은 primary 의 `pattern_card_id` 그대로 참조
 3. `cluster_role` 미지정 시 폴백: 같은 cluster 안에서 `priority` 최상위 = primary
 4. `PatternCard` 모델은 무수정 (재사용 관계는 batch_item 쪽 컬럼만)
+
+**클러스터 재사용 사용 가이드** (PR2 추가):
+
+cluster 재사용은 **검색 의도가 사실상 같은 long-tail 변형 묶음**에만 사용한다. PatternCard 재사용 자체는 분석 결과 (target_reader, sections, DIA+, distributions) 만 공유하고 outline + body 는 키워드별로 새로 생성하지만, cluster 의 키워드들이 검색 의도가 너무 가까우면 outline·body 도 비슷해질 가능성이 잔존한다. 본문 유사도가 높아지면 네이버 SERP 에서 두 키워드 모두 1페이지 노출이 어려워진다 (duplicate content penalty). 따라서:
+
+- **권장 묶음**: 같은 의도의 long-tail 변형 — `다이어트 한의원 추천` ↔ `좋은 다이어트 한의원`
+- **분리 묶음**: 지역·브랜드·intent 가 다른 키워드 — `강남 다이어트 한의원` 과 `역삼 다이어트 한의원` 은 같은 cluster 로 묶지 말 것
+- **default OFF** 정책: 의도하지 않은 cluster 재사용으로 인한 노출 페널티를 차단. 운영자가 키워드 묶음을 검토 후 명시적으로 `--cluster-dedupe` (CLI) / checkbox ON (Web) / `cluster_dedupe=true` (API) 로 켤 때만 활성
+
+본문 차별화 자동 검증 (Jaccard 유사도 측정 후 needs_review 마킹) 과 outline negative example 주입은 PR3 검수 큐와 함께 추가 예정.
 
 **상태 머신 활성화** (Phase 2):
 ```
@@ -506,3 +516,4 @@ python scripts/run_batch.py --csv keywords.csv --auto-publish    # Phase 4
 
 - `2026-05-04`: v1 초안. Phase 1~4 정의, dual-mode (now/overnight/auto), 8 컬럼 CSV 스키마, `domain/batch` 격리 도메인. 외부 검토 4 라운드 반영 — operation 분기, mode now-only MVP, FK nullable triple link, PatternCard 모델 보호, cluster_role 명시.
 - `2026-05-04`: Phase 2 PR1 부분 완료 — **FK 회수 + PatternCard 보관함**. `pattern_card.py._save_to_supabase` / `stage_runner._save_generated_to_supabase` 가 insert id 회수, 단일 흐름 결과 모델(AnalyzeResult/GenerateResult/PipelineResult)에 두 nullable id 필드 전파. `batch_orchestrator._run_operation` 이 `update_item_result` 로 keyword_batch_items FK 채움. 신규 `pattern_cards` 라우터 + `/patterns/by-id/[id]` 페이지. 단일 흐름 시그니처 무변경. 사전 필터·cluster·검수 큐는 PR2 (별도 차수).
+- `2026-05-04`: Phase 2 PR2 부분 완료 — **사전 필터 + 클러스터 재사용**. `batch_orchestrator._dispatch_item` 이 `running` 마킹 직후 (1) 임계값 설정 시 `analyze_keyword` 호출 + min_search_volume/max_difficulty 검사 후 미달 키워드 자동 skipped, (2) `cluster_dedupe=True AND cluster_role=member` 면 같은 cluster 의 primary PatternCard 를 재사용해 분석 단계 압축. `cluster_dedupe` default = **False** (본문 유사도로 인한 1페이지 노출 리스크 보수 처리). 검수 큐·triple link 사후 백필은 PR3·PR4 로 분리.

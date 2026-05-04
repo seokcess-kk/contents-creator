@@ -141,6 +141,46 @@ def test_update_item_result_propagates_supabase_error(mock_client: MagicMock) ->
         storage.update_item_result("i-1", pattern_card_id="pc-1")
 
 
+def test_update_item_result_includes_prefilter_meta(mock_client: MagicMock) -> None:
+    """Phase B8 — search_volume / difficulty_grade 도 partial update 에 포함."""
+    with patch("domain.batch.storage.get_client", return_value=mock_client):
+        storage.update_item_result(
+            "i-1",
+            search_volume=1500,
+            difficulty_grade="MEDIUM",
+        )
+    payload = mock_client.table.return_value.update.call_args.args[0]
+    assert payload == {"search_volume": 1500, "difficulty_grade": "MEDIUM"}
+
+
+def test_find_primary_in_cluster_returns_primary(mock_client: MagicMock) -> None:
+    """primary role item 1건 발견."""
+    mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value.data = [
+        {
+            "id": "i-primary",
+            "batch_id": "b-1",
+            "keyword": "다이어트 한의원",
+            "cluster_id": "c-1",
+            "cluster_role": "primary",
+            "status": "succeeded",
+            "pattern_card_id": "pc-1",
+        }
+    ]
+    with patch("domain.batch.storage.get_client", return_value=mock_client):
+        primary = storage.find_primary_in_cluster("b-1", "c-1")
+    assert primary is not None
+    assert primary.id == "i-primary"
+    assert primary.cluster_role == "primary"
+    assert primary.pattern_card_id == "pc-1"
+
+
+def test_find_primary_in_cluster_missing_returns_none(mock_client: MagicMock) -> None:
+    mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value.data = []
+    with patch("domain.batch.storage.get_client", return_value=mock_client):
+        primary = storage.find_primary_in_cluster("b-1", "c-x")
+    assert primary is None
+
+
 def test_count_items_by_status_aggregates(mock_client: MagicMock) -> None:
     items_payload = [
         {"id": "i-1", "batch_id": "b-1", "keyword": "k1", "status": "succeeded"},

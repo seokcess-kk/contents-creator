@@ -1097,7 +1097,55 @@
 - [x] `tests/test_web/test_pattern_cards_router.py` 신규 — recent/by-id/by-slug × (200 / 404 / 503 table missing)
 - [x] `tests/test_web/test_batches_api.py` — `keyword_slug` enrich 검증
 
-### B7.6 문서 + 검증
+### B7.6 문서 + 검증 ✅
+- [x] `bash .claude/hooks/build-check.sh` 그린 — 1136 passed, 76.45% coverage
+- [x] `cd web/frontend && npx tsc --noEmit && npx next build` 그린
+- [x] commit `feat(batch): Phase 2 PR1 — FK 회수 + PatternCard 보관함` (`2582d72`)
+
+---
+
+## 🧮 Phase B8 — 사전 필터 + 클러스터 재사용 (Phase 2 PR2, 2026-05-04 착수)
+
+> SPEC-BATCH §3 Phase 2 의 두 번째 갈래. batch 입력 압축 ("100→30~50"). 검수 큐·triple link 사후 백필은 PR3·PR4 로 분리. cluster_dedupe **default OFF** (1페이지 노출 리스크 보수 처리).
+
+### B8.1 도메인 — settings + storage ✅
+- [x] `config/settings.py` — `batch_cluster_primary_timeout_sec=600`, `batch_cluster_poll_interval_sec=1.0`
+- [x] `domain/batch/storage.py` — `update_item_result` 인자에 `search_volume`/`difficulty_grade` 추가 + `find_primary_in_cluster(batch_id, cluster_id)` 신규
+
+### B8.2 application — 사전 필터 + 클러스터 헬퍼 ✅
+- [x] `application/batch_orchestrator.py`:
+  - `_has_prefilter(batch)` — 임계값 설정 여부
+  - `_apply_prefilter(item, batch)` — analyze_keyword 호출 + 임계값 검사 + skipped 마킹 (graceful)
+  - `_exceeds_difficulty(grade, max_grade)` — DifficultyGrade 우선순위 dict 비교
+  - `_record_prefilter_meta` — search_volume/difficulty_grade 메타 graceful 저장
+  - `_resolve_cluster_primary` — primary polling/timeout/폴백 정책
+  - `_run_member_with_primary` — operation 별 재사용 분기 (analyze=즉시 / generate·pipeline=pattern_card_path 주입)
+  - `_resolve_primary_card_path` — pattern_cards 테이블 lookup → output_path/임시파일 폴백
+  - `_dispatch_item` 흐름 변경: batch fetch → 사전 필터 → cluster 재사용 → operation 분기
+- [x] `enqueue_from_csv` 인자 확장: `min_search_volume`/`max_difficulty`/`cluster_dedupe=False`
+
+### B8.3 Web API + CLI ✅
+- [x] `web/api/routers/batches.py` — `BatchCreateJsonRequest` + multipart form 에 임계값/cluster_dedupe (default False)
+- [x] `_form_int`/`_form_bool` 헬퍼 신규
+- [x] `scripts/run_batch.py` — `--min-search-volume` / `--max-difficulty` / `--cluster-dedupe` 옵션
+
+### B8.4 Frontend ✅
+- [x] `web/frontend/src/lib/api.ts` — `createBatch`/`createBatchFile` 타입에 임계값·cluster_dedupe 추가
+- [x] `web/frontend/src/components/BatchUploadForm.tsx` — 최소 월 검색량 input + 최대 난이도 select + 클러스터 재사용 checkbox (default OFF + inline 도움말)
+
+### B8.5 테스트 ✅ — 70 passed
+- [x] `tests/test_batch/test_storage.py` — find_primary_in_cluster 발견/부재, update_item_result 메타 인자
+- [x] `tests/test_application/test_batch_orchestrator.py` — storage_mock fixture 에 get_batch default 보강
+- [x] `tests/test_application/test_batch_prefilter.py` 신규 — 임계값 6 케이스 + graceful pass
+- [x] `tests/test_application/test_batch_cluster.py` 신규 — primary 부재/terminal/succeeded/polling/timeout, member analyze/generate/pipeline 분기
+- [x] `tests/test_web/test_batches_api.py` — JSON/multipart 임계값 전달 + cluster_dedupe default OFF
+
+### B8.6 문서
+- [ ] `SPEC-BATCH.md` — 변경 이력 + "클러스터 재사용 사용 가이드" 신규 절
+- [ ] `CLAUDE.md` 변경 이력 1줄
+- [ ] `domain/batch/CLAUDE.md` — find_primary_in_cluster + cluster_dedupe default OFF 명시
+
+### B8.7 검증 + commit
 - [ ] `bash .claude/hooks/build-check.sh` 그린
 - [ ] `cd web/frontend && npx tsc --noEmit && npx next build` 그린
-- [ ] commit `feat(batch): Phase 2 PR1 — FK 회수 + PatternCard 보관함`
+- [ ] commit `feat(batch): Phase 2 PR2 — 사전 필터 + 클러스터 재사용`

@@ -45,7 +45,13 @@ def _batch(**overrides: object) -> KeywordBatch:
 
 @pytest.fixture
 def storage_mock() -> Any:
+    """storage 전체 mock + get_batch default 를 임계값 없는 KeywordBatch 로.
+
+    Phase B8 — `_dispatch_item` 이 batch fetch 후 사전 필터/cluster 분기를 결정하므로
+    각 테스트에서 명시 override 안 하면 임계값 None / cluster_dedupe False default 사용.
+    """
     with patch("application.batch_orchestrator.storage") as m:
+        m.get_batch.return_value = _batch()
         yield m
 
 

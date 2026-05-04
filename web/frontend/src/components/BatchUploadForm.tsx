@@ -13,6 +13,10 @@ export default function BatchUploadForm({ onCreated }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ created: number; skipped: number; failed: number } | null>(null);
+  // Phase 2 PR2 — 사전 필터 + cluster 재사용 옵션. cluster_dedupe 는 default OFF.
+  const [minSearchVolume, setMinSearchVolume] = useState<string>("");
+  const [maxDifficulty, setMaxDifficulty] = useState<string>("");
+  const [clusterDedupe, setClusterDedupe] = useState(false);
 
   // mode: now 만 활성. overnight/auto 는 Phase 3 예정 (disabled + tooltip).
   const mode = "now" as const;
@@ -27,10 +31,15 @@ export default function BatchUploadForm({ onCreated }: Props) {
     setError(null);
     setResult(null);
     try {
+      const sv = minSearchVolume.trim();
+      const md = maxDifficulty.trim();
       const res = await createBatchFile({
         file,
         mode,
         name: name.trim() || undefined,
+        min_search_volume: sv ? Number(sv) : undefined,
+        max_difficulty: md || undefined,
+        cluster_dedupe: clusterDedupe,
       });
       setResult({
         created: res.created,
@@ -103,6 +112,54 @@ export default function BatchUploadForm({ onCreated }: Props) {
           enqueue 완료 — created {result.created} / skipped {result.skipped} / failed {result.failed}
         </div>
       )}
+      {/* Phase 2 PR2 — 사전 필터 + cluster 재사용 옵션 */}
+      <div className="grid grid-cols-12 gap-3 items-end pt-2 border-t border-gray-100">
+        <div className="col-span-6 lg:col-span-3">
+          <label className="block text-xs font-semibold text-gray-700 mb-1">
+            최소 월 검색량 <span className="text-gray-400 font-normal">(선택)</span>
+          </label>
+          <input
+            type="number"
+            min={0}
+            value={minSearchVolume}
+            onChange={(e) => setMinSearchVolume(e.target.value)}
+            placeholder="예: 200"
+            className="block w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+          />
+        </div>
+        <div className="col-span-6 lg:col-span-3">
+          <label className="block text-xs font-semibold text-gray-700 mb-1">
+            최대 난이도 <span className="text-gray-400 font-normal">(선택)</span>
+          </label>
+          <select
+            value={maxDifficulty}
+            onChange={(e) => setMaxDifficulty(e.target.value)}
+            className="block w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+          >
+            <option value="">필터 안 함</option>
+            <option value="LOW">LOW 까지</option>
+            <option value="MEDIUM">MEDIUM 까지</option>
+            <option value="HIGH">HIGH 까지</option>
+            <option value="MISSING">MISSING 까지</option>
+          </select>
+        </div>
+        <div className="col-span-12 lg:col-span-6">
+          <label className="inline-flex items-start gap-2 text-xs font-semibold text-gray-700">
+            <input
+              type="checkbox"
+              checked={clusterDedupe}
+              onChange={(e) => setClusterDedupe(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span className="flex-1">
+              클러스터 재사용 (default OFF)
+              <span className="block font-normal text-[11px] text-gray-500 mt-0.5">
+                cluster_id 의 primary 가 만든 PatternCard 를 member 가 재사용. 검색 의도가 사실상 같은 long-tail 변형 묶음에만 사용 — 지역·브랜드가 다른 키워드는 묶지 마세요 (본문 유사도로 1페이지 노출 어려워질 수 있음).
+              </span>
+            </span>
+          </label>
+        </div>
+      </div>
       <p className="text-[11px] text-gray-500">
         operation 기본값은 <strong>analyze</strong> (실수로 100건 full pipeline 도는 사고 차단). pipeline 은 CSV 에 명시 선택.
       </p>

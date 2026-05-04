@@ -61,11 +61,20 @@ def _supabase_error_response(exc: Exception, op: str) -> HTTPException:
 
 
 class BatchCreateJsonRequest(BaseModel):
-    """JSON 본문으로 enqueue. CSV 텍스트를 직접 담아 전송."""
+    """JSON 본문으로 enqueue. CSV 텍스트를 직접 담아 전송.
+
+    Phase 2 PR2 추가:
+        min_search_volume / max_difficulty: 사전 필터 임계값 (None 이면 필터 안 함).
+        cluster_dedupe: cluster_id 의 primary→member PatternCard 재사용. **default False**
+            — 본문 유사도로 인한 1페이지 노출 리스크 방지. 운영자가 의도적으로 켤 때만 ON.
+    """
 
     csv_text: str = Field(min_length=1)
     mode: str = Field(default="now")
     name: str | None = None
+    min_search_volume: int | None = None
+    max_difficulty: str | None = None  # "LOW"/"MEDIUM"/"HIGH"/"MISSING"
+    cluster_dedupe: bool = False
 
 
 @router.post("", status_code=202)
@@ -80,13 +89,16 @@ async def create_batch(request: Request) -> dict[str, Any]:
             status_code=503, detail="Supabase 미설정 — SUPABASE_URL/SUPABASE_KEY 확인"
         )
 
-    csv_text, mode, name = await _extract_csv_input(request)
+    csv_text, opts = await _extract_csv_input(request)
 
     try:
         result = batch_orchestrator.enqueue_from_csv(
             csv_text,
-            mode=mode,
-            name=name,
+            mode=opts["mode"],
+            name=opts["name"],
+            min_search_volume=opts["min_search_volume"],
+            max_difficulty=opts["max_difficulty"],
+            cluster_dedupe=opts["cluster_dedupe"],
         )
     except NotSupportedYetError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -98,8 +110,11 @@ async def create_batch(request: Request) -> dict[str, Any]:
     return result.model_dump(mode="json")
 
 
-async def _extract_csv_input(request: Request) -> tuple[str, str, str | None]:
-    """Content-Type 별로 csv_text/mode/name 추출. 잘못된 입력은 400."""
+async def _extract_csv_input(request: Request) -> tuple[str, dict[str, Any]]:
+    """Content-Type 별로 csv_text + 옵션 dict 추출. 잘못된 입력은 400.
+
+    옵션 dict 키: mode, name, min_search_volume, max_difficulty, cluster_dedupe.
+    """
     content_type = request.headers.get("content-type", "")
 
     if "multipart/form-data" in content_type:
@@ -111,7 +126,14 @@ async def _extract_csv_input(request: Request) -> tuple[str, str, str | None]:
             )
         csv_bytes = await csv_file.read()  # type: ignore[union-attr]
         csv_text = csv_bytes.decode("utf-8-sig")  # BOM 제거
-        return csv_text, str(form.get("mode") or "now"), _form_str(form.get("name"))
+        opts = {
+            "mode": str(form.get("mode") or "now"),
+            "name": _form_str(form.get("name")),
+            "min_search_volume": _form_int(form.get("min_search_volume")),
+            "max_difficulty": _form_str(form.get("max_difficulty")),
+            "cluster_dedupe": _form_bool(form.get("cluster_dedupe")),
+        }
+        return csv_text, opts
 
     if "application/json" in content_type:
         try:
@@ -122,7 +144,14 @@ async def _extract_csv_input(request: Request) -> tuple[str, str, str | None]:
             parsed = BatchCreateJsonRequest(**body)
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"본문 형식 오류: {exc}") from exc
-        return parsed.csv_text, parsed.mode, parsed.name
+        opts = {
+            "mode": parsed.mode,
+            "name": parsed.name,
+            "min_search_volume": parsed.min_search_volume,
+            "max_difficulty": parsed.max_difficulty,
+            "cluster_dedupe": parsed.cluster_dedupe,
+        }
+        return parsed.csv_text, opts
 
     raise HTTPException(
         status_code=400,
@@ -138,6 +167,27 @@ def _form_str(value: object) -> str | None:
         return None
     s = str(value).strip()
     return s or None
+
+
+def _form_int(value: object) -> int | None:
+    """multipart form 의 빈 문자열·None 은 None, 정수 변환 실패도 None."""
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    try:
+        return int(s)
+    except ValueError:
+        return None
+
+
+def _form_bool(value: object) -> bool:
+    """multipart form 의 truthy 문자열을 bool 로. default False (PR2 보수적)."""
+    if value is None:
+        return False
+    s = str(value).strip().lower()
+    return s in ("1", "true", "yes", "on")
 
 
 @router.get("")

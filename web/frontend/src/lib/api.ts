@@ -583,10 +583,14 @@ export interface BatchEnqueueResult {
 }
 
 // CSV 텍스트 직접 전송 (JSON). multipart 업로드는 createBatchFile 사용.
+// Phase 2 PR2 — 사전 필터 + cluster 재사용 옵션. cluster_dedupe default OFF.
 export function createBatch(params: {
   csv_text: string;
   mode?: "now" | "overnight" | "auto";
   name?: string;
+  min_search_volume?: number;
+  max_difficulty?: string;  // "LOW" | "MEDIUM" | "HIGH" | "MISSING"
+  cluster_dedupe?: boolean;
 }): Promise<BatchEnqueueResult> {
   return fetchJson("/batches", {
     method: "POST",
@@ -599,11 +603,21 @@ export async function createBatchFile(params: {
   file: File;
   mode?: "now" | "overnight" | "auto";
   name?: string;
+  min_search_volume?: number;
+  max_difficulty?: string;
+  cluster_dedupe?: boolean;
 }): Promise<BatchEnqueueResult> {
   const form = new FormData();
   form.append("csv_file", params.file);
   if (params.mode) form.append("mode", params.mode);
   if (params.name) form.append("name", params.name);
+  if (params.min_search_volume !== undefined) {
+    form.append("min_search_volume", String(params.min_search_volume));
+  }
+  if (params.max_difficulty) form.append("max_difficulty", params.max_difficulty);
+  if (params.cluster_dedupe !== undefined) {
+    form.append("cluster_dedupe", params.cluster_dedupe ? "true" : "false");
+  }
   // multipart: Content-Type 은 브라우저가 boundary 포함해 자동 설정
   const res = await fetch(`${API_BASE}/batches`, { method: "POST", body: form });
   if (!res.ok) throw new Error(`API ${res.status}: ${await res.text()}`);

@@ -163,6 +163,15 @@ class Settings(BaseSettings):
         default=256, description="LRU 캐시 최대 항목 수"
     )
 
+    # SPEC-BATCH Phase 2 PR2 — cluster 재사용 대기 정책. primary 미완료 시 member 가
+    # polling 으로 대기. 타임아웃 시 cluster 재사용 폴백 → 자체 분석.
+    batch_cluster_primary_timeout_sec: int = Field(
+        default=600, description="cluster member 가 primary 완료를 기다리는 최대 초"
+    )
+    batch_cluster_poll_interval_sec: float = Field(
+        default=1.0, description="cluster member 의 primary 상태 polling 주기 (초)"
+    )
+
 
 settings = Settings()
 

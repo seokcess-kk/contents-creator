@@ -46,6 +46,25 @@ def _build_parser() -> argparse.ArgumentParser:
         help="처리 모드 (Phase 1 은 'now' 만 지원)",
     )
     parser.add_argument("--name", type=str, default=None, help="배치 이름 (선택)")
+    # Phase 2 PR2 — 사전 필터 + cluster 재사용 옵션 (--csv 모드에서만 의미)
+    parser.add_argument(
+        "--min-search-volume",
+        type=int,
+        default=None,
+        help="사전 필터 — 월 검색량 미달 키워드 자동 skipped (None=필터 안 함)",
+    )
+    parser.add_argument(
+        "--max-difficulty",
+        type=str,
+        choices=["LOW", "MEDIUM", "HIGH", "MISSING"],
+        default=None,
+        help="사전 필터 — 난이도 초과 키워드 자동 skipped (None=필터 안 함)",
+    )
+    parser.add_argument(
+        "--cluster-dedupe",
+        action="store_true",
+        help="cluster_id 의 primary→member PatternCard 재사용 (default OFF, 본문 유사도 리스크)",
+    )
     return parser
 
 
@@ -54,7 +73,14 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
     if args.csv is not None:
-        return _enqueue(args.csv, mode=args.mode, name=args.name)
+        return _enqueue(
+            args.csv,
+            mode=args.mode,
+            name=args.name,
+            min_search_volume=args.min_search_volume,
+            max_difficulty=args.max_difficulty,
+            cluster_dedupe=args.cluster_dedupe,
+        )
     if args.status is not None:
         return _status(args.status)
     if args.retry_item is not None:
@@ -64,13 +90,28 @@ def main() -> int:
     return 1  # pragma: no cover — mutually_exclusive_group required=True 가 차단
 
 
-def _enqueue(csv_path: Path, *, mode: str, name: str | None) -> int:
+def _enqueue(
+    csv_path: Path,
+    *,
+    mode: str,
+    name: str | None,
+    min_search_volume: int | None = None,
+    max_difficulty: str | None = None,
+    cluster_dedupe: bool = False,
+) -> int:
     if not csv_path.exists():
         logger.error("CSV 파일 없음: %s", csv_path)
         return 1
     csv_text = csv_path.read_text(encoding="utf-8-sig")  # BOM 제거
     try:
-        result = batch_orchestrator.enqueue_from_csv(csv_text, mode=mode, name=name)
+        result = batch_orchestrator.enqueue_from_csv(
+            csv_text,
+            mode=mode,
+            name=name,
+            min_search_volume=min_search_volume,
+            max_difficulty=max_difficulty,
+            cluster_dedupe=cluster_dedupe,
+        )
     except NotSupportedYetError as exc:
         logger.error("미지원 모드: %s", exc)
         return 2

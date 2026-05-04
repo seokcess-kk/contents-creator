@@ -78,6 +78,76 @@ class TestCreateBatch:
         resp = client.post("/api/batches", files=files, data={"mode": "now"})
         assert resp.status_code == 202
         assert "kw1" in captured["csv_text"]
+
+    def test_json_passes_prefilter_options(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Phase B8 — JSON 본문의 사전 필터/cluster 옵션이 enqueue_from_csv 로 전달."""
+        captured: dict[str, Any] = {}
+
+        def _capture(csv_text: str, **kwargs: Any) -> BatchEnqueueResult:
+            captured.update(kwargs)
+            return BatchEnqueueResult(batch_id="b-x", total=1, created=1, skipped=[], failed=[])
+
+        monkeypatch.setattr(batch_orchestrator, "enqueue_from_csv", _capture)
+        resp = client.post(
+            "/api/batches",
+            json={
+                "csv_text": "keyword\nkw1\n",
+                "mode": "now",
+                "min_search_volume": 200,
+                "max_difficulty": "MEDIUM",
+                "cluster_dedupe": True,
+            },
+        )
+        assert resp.status_code == 202
+        assert captured["min_search_volume"] == 200
+        assert captured["max_difficulty"] == "MEDIUM"
+        assert captured["cluster_dedupe"] is True
+
+    def test_json_default_cluster_dedupe_off(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """cluster_dedupe 미지정 시 default False (보수적)."""
+        captured: dict[str, Any] = {}
+
+        def _capture(csv_text: str, **kwargs: Any) -> BatchEnqueueResult:
+            captured.update(kwargs)
+            return BatchEnqueueResult(batch_id="b-x", total=1, created=1, skipped=[], failed=[])
+
+        monkeypatch.setattr(batch_orchestrator, "enqueue_from_csv", _capture)
+        resp = client.post("/api/batches", json={"csv_text": "keyword\nkw1\n", "mode": "now"})
+        assert resp.status_code == 202
+        assert captured["cluster_dedupe"] is False
+        assert captured["min_search_volume"] is None
+        assert captured["max_difficulty"] is None
+
+    def test_multipart_passes_prefilter_options(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """multipart form data 도 동일 옵션 전달."""
+        captured: dict[str, Any] = {}
+
+        def _capture(csv_text: str, **kwargs: Any) -> BatchEnqueueResult:
+            captured.update(kwargs)
+            return BatchEnqueueResult(batch_id="b-y", total=1, created=1, skipped=[], failed=[])
+
+        monkeypatch.setattr(batch_orchestrator, "enqueue_from_csv", _capture)
+        files = {"csv_file": ("kw.csv", b"keyword\nkw1\n", "text/csv")}
+        resp = client.post(
+            "/api/batches",
+            files=files,
+            data={
+                "mode": "now",
+                "min_search_volume": "300",
+                "max_difficulty": "HIGH",
+                "cluster_dedupe": "true",
+            },
+        )
+        assert resp.status_code == 202
+        assert captured["min_search_volume"] == 300
+        assert captured["max_difficulty"] == "HIGH"
+        assert captured["cluster_dedupe"] is True
         assert captured["mode"] == "now"
 
     def test_overnight_mode_returns_400(
