@@ -43,6 +43,9 @@ declare -A STAGE_ORDER=(
   # keyword_difficulty 는 SERP 파싱 → 등급 산출 격리 도메인. crawler 직접
   # import 금지 (DI 패턴, ranking 과 동일). 다른 도메인 import 금지.
   [keyword_difficulty]=0
+  # batch 는 키워드 배치 운영 격리 도메인 (SPEC-BATCH.md). 다른 도메인 import 금지.
+  # CSV 파싱·storage·모델만 책임. 단일 흐름 호출은 application/batch_orchestrator 가 수행.
+  [batch]=0
 )
 
 violations=0

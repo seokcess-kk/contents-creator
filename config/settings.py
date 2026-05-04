@@ -135,6 +135,16 @@ class Settings(BaseSettings):
     # publication 간 대기 (Bright Data rate 보호)
     ranking_check_sleep_seconds: float = 1.0
 
+    # 키워드 배치 운영 (SPEC-BATCH.md). Phase 1 in-process worker pool.
+    # 단일 JobManager(MAX_WORKERS=2) 와 분리 — 배치는 백그라운드, 단일은 즉시.
+    # BrightData 동시성과 합산해 brightdata_concurrent_limit 안에 들어가야 함.
+    batch_max_workers: int = Field(default=2, description="배치 worker pool 크기")
+    # BrightData fetch 전역 동시성 한도 — 단일 + 배치 합산. 단일 프로세스 안전망.
+    # 4xx 폭발 시 env 로 즉시 하향. 멀티 워커 진입 시 Redis advisory lock 으로 교체.
+    brightdata_concurrent_limit: int = Field(
+        default=5, description="BrightData fetch 동시 호출 한도 (단일 프로세스)"
+    )
+
     # 키워드 난이도 분석 속도 튜닝 (Phase F 후속, 2026-05-04).
     # 8/0.3 → 12/0.2 로 상향, BrightData 분당 한도 (실측) 안에서 추가 성능 확보.
     # 운영 중 4xx 발생 시 env 로 즉시 하향 (코드 수정 없이 보정 가능).

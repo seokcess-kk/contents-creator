@@ -506,6 +506,104 @@ create index if not exists idx_publication_actions_action
 
 
 -- ============================================================
+-- keyword_batches — CSV 배치 업로드 메타 (SPEC-BATCH.md §4)
+-- ============================================================
+create table if not exists keyword_batches (
+    id uuid primary key default gen_random_uuid(),
+    name text,
+    mode text not null default 'now',          -- 'now' | 'overnight' | 'auto' (Phase 1 은 now 만 처리)
+    status text not null default 'queued',     -- queued/running/completed/failed/cancelled
+    total_count int not null,
+    succeeded_count int default 0,
+    failed_count int default 0,
+    skipped_count int default 0,
+    needs_review_count int default 0,
+    estimated_cost_usd numeric default 0,
+    -- Phase 2 사전 필터 임계값
+    min_search_volume int,
+    max_difficulty text,
+    cluster_dedupe boolean default true,
+    -- Phase 4 자동 발행
+    auto_publish_enabled boolean default false,
+    created_at timestamptz default now(),
+    started_at timestamptz,
+    completed_at timestamptz
+);
+
+
+-- ============================================================
+-- keyword_batch_items — 배치의 키워드 단위 row + 진행 상태
+-- ============================================================
+create table if not exists keyword_batch_items (
+    id uuid primary key default gen_random_uuid(),
+    batch_id uuid not null references keyword_batches(id) on delete cascade,
+
+    -- 입력 (CSV)
+    keyword text not null,
+    operation text not null default 'analyze',  -- 'analyze' | 'generate' | 'pipeline'
+    mode text not null default 'now',           -- batch.mode 상속 또는 item override
+    priority int default 5,
+    cluster_id text,
+    cluster_role text default 'member',         -- 'primary' | 'member'
+    intent text,
+    region text,
+    brand_id uuid references brand_profiles(id),
+    target_url text,
+    memo text,
+
+    -- 실행 메타
+    status text not null default 'queued',
+    -- Phase 1: queued/running/succeeded/needs_review/failed/skipped
+    -- Phase 2: analyzing/ready_to_generate/generating 활성
+    retry_count int not null default 0,
+    max_retries int not null default 2,
+    job_id text,                                -- 단일 job 추적 (Phase 1 link 키)
+    error text,
+    estimated_cost_usd numeric default 0,
+
+    -- 분석 결과 (Phase 2 에서 채워짐, nullable)
+    search_volume int,
+    difficulty_grade text,                      -- LOW / MEDIUM / HIGH / MISSING
+
+    -- 생성 결과 (nullable, Phase 2 보강)
+    pattern_card_id uuid references pattern_cards(id),
+    generated_content_id uuid references generated_contents(id),
+    quality_score numeric,
+    compliance_passed boolean,
+
+    -- 검수 (Phase 2)
+    review_status text default 'pending',       -- pending / approved / rejected / needs_fix
+    reviewer text,
+    reviewed_at timestamptz,
+
+    -- 발행 (Phase 4)
+    publication_id uuid references publications(id),
+    published_at timestamptz,
+
+    -- 시점
+    started_at timestamptz,
+    completed_at timestamptz,
+    created_at timestamptz default now()
+);
+
+create index if not exists idx_keyword_batch_items_batch
+    on keyword_batch_items (batch_id);
+create index if not exists idx_keyword_batch_items_status
+    on keyword_batch_items (status);
+create index if not exists idx_keyword_batch_items_review
+    on keyword_batch_items (review_status);
+create index if not exists idx_keyword_batch_items_cluster
+    on keyword_batch_items (batch_id, cluster_id);
+
+
+-- ============================================================
+-- 롤백 (배포 실패 시 — batch 트랙):
+--   drop table if exists keyword_batch_items;
+--   drop table if exists keyword_batches;
+-- ============================================================
+
+
+-- ============================================================
 -- 향후 확장 시 이 파일에 테이블 추가 (Phase 2):
 --   - client_profiles  (클라이언트 프로필, 브랜드와 구분)
 --   - visual_patterns  (비주얼 분석 / VLM)
