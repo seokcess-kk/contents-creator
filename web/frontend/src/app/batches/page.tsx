@@ -44,7 +44,17 @@ export default function BatchesPage() {
       <div className="bg-white rounded-lg shadow-sm ring-1 ring-gray-200 p-4">
         <h2 className="text-sm font-semibold text-gray-700 mb-2">최근 배치 (최대 50)</h2>
         {loading && <div className="text-sm text-gray-600 py-4">로딩 중...</div>}
-        {error && <div className="text-sm text-red-600 py-4">{error}</div>}
+        {error && (
+          <div className="text-sm text-red-700 bg-red-50 ring-1 ring-red-200 rounded px-3 py-3 space-y-1">
+            <div className="font-semibold">목록 조회 실패</div>
+            <div className="text-xs">{error}</div>
+            {error.includes("503") && (
+              <div className="text-xs mt-2 text-gray-700">
+                Supabase 마이그레이션이 적용되지 않았을 수 있습니다 — <code className="bg-white px-1 py-0.5 rounded">config/schema.sql</code> 의 <code className="bg-white px-1 py-0.5 rounded">keyword_batches</code> / <code className="bg-white px-1 py-0.5 rounded">keyword_batch_items</code> 두 테이블 SQL 을 Supabase SQL Editor 에 적용하세요.
+              </div>
+            )}
+          </div>
+        )}
         {!loading && !error && batches.length === 0 && (
           <div className="text-sm text-gray-500 py-4">아직 배치가 없습니다. 위에서 CSV 를 업로드하세요.</div>
         )}

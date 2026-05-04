@@ -23,6 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from application import batch_orchestrator
+from config.settings import settings
 from domain.batch import storage
 from domain.batch.model import NotSupportedYetError
 from web.api.auth import require_api_key
@@ -34,6 +35,28 @@ router = APIRouter(
     tags=["batches"],
     dependencies=[Depends(require_api_key)],
 )
+
+
+def _supabase_configured() -> bool:
+    return bool(settings.supabase_url and settings.supabase_key)
+
+
+def _supabase_error_response(exc: Exception, op: str) -> HTTPException:
+    """Supabase 호출 실패 → 503 + 운영자 친화적 메시지.
+
+    가장 흔한 원인: keyword_batches/keyword_batch_items 테이블 미생성.
+    `config/schema.sql` 의 마이그레이션 SQL 을 Supabase SQL Editor 에 적용 필요.
+    """
+    msg = str(exc)
+    is_missing_table = "relation" in msg.lower() and "does not exist" in msg.lower()
+    detail = (
+        "Supabase 의 keyword_batches / keyword_batch_items 테이블이 없습니다. "
+        "config/schema.sql 의 마이그레이션 SQL 을 Supabase SQL Editor 에 적용하세요."
+        if is_missing_table
+        else f"Supabase 호출 실패 ({op}): {type(exc).__name__}: {msg}"
+    )
+    logger.error("batches.%s.failed exc=%s", op, msg, exc_info=True)
+    return HTTPException(status_code=503, detail=detail)
 
 
 class BatchCreateJsonRequest(BaseModel):
@@ -51,6 +74,11 @@ async def create_batch(request: Request) -> dict[str, Any]:
     Content-Type 으로 분기 — `multipart/form-data` 면 csv_file/mode/name form 필드,
     `application/json` 이면 BatchCreateJsonRequest 본문. Phase 1 은 mode='now' 만.
     """
+    if not _supabase_configured():
+        raise HTTPException(
+            status_code=503, detail="Supabase 미설정 — SUPABASE_URL/SUPABASE_KEY 확인"
+        )
+
     csv_text, mode, name = await _extract_csv_input(request)
 
     try:
@@ -63,6 +91,8 @@ async def create_batch(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise _supabase_error_response(exc, "enqueue") from exc
 
     return result.model_dump(mode="json")
 
@@ -111,8 +141,17 @@ def _form_str(value: object) -> str | None:
 
 @router.get("")
 def list_batches(limit: int = Query(default=20, ge=1, le=200)) -> dict[str, Any]:
-    """배치 목록 — created_at desc."""
-    batches = storage.list_batches(limit=limit)
+    """배치 목록 — created_at desc.
+
+    Supabase 미설정 또는 마이그레이션 미적용 시 빈 결과 + warning. 페이지 진입
+    경험을 깨뜨리지 않도록 graceful 처리 (운영자는 detail 메시지로 인지).
+    """
+    if not _supabase_configured():
+        return {"count": 0, "items": [], "warning": "Supabase 미설정"}
+    try:
+        batches = storage.list_batches(limit=limit)
+    except Exception as exc:
+        raise _supabase_error_response(exc, "list_batches") from exc
     return {
         "count": len(batches),
         "items": [b.model_dump(mode="json") for b in batches],
@@ -122,10 +161,17 @@ def list_batches(limit: int = Query(default=20, ge=1, le=200)) -> dict[str, Any]
 @router.get("/{batch_id}")
 def get_batch(batch_id: str) -> dict[str, Any]:
     """단건 + 실시간 counters 재계산."""
-    batch = storage.get_batch(batch_id)
-    if batch is None:
-        raise HTTPException(status_code=404, detail="batch 미존재")
-    counters = storage.count_items_by_status(batch_id)
+    if not _supabase_configured():
+        raise HTTPException(status_code=503, detail="Supabase 미설정")
+    try:
+        batch = storage.get_batch(batch_id)
+        if batch is None:
+            raise HTTPException(status_code=404, detail="batch 미존재")
+        counters = storage.count_items_by_status(batch_id)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _supabase_error_response(exc, "get_batch") from exc
     body = batch.model_dump(mode="json")
     body.update(counters)
     return body
@@ -138,10 +184,17 @@ def list_batch_items(
     limit: int = Query(default=200, ge=1, le=2000),
 ) -> dict[str, Any]:
     """item 페이지네이션. status 필터 선택."""
-    batch = storage.get_batch(batch_id)
-    if batch is None:
-        raise HTTPException(status_code=404, detail="batch 미존재")
-    items = storage.list_items(batch_id, status=status, limit=limit)
+    if not _supabase_configured():
+        raise HTTPException(status_code=503, detail="Supabase 미설정")
+    try:
+        batch = storage.get_batch(batch_id)
+        if batch is None:
+            raise HTTPException(status_code=404, detail="batch 미존재")
+        items = storage.list_items(batch_id, status=status, limit=limit)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _supabase_error_response(exc, "list_items") from exc
     return {
         "batch_id": batch_id,
         "count": len(items),
@@ -156,6 +209,8 @@ def cancel_batch(batch_id: str) -> dict[str, Any]:
         cancelled = batch_orchestrator.cancel_batch(batch_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise _supabase_error_response(exc, "cancel") from exc
     return {"batch_id": batch_id, "cancelled_count": cancelled}
 
 
@@ -166,6 +221,8 @@ def retry_item(batch_id: str, item_id: str) -> dict[str, Any]:
         batch_orchestrator.retry_item(item_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise _supabase_error_response(exc, "retry") from exc
     return {"batch_id": batch_id, "item_id": item_id, "status": "queued"}
 
 
@@ -175,7 +232,10 @@ def recompute_status(batch_id: str) -> dict[str, Any]:
 
     주로 worker 가 종료 직전 race 로 batch.status 갱신을 못 한 경우 회복용.
     """
-    batch = batch_orchestrator.recompute_batch_status(batch_id)
+    try:
+        batch = batch_orchestrator.recompute_batch_status(batch_id)
+    except Exception as exc:
+        raise _supabase_error_response(exc, "recompute") from exc
     if batch is None:
         raise HTTPException(status_code=404, detail="batch 미존재")
     return batch.model_dump(mode="json")

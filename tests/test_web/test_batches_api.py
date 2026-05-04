@@ -188,6 +188,58 @@ class TestCancelBatch:
         assert resp.status_code == 404
 
 
+class TestSupabaseFailureHandling:
+    """Supabase 미설정·테이블 미존재·연결 실패 케이스의 graceful 처리.
+
+    2026-05-04 /batches 페이지 진입 시 500 에러 사고 후속 — 마이그레이션 미적용
+    상태에서도 페이지가 깨지지 않고, 운영자가 detail 메시지로 원인 인지 가능해야.
+    """
+
+    def test_list_batches_returns_empty_when_supabase_not_configured(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("config.settings.settings.supabase_url", "")
+        monkeypatch.setattr("config.settings.settings.supabase_key", "")
+        resp = client.get("/api/batches")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["count"] == 0
+        assert body["items"] == []
+        assert "warning" in body
+
+    def test_list_batches_returns_503_when_table_missing(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Postgres 'relation X does not exist' 에러 → 503 + 마이그레이션 안내."""
+        monkeypatch.setattr("config.settings.settings.supabase_url", "https://x.supabase.co")
+        monkeypatch.setattr("config.settings.settings.supabase_key", "test-key")
+
+        def _raise(limit: int = 20) -> list:
+            raise RuntimeError('relation "public.keyword_batches" does not exist')
+
+        monkeypatch.setattr(storage, "list_batches", _raise)
+        resp = client.get("/api/batches")
+        assert resp.status_code == 503
+        detail = resp.json()["detail"]
+        assert "마이그레이션" in detail
+        assert "schema.sql" in detail
+
+    def test_list_batches_returns_503_with_generic_error(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """테이블 미존재 외 일반 Supabase 에러도 500 대신 503."""
+        monkeypatch.setattr("config.settings.settings.supabase_url", "https://x.supabase.co")
+        monkeypatch.setattr("config.settings.settings.supabase_key", "test-key")
+        monkeypatch.setattr(
+            storage,
+            "list_batches",
+            lambda limit=20: (_ for _ in ()).throw(ConnectionError("network unreachable")),
+        )
+        resp = client.get("/api/batches")
+        assert resp.status_code == 503
+        assert "ConnectionError" in resp.json()["detail"]
+
+
 class TestRetryItem:
     def test_returns_202_on_success(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
