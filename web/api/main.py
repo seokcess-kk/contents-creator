@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from config.settings import settings
 from web.api.job_manager import JobManager
 from web.api.routers import (
+    batches,
     brand_studio,
     jobs,
     keyword_difficulty,
@@ -76,6 +77,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("Contents Creator API started")
     yield
     job_manager.shutdown()
+    # 배치 worker pool 도 정리 — 진행 중 worker 는 wait=False 로 즉시 종료.
+    # 진행 중 item 은 DB 에 'running' 으로 남고, 다음 startup 시 stuck 회수가 처리.
+    from application.batch_job_manager import shutdown_default_manager
+
+    shutdown_default_manager()
     if ranking_scheduler is not None:
         from application.scheduler import stop_scheduler
 
@@ -107,6 +113,7 @@ app.include_router(usage.router, prefix="/api")
 app.include_router(rankings.router, prefix="/api")
 app.include_router(brand_studio.router, prefix="/api")
 app.include_router(keyword_difficulty.router, prefix="/api")
+app.include_router(batches.router, prefix="/api")
 
 # /output 정적 마운트는 인증 우회 통로가 되어 제거. 결과물은 인증된 /api/results/* 로만 접근.
 

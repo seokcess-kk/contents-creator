@@ -525,3 +525,115 @@ export function listKeywordDifficulty(
   params.set("limit", String(limit));
   return fetchJson(`/keyword-difficulty/list?${params.toString()}`);
 }
+
+// ── Batch Pipeline (SPEC-BATCH.md Phase 1) ──
+
+export interface BatchSummary {
+  id: string;
+  name: string | null;
+  mode: "now" | "overnight" | "auto";
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  total_count: number;
+  succeeded_count: number;
+  failed_count: number;
+  skipped_count: number;
+  needs_review_count: number;
+  estimated_cost_usd: number;
+  created_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export interface BatchItem {
+  id: string;
+  batch_id: string;
+  keyword: string;
+  operation: "analyze" | "generate" | "pipeline";
+  mode: "now" | "overnight" | "auto";
+  priority: number;
+  cluster_id: string | null;
+  cluster_role: "primary" | "member";
+  status: string;
+  retry_count: number;
+  max_retries: number;
+  job_id: string | null;
+  error: string | null;
+  estimated_cost_usd: number;
+  search_volume: number | null;
+  difficulty_grade: string | null;
+  pattern_card_id: string | null;
+  generated_content_id: string | null;
+  quality_score: number | null;
+  compliance_passed: boolean | null;
+  review_status: string;
+  publication_id: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string | null;
+}
+
+export interface BatchEnqueueResult {
+  batch_id: string;
+  total: number;
+  created: number;
+  skipped: { row?: string; reason: string; keyword?: string }[];
+  failed: { row?: string; reason: string }[];
+}
+
+// CSV 텍스트 직접 전송 (JSON). multipart 업로드는 createBatchFile 사용.
+export function createBatch(params: {
+  csv_text: string;
+  mode?: "now" | "overnight" | "auto";
+  name?: string;
+}): Promise<BatchEnqueueResult> {
+  return fetchJson("/batches", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
+// CSV 파일 업로드 (multipart). same-origin proxy 가 X-API-Key 주입.
+export async function createBatchFile(params: {
+  file: File;
+  mode?: "now" | "overnight" | "auto";
+  name?: string;
+}): Promise<BatchEnqueueResult> {
+  const form = new FormData();
+  form.append("csv_file", params.file);
+  if (params.mode) form.append("mode", params.mode);
+  if (params.name) form.append("name", params.name);
+  // multipart: Content-Type 은 브라우저가 boundary 포함해 자동 설정
+  const res = await fetch(`${API_BASE}/batches`, { method: "POST", body: form });
+  if (!res.ok) throw new Error(`API ${res.status}: ${await res.text()}`);
+  return res.json() as Promise<BatchEnqueueResult>;
+}
+
+export function listBatches(limit = 20): Promise<{ count: number; items: BatchSummary[] }> {
+  return fetchJson(`/batches?limit=${limit}`);
+}
+
+export function getBatch(batchId: string): Promise<BatchSummary> {
+  return fetchJson(`/batches/${batchId}`);
+}
+
+export function getBatchItems(
+  batchId: string,
+  status?: string,
+  limit = 200,
+): Promise<{ batch_id: string; count: number; items: BatchItem[] }> {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  params.set("limit", String(limit));
+  return fetchJson(`/batches/${batchId}/items?${params.toString()}`);
+}
+
+export function cancelBatch(batchId: string): Promise<{ batch_id: string; cancelled_count: number }> {
+  return fetchJson(`/batches/${batchId}/cancel`, { method: "POST" });
+}
+
+export function retryBatchItem(
+  batchId: string,
+  itemId: string,
+): Promise<{ batch_id: string; item_id: string; status: string }> {
+  return fetchJson(`/batches/${batchId}/items/${itemId}/retry`, { method: "POST" });
+}
