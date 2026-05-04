@@ -309,12 +309,25 @@ def review_item(batch_id: str, item_id: str, body: ReviewActionRequest) -> dict[
 
     Phase 2 PR3 — approve 시 status=ready_to_publish 로 동시 전환. needs_fix/reject 는
     review_status 만 갱신 (status 그대로 needs_review 유지).
+
+    Phase B9 fix — batch_id 와 item.batch_id 소속 일치 검증 (다른 batch 의 item 변경 차단).
     """
     spec = _REVIEW_ACTION_MAP.get(body.action)
     if spec is None:
         raise HTTPException(
             status_code=400,
             detail=f"invalid action: {body.action!r} (allowed: approve / needs_fix / reject)",
+        )
+    try:
+        item = storage.get_item(item_id)
+    except Exception as exc:
+        raise _supabase_error_response(exc, "review") from exc
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"item 미존재: {item_id}")
+    if item.batch_id != batch_id:
+        raise HTTPException(
+            status_code=404,
+            detail=f"item {item_id} 가 batch {batch_id} 에 속하지 않습니다.",
         )
     try:
         storage.update_item_review(

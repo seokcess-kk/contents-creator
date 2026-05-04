@@ -88,6 +88,40 @@ def test_primary_succeeded_returns_primary(storage_mock: Any) -> None:
     assert primary.pattern_card_id == "pc-1"
 
 
+def test_primary_ready_to_publish_returns_primary(storage_mock: Any) -> None:
+    """Phase B9 fix — generate/pipeline primary 가 ready_to_publish 로 끝나도 재사용."""
+    storage_mock.find_primary_in_cluster.return_value = KeywordBatchItem(
+        id="i-primary",
+        batch_id="b-1",
+        keyword="primary-kw",
+        cluster_id="c-1",
+        cluster_role="primary",
+        status="ready_to_publish",
+        pattern_card_id="pc-rtp",
+    )
+    primary = batch_orchestrator._resolve_cluster_primary(_item(), _batch())
+    assert primary is not None
+    assert primary.status == "ready_to_publish"
+    assert primary.pattern_card_id == "pc-rtp"
+
+
+def test_primary_needs_review_returns_primary(storage_mock: Any) -> None:
+    """Phase B9 fix — primary 가 needs_review (compliance 위반) 라도 PatternCard 자체는 재사용 가능."""
+    storage_mock.find_primary_in_cluster.return_value = KeywordBatchItem(
+        id="i-primary",
+        batch_id="b-1",
+        keyword="primary-kw",
+        cluster_id="c-1",
+        cluster_role="primary",
+        status="needs_review",
+        pattern_card_id="pc-nr",
+    )
+    primary = batch_orchestrator._resolve_cluster_primary(_item(), _batch())
+    assert primary is not None
+    assert primary.status == "needs_review"
+    assert primary.pattern_card_id == "pc-nr"
+
+
 def test_primary_running_polls_until_succeeded(
     storage_mock: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -52,7 +52,21 @@ exclude = ["tests*", "scripts*", "output*", "dev*", "tasks*"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-extend-exclude = ["output", ".venv", "dev", ".claude"]
+extend-exclude = [
+    "output",
+    ".venv",
+    "dev",
+    ".claude",
+    # frontend 빌드 산출물 — Junction/symlink 가 끊겨 access denied 발생 (2026-05-04 fix).
+    "web/frontend/.next",
+    "web/frontend/node_modules",
+    # pytest 임시 디렉터리 — Windows 권한 충돌 회피
+    ".pytest-tmp",
+    ".tmp-pytest2",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+]
 
 [tool.ruff.lint]
 select = [

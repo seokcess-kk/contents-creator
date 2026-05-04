@@ -157,11 +157,7 @@ export default function BatchProgressTable({ batchId }: Props) {
                   <td className="py-1 text-gray-500">{it.retry_count}/{it.max_retries}</td>
                   <td className="py-1 text-xs text-red-600 truncate max-w-[280px]">{it.error || "-"}</td>
                   <td className="py-1 text-xs">
-                    {it.status === "succeeded" ? (
-                      <ResultLinks item={it} />
-                    ) : (
-                      <span className="text-gray-300">—</span>
-                    )}
+                    <ResultLinks item={it} />
                   </td>
                   <td className="py-1 text-right">
                     {(it.status === "failed" || it.status === "needs_review") && (
@@ -186,10 +182,24 @@ export default function BatchProgressTable({ batchId }: Props) {
   );
 }
 
+// 종결 status — 결과가 있어야 정상이고 없으면 FK 회수 실패 시사.
+// 진행 중 status — 결과 없는 게 정상이라 placeholder 만 노출 (tooltip 없음).
+const _TERMINAL_STATUSES = new Set([
+  "succeeded",
+  "ready_to_publish",
+  "needs_review",
+  "failed",
+  "skipped",
+]);
+
 function ResultLinks({ item }: { item: BatchItem }) {
   const links: React.ReactNode[] = [];
   const showPattern = item.operation === "analyze" || item.operation === "pipeline";
   const showResult = item.operation === "generate" || item.operation === "pipeline";
+  const isTerminal = _TERMINAL_STATUSES.has(item.status);
+  const missingTitle = isTerminal
+    ? "FK 회수 실패 — Supabase 저장 미동작 가능"
+    : undefined;
 
   if (showPattern) {
     if (item.pattern_card_id) {
@@ -204,11 +214,7 @@ function ResultLinks({ item }: { item: BatchItem }) {
       );
     } else {
       links.push(
-        <span
-          key="pattern-missing"
-          className="text-gray-300"
-          title="FK 회수 실패 — Supabase 저장 미동작 가능"
-        >
+        <span key="pattern-missing" className="text-gray-300" title={missingTitle}>
           —
         </span>,
       );
@@ -228,11 +234,7 @@ function ResultLinks({ item }: { item: BatchItem }) {
       );
     } else {
       links.push(
-        <span
-          key="result-missing"
-          className="text-gray-300"
-          title="FK 회수 실패 — Supabase 저장 미동작 가능"
-        >
+        <span key="result-missing" className="text-gray-300" title={missingTitle}>
           —
         </span>,
       );

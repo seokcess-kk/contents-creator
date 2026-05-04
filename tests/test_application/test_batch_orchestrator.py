@@ -117,6 +117,18 @@ class TestDispatchItem:
         batch_orchestrator._dispatch_item("i-1")
         storage_mock.update_item_status.assert_not_called()
 
+    def test_skips_ready_to_publish_terminal(self, storage_mock: Any) -> None:
+        """Phase B9 fix — ready_to_publish 도 terminal 로 처리 (재진입 시 중복 실행 방지)."""
+        storage_mock.get_item.return_value = _item(status="ready_to_publish")
+        batch_orchestrator._dispatch_item("i-1")
+        storage_mock.update_item_status.assert_not_called()
+
+    def test_skips_needs_review_terminal(self, storage_mock: Any) -> None:
+        """Phase B9 fix — needs_review 도 terminal (직접 dispatch 차단, retry_item 만 queued 복귀)."""
+        storage_mock.get_item.return_value = _item(status="needs_review")
+        batch_orchestrator._dispatch_item("i-1")
+        storage_mock.update_item_status.assert_not_called()
+
     def test_analyze_operation_calls_run_analyze_only(self, storage_mock: Any) -> None:
         storage_mock.get_item.return_value = _item(operation="analyze")
         with patch("application.batch_orchestrator.orchestrator") as orch_mock:
@@ -308,6 +320,14 @@ class TestRetryItem:
         # worker 에 재투입
         manager_mock.get_default_manager.return_value.submit.assert_called_once()
 
+    def test_ready_to_publish_can_be_retried(self, storage_mock: Any, manager_mock: Any) -> None:
+        """Phase B9 fix — ready_to_publish 도 운영자가 수동 재생성 트리거 가능."""
+        storage_mock.get_item.return_value = _item(status="ready_to_publish", retry_count=2)
+        batch_orchestrator.retry_item("i-1")
+        last_status = storage_mock.update_item_status.call_args_list[-1].args[1]
+        assert last_status == "queued"
+        manager_mock.get_default_manager.return_value.submit.assert_called_once()
+
     def test_running_item_cannot_be_manually_retried(self, storage_mock: Any) -> None:
         storage_mock.get_item.return_value = _item(status="running")
         with pytest.raises(ValueError, match="재시도 가능 상태 아님"):
@@ -437,3 +457,18 @@ class TestBackfillUnlinkedItems:
         }
         storage_mock.find_pattern_card_by_triple.assert_not_called()
         storage_mock.update_item_result.assert_not_called()
+
+    def test_partial_match_counts_still_unlinked(self, storage_mock: Any) -> None:
+        """Phase B9 fix — 둘 중 하나만 매칭되고 다른 하나 None 인 item 도 still_unlinked."""
+        items = [_item(id="i-1", keyword="kw1", operation="pipeline")]  # 둘 다 None
+        storage_mock.list_items.return_value = items
+        storage_mock.find_pattern_card_by_triple.return_value = "pc-1"
+        storage_mock.find_generated_content_by_triple.return_value = None  # gen 매칭 실패
+
+        result = batch_orchestrator.backfill_unlinked_items("b-1")
+        assert result["matched_pattern_cards"] == 1
+        assert result["matched_generated_contents"] == 0
+        # 부분 매칭 — generated_content_id 가 여전히 None 이라 still_unlinked 카운트
+        assert result["still_unlinked"] == 1
+        # update_item_result 는 호출됨 (pc 만 채움)
+        storage_mock.update_item_result.assert_called_once()

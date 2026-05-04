@@ -278,6 +278,8 @@ class TestReviewQueue:
     def test_review_approve_transitions_status(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        # Phase B9 fix — review API 가 batch_id 소속 검증을 위해 get_item 호출.
+        monkeypatch.setattr(storage, "get_item", lambda _: _item(id="i-1", batch_id="b-1"))
         captured: dict[str, Any] = {}
 
         def _capture(item_id: str, **kwargs: Any) -> None:
@@ -297,6 +299,7 @@ class TestReviewQueue:
     def test_review_needs_fix_keeps_status(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        monkeypatch.setattr(storage, "get_item", lambda _: _item(id="i-1", batch_id="b-1"))
         captured: dict[str, Any] = {}
 
         monkeypatch.setattr(
@@ -315,6 +318,7 @@ class TestReviewQueue:
     def test_review_reject_keeps_status(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        monkeypatch.setattr(storage, "get_item", lambda _: _item(id="i-1", batch_id="b-1"))
         captured: dict[str, Any] = {}
         monkeypatch.setattr(
             storage,
@@ -337,6 +341,60 @@ class TestReviewQueue:
             json={"action": "publish"},  # invalid
         )
         assert resp.status_code == 400
+
+    def test_review_item_missing_returns_404(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Phase B9 fix — item 미존재 → 404."""
+        monkeypatch.setattr(storage, "get_item", lambda _: None)
+        called = {"count": 0}
+        monkeypatch.setattr(
+            storage,
+            "update_item_review",
+            lambda *_a, **_k: called.update({"count": called["count"] + 1}),
+        )
+        resp = client.post(
+            "/api/batches/b-1/items/missing/review",
+            json={"action": "approve"},
+        )
+        assert resp.status_code == 404
+        assert called["count"] == 0  # update 호출 안 됨
+
+    def test_review_batch_mismatch_returns_404(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Phase B9 fix — item.batch_id != batch_id → 404, 다른 batch 의 item 변경 차단."""
+        monkeypatch.setattr(storage, "get_item", lambda _: _item(id="i-1", batch_id="b-OTHER"))
+        called = {"count": 0}
+        monkeypatch.setattr(
+            storage,
+            "update_item_review",
+            lambda *_a, **_k: called.update({"count": called["count"] + 1}),
+        )
+        resp = client.post(
+            "/api/batches/b-1/items/i-1/review",
+            json={"action": "approve"},
+        )
+        assert resp.status_code == 404
+        assert called["count"] == 0  # update 호출 안 됨
+
+    def test_review_batch_match_proceeds(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """item.batch_id == batch_id 면 정상 처리."""
+        monkeypatch.setattr(storage, "get_item", lambda _: _item(id="i-1", batch_id="b-1"))
+        called: dict[str, Any] = {}
+        monkeypatch.setattr(
+            storage,
+            "update_item_review",
+            lambda item_id, **kwargs: called.update({"item_id": item_id, **kwargs}),
+        )
+        resp = client.post(
+            "/api/batches/b-1/items/i-1/review",
+            json={"action": "approve"},
+        )
+        assert resp.status_code == 200
+        assert called["review_status"] == "approved"
 
 
 class TestBackfillFk:

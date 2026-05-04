@@ -45,6 +45,18 @@ _DIFFICULTY_RANK: dict[str, int] = {
     "missing": 3,
 }
 
+# Phase B9 fix — cluster primary 재사용 가능 status. PR3 의 ready_to_publish 도입 후
+# generate/pipeline primary 가 succeeded 가 아닌 ready_to_publish 로 끝나는 케이스 보강.
+# needs_review 도 PatternCard 자체는 만들어졌으니 재사용 OK (member 의 의료법 검수도 같은
+# PatternCard 기반이라 일관됨).
+_PRIMARY_REUSE_STATUSES = frozenset({"succeeded", "ready_to_publish", "needs_review"})
+
+# Phase B9 fix — _dispatch_item terminal no-op set. 이미 종결된 status 는 재진입 시 중복
+# 실행 방지. needs_review 는 retry_item() 명시 호출로만 queued 복귀 (직접 dispatch 차단).
+_TERMINAL_STATUSES = frozenset(
+    {"succeeded", "failed", "skipped", "ready_to_publish", "needs_review"}
+)
+
 
 def enqueue_from_csv(
     csv_text: str,
@@ -155,7 +167,9 @@ def _dispatch_item(item_id: str) -> None:
     if item is None:
         logger.warning("batch.dispatch.item_missing item_id=%s", item_id)
         return
-    if item.status in ("succeeded", "failed", "skipped"):
+    if item.status in _TERMINAL_STATUSES:
+        # ready_to_publish / needs_review 도 종결 상태 — 재진입 시 중복 실행 방지.
+        # needs_review 는 retry_item() 명시 호출로만 queued 복귀 (운영 의도 분리).
         logger.info("batch.dispatch.skip_done item_id=%s status=%s", item_id, item.status)
         return
 
@@ -405,7 +419,9 @@ def _resolve_cluster_primary(
     """cluster member 가 자기 cluster 의 primary 를 폴링하며 대기.
 
     반환:
-        KeywordBatchItem: primary 가 succeeded + pattern_card_id 보유 → 재사용
+        KeywordBatchItem: primary 가 PatternCard 보유 + 재사용 가능 status (succeeded /
+            ready_to_publish / needs_review) → 재사용. 의료법 위반(needs_review) 이라도
+            PatternCard 자체는 만들어졌으므로 member 분석 단계 압축에 활용 가능.
         None: primary 부재 / 실패 / 타임아웃 → 자체 분석 폴백 (caller 가 _run_operation)
     """
     if item.cluster_id is None or item.batch_id is None:
@@ -424,7 +440,7 @@ def _resolve_cluster_primary(
                 item.cluster_id,
             )
             return None
-        if primary.status == "succeeded" and primary.pattern_card_id:
+        if primary.status in _PRIMARY_REUSE_STATUSES and primary.pattern_card_id:
             return primary
         if primary.status in ("failed", "skipped"):
             logger.warning(
@@ -608,7 +624,7 @@ def retry_item(item_id: str) -> None:
     item = storage.get_item(item_id)
     if item is None:
         raise ValueError(f"item 미존재: {item_id}")
-    if item.status not in ("failed", "succeeded", "needs_review"):
+    if item.status not in ("failed", "succeeded", "needs_review", "ready_to_publish"):
         raise ValueError(
             f"재시도 가능 상태 아님 (현재: {item.status}). queued/running 은 자동 처리됩니다."
         )
@@ -694,6 +710,7 @@ def backfill_unlinked_items(batch_id: str) -> dict[str, int]:
                 matched_gen += 1
 
         if new_pc_id is None and new_gen_id is None:
+            # 한쪽도 매칭 못 함 — DB update 호출 자체 스킵.
             still_unlinked += 1
             logger.warning(
                 "batch.backfill.unmatched item_id=%s keyword=%s slug=%s",
@@ -703,6 +720,7 @@ def backfill_unlinked_items(batch_id: str) -> dict[str, int]:
             )
             continue
 
+        update_failed = False
         try:
             storage.update_item_result(
                 item.id,
@@ -711,6 +729,13 @@ def backfill_unlinked_items(batch_id: str) -> dict[str, int]:
             )
         except Exception:
             logger.warning("batch.backfill.update_failed item_id=%s", item.id, exc_info=True)
+            update_failed = True
+
+        # Phase B9 fix — 백필 시도 후 최종 FK 누락 여부로 still_unlinked 판정.
+        # update 실패 시 최종 상태는 백필 전과 동일. 부분 매칭 (한쪽만 채움) 도 카운트.
+        final_pc_missing = needs_pc and (update_failed or new_pc_id is None)
+        final_gen_missing = needs_gen and (update_failed or new_gen_id is None)
+        if final_pc_missing or final_gen_missing:
             still_unlinked += 1
 
     logger.info(
