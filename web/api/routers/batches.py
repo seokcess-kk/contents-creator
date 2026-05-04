@@ -357,6 +357,20 @@ def retry_item(batch_id: str, item_id: str) -> dict[str, Any]:
     return {"batch_id": batch_id, "item_id": item_id, "status": "queued"}
 
 
+@router.post("/{batch_id}/backfill-fk", status_code=200)
+def backfill_fk(batch_id: str) -> dict[str, Any]:
+    """SPEC-BATCH §3 Phase 2 PR4 — fire-and-forget FK 회수 실패 사후 백필.
+
+    `(job_id, slug, keyword)` triple 매칭으로 pattern_card_id / generated_content_id
+    None 인 item 들을 채움. idempotent. 동기 응답 (보통 5~50 item, 빠름).
+    """
+    try:
+        result = batch_orchestrator.backfill_unlinked_items(batch_id)
+    except Exception as exc:
+        raise _supabase_error_response(exc, "backfill") from exc
+    return {"batch_id": batch_id, **result}
+
+
 @router.post("/{batch_id}/recompute-status", status_code=200)
 def recompute_status(batch_id: str) -> dict[str, Any]:
     """모든 item 처리 후 batch.status + counters 재계산 (운영 도구).

@@ -339,6 +339,30 @@ class TestReviewQueue:
         assert resp.status_code == 400
 
 
+class TestBackfillFk:
+    """Phase B10 PR4 — POST /backfill-fk 동기 응답 검증."""
+
+    def test_returns_match_counts(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            batch_orchestrator,
+            "backfill_unlinked_items",
+            lambda _id: {
+                "matched_pattern_cards": 2,
+                "matched_generated_contents": 3,
+                "still_unlinked": 1,
+            },
+        )
+        resp = client.post("/api/batches/b-1/backfill-fk")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["batch_id"] == "b-1"
+        assert body["matched_pattern_cards"] == 2
+        assert body["matched_generated_contents"] == 3
+        assert body["still_unlinked"] == 1
+
+
 class TestGetBatchReadyToPublishCount:
     """Phase B9 PR3 — GET /batches/{id} 응답에 ready_to_publish_count 항상 포함."""
 

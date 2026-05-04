@@ -654,6 +654,79 @@ def cancel_batch(batch_id: str) -> int:
     return cancelled
 
 
+def backfill_unlinked_items(batch_id: str) -> dict[str, int]:
+    """SPEC-BATCH §3 Phase 2 PR4 — fire-and-forget 회수 실패 사후 백필.
+
+    batch 의 모든 item 중 pattern_card_id / generated_content_id 가 None 인 item 을
+    `(job_id, slug, keyword)` triple 로 사후 매칭해 채운다. idempotent — 이미 채워진
+    FK 는 skip. 매칭 실패는 still_unlinked 에 카운트.
+
+    반환: `{matched_pattern_cards, matched_generated_contents, still_unlinked}`.
+    운영자가 명시적 호출 (CLI / Web API). 자동 cron 미사용.
+    """
+    from application.orchestrator import _slugify
+
+    items = storage.list_items(batch_id, limit=10_000)
+    matched_pc = 0
+    matched_gen = 0
+    still_unlinked = 0
+
+    for item in items:
+        if item.id is None:
+            continue
+        needs_pc = item.pattern_card_id is None
+        needs_gen = item.operation in ("generate", "pipeline") and item.generated_content_id is None
+        if not needs_pc and not needs_gen:
+            continue  # idempotent — 이미 채워진 item
+
+        slug = _slugify(item.keyword)
+        new_pc_id: str | None = None
+        new_gen_id: str | None = None
+
+        if needs_pc:
+            new_pc_id = storage.find_pattern_card_by_triple(slug, item.keyword)
+            if new_pc_id is not None:
+                matched_pc += 1
+
+        if needs_gen:
+            new_gen_id = storage.find_generated_content_by_triple(item.job_id, slug, item.keyword)
+            if new_gen_id is not None:
+                matched_gen += 1
+
+        if new_pc_id is None and new_gen_id is None:
+            still_unlinked += 1
+            logger.warning(
+                "batch.backfill.unmatched item_id=%s keyword=%s slug=%s",
+                item.id,
+                item.keyword,
+                slug,
+            )
+            continue
+
+        try:
+            storage.update_item_result(
+                item.id,
+                pattern_card_id=new_pc_id,
+                generated_content_id=new_gen_id,
+            )
+        except Exception:
+            logger.warning("batch.backfill.update_failed item_id=%s", item.id, exc_info=True)
+            still_unlinked += 1
+
+    logger.info(
+        "batch.backfill.done batch_id=%s matched_pc=%d matched_gen=%d still_unlinked=%d",
+        batch_id,
+        matched_pc,
+        matched_gen,
+        still_unlinked,
+    )
+    return {
+        "matched_pattern_cards": matched_pc,
+        "matched_generated_contents": matched_gen,
+        "still_unlinked": still_unlinked,
+    }
+
+
 def recompute_batch_status(batch_id: str) -> KeywordBatch | None:
     """모든 item 처리 후 batch status + counters 재계산.
 

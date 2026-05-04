@@ -159,6 +159,93 @@ def find_primary_in_cluster(batch_id: str, cluster_id: str) -> KeywordBatchItem 
     return _row_to_item(cast("dict[str, Any]", rows[0])) if rows else None
 
 
+def find_pattern_card_by_triple(slug: str, keyword: str) -> str | None:
+    """slug + keyword 로 pattern_cards 의 가장 최근 row id 조회.
+
+    SPEC-BATCH §3 Phase 2 PR4 — fire-and-forget id 회수 실패 시 사후 백필.
+    Supabase 미설정/실패/부재 시 None.
+    """
+    try:
+        result = (
+            get_client()
+            .table("pattern_cards")
+            .select("id")
+            .eq("slug", slug)
+            .eq("keyword", keyword)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+    except Exception:
+        logger.warning(
+            "batch.find_pattern_card.failed slug=%s keyword=%s", slug, keyword, exc_info=True
+        )
+        return None
+    rows = result.data or []
+    if not rows:
+        return None
+    raw = cast("dict[str, Any]", rows[0]).get("id")
+    return str(raw) if raw is not None else None
+
+
+def find_generated_content_by_triple(job_id: str | None, slug: str, keyword: str) -> str | None:
+    """generated_contents 의 id 사후 매칭. job_id 우선 + slug+keyword fallback.
+
+    SPEC-BATCH §3 Phase 2 PR4 — 백필. job_id None 이면 1차 매칭 스킵.
+    """
+    client = get_client()
+
+    # 1차: job_id + slug + keyword (job_id 있을 때만)
+    if job_id is not None:
+        try:
+            result = (
+                client.table("generated_contents")
+                .select("id")
+                .eq("job_id", job_id)
+                .eq("slug", slug)
+                .eq("keyword", keyword)
+                .limit(1)
+                .execute()
+            )
+            rows = result.data or []
+            if rows:
+                raw = cast("dict[str, Any]", rows[0]).get("id")
+                if raw is not None:
+                    return str(raw)
+        except Exception:
+            logger.warning(
+                "batch.find_gen_content.primary_failed job_id=%s slug=%s",
+                job_id,
+                slug,
+                exc_info=True,
+            )
+
+    # 2차 fallback: slug + keyword (가장 최근)
+    try:
+        result = (
+            client.table("generated_contents")
+            .select("id")
+            .eq("slug", slug)
+            .eq("keyword", keyword)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+    except Exception:
+        logger.warning(
+            "batch.find_gen_content.fallback_failed slug=%s keyword=%s",
+            slug,
+            keyword,
+            exc_info=True,
+        )
+        return None
+    rows = result.data or []
+    if not rows:
+        return None
+    raw = cast("dict[str, Any]", rows[0]).get("id")
+    return str(raw) if raw is not None else None
+
+
 def update_item_review(
     item_id: str,
     *,

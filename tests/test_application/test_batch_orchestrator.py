@@ -368,3 +368,72 @@ class TestRecomputeBatchStatus:
         }
         batch_orchestrator.recompute_batch_status("b-1")
         assert storage_mock.update_batch_status.call_args.args[1] == "completed"
+
+
+class TestBackfillUnlinkedItems:
+    """Phase B10 PR4 — fire-and-forget 회수 실패 사후 백필."""
+
+    def test_matches_both_pc_and_gen(self, storage_mock: Any) -> None:
+        items = [
+            _item(id="i-1", keyword="kw1", operation="pipeline"),  # 둘 다 None
+        ]
+        storage_mock.list_items.return_value = items
+        storage_mock.find_pattern_card_by_triple.return_value = "pc-1"
+        storage_mock.find_generated_content_by_triple.return_value = "gen-1"
+
+        result = batch_orchestrator.backfill_unlinked_items("b-1")
+        assert result == {
+            "matched_pattern_cards": 1,
+            "matched_generated_contents": 1,
+            "still_unlinked": 0,
+        }
+        storage_mock.update_item_result.assert_called_once()
+        kwargs = storage_mock.update_item_result.call_args.kwargs
+        assert kwargs["pattern_card_id"] == "pc-1"
+        assert kwargs["generated_content_id"] == "gen-1"
+
+    def test_matches_only_pattern_card(self, storage_mock: Any) -> None:
+        """analyze item — pattern_card_id 만 매칭 (generated_content 는 검사 자체 안 함)."""
+        items = [_item(id="i-1", keyword="kw1", operation="analyze")]
+        storage_mock.list_items.return_value = items
+        storage_mock.find_pattern_card_by_triple.return_value = "pc-2"
+        # generated 검사는 호출 안 됨 (operation=analyze)
+
+        result = batch_orchestrator.backfill_unlinked_items("b-1")
+        assert result["matched_pattern_cards"] == 1
+        assert result["matched_generated_contents"] == 0
+        storage_mock.find_generated_content_by_triple.assert_not_called()
+
+    def test_no_match_increments_still_unlinked(self, storage_mock: Any) -> None:
+        items = [_item(id="i-1", keyword="kw1", operation="pipeline")]
+        storage_mock.list_items.return_value = items
+        storage_mock.find_pattern_card_by_triple.return_value = None
+        storage_mock.find_generated_content_by_triple.return_value = None
+
+        result = batch_orchestrator.backfill_unlinked_items("b-1")
+        assert result["matched_pattern_cards"] == 0
+        assert result["matched_generated_contents"] == 0
+        assert result["still_unlinked"] == 1
+        storage_mock.update_item_result.assert_not_called()
+
+    def test_idempotent_skips_already_filled(self, storage_mock: Any) -> None:
+        """이미 두 FK 가 모두 채워진 item 은 건너뜀."""
+        items = [
+            _item(
+                id="i-1",
+                keyword="kw1",
+                operation="pipeline",
+                pattern_card_id="pc-existing",
+                generated_content_id="gen-existing",
+            )
+        ]
+        storage_mock.list_items.return_value = items
+
+        result = batch_orchestrator.backfill_unlinked_items("b-1")
+        assert result == {
+            "matched_pattern_cards": 0,
+            "matched_generated_contents": 0,
+            "still_unlinked": 0,
+        }
+        storage_mock.find_pattern_card_by_triple.assert_not_called()
+        storage_mock.update_item_result.assert_not_called()

@@ -39,6 +39,12 @@ def _build_parser() -> argparse.ArgumentParser:
     group.add_argument("--status", type=str, help="배치 ID — 진행 상태 조회")
     group.add_argument("--retry-item", type=str, help="item ID — 수동 재시도")
     group.add_argument("--cancel", type=str, help="배치 ID — queued items cancelled 마킹")
+    group.add_argument(
+        "--backfill-fk",
+        type=str,
+        dest="backfill_fk",
+        help="배치 ID — fire-and-forget 회수 실패한 pattern_card_id/generated_content_id 사후 백필",
+    )
     parser.add_argument(
         "--mode",
         choices=["now", "overnight", "auto"],
@@ -87,6 +93,8 @@ def main() -> int:
         return _retry(args.retry_item)
     if args.cancel is not None:
         return _cancel(args.cancel)
+    if args.backfill_fk is not None:
+        return _backfill(args.backfill_fk)
     return 1  # pragma: no cover — mutually_exclusive_group required=True 가 차단
 
 
@@ -174,6 +182,22 @@ def _cancel(batch_id: str) -> int:
         logger.error("배치 미존재: %s", exc)
         return 1
     print(f"batch {batch_id} cancelled={cancelled}")  # noqa: T201
+    return 0
+
+
+def _backfill(batch_id: str) -> int:
+    """SPEC-BATCH §3 Phase 2 PR4 — fire-and-forget 회수 실패 사후 백필 운영 도구."""
+    try:
+        result = batch_orchestrator.backfill_unlinked_items(batch_id)
+    except Exception as exc:
+        logger.error("백필 실패: %s", exc)
+        return 1
+    print(  # noqa: T201
+        f"\n배치 {batch_id} 백필 완료\n"
+        f"  matched_pattern_cards   : {result['matched_pattern_cards']}\n"
+        f"  matched_generated       : {result['matched_generated_contents']}\n"
+        f"  still_unlinked          : {result['still_unlinked']}\n"
+    )
     return 0
 
 

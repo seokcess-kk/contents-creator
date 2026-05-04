@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from types import SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -260,3 +262,89 @@ def test_list_review_pending_items_empty(mock_client: MagicMock) -> None:
     with patch("domain.batch.storage.get_client", return_value=mock_client):
         items = storage.list_review_pending_items("b-1")
     assert items == []
+
+
+# ── Phase B10 PR4 — Triple link 사후 백필 ──
+
+
+def test_find_pattern_card_by_triple_returns_id(mock_client: MagicMock) -> None:
+    mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value.data = [
+        {"id": "pc-uuid-1"}
+    ]
+    with patch("domain.batch.storage.get_client", return_value=mock_client):
+        result = storage.find_pattern_card_by_triple("강남-다이어트", "강남 다이어트")
+    assert result == "pc-uuid-1"
+
+
+def test_find_pattern_card_by_triple_missing_returns_none(mock_client: MagicMock) -> None:
+    mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value.data = []
+    with patch("domain.batch.storage.get_client", return_value=mock_client):
+        result = storage.find_pattern_card_by_triple("slug-x", "kw-x")
+    assert result is None
+
+
+def test_find_generated_content_by_triple_primary_match(mock_client: MagicMock) -> None:
+    """job_id + slug + keyword 1차 매칭 성공."""
+    # 1차 매칭 응답 — eq 3번 chain
+    chain_primary = mock_client.table.return_value.select.return_value
+    chain_primary.eq.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value.data = [
+        {"id": "gen-uuid-1"}
+    ]
+    with patch("domain.batch.storage.get_client", return_value=mock_client):
+        result = storage.find_generated_content_by_triple("job-1", "slug-1", "kw-1")
+    assert result == "gen-uuid-1"
+
+
+def test_find_generated_content_by_triple_falls_back_to_slug_keyword(
+    mock_client: MagicMock,
+) -> None:
+    """1차 매칭 실패 → 2차 fallback (slug + keyword + order created_at desc) 매칭."""
+    chain_select = mock_client.table.return_value.select.return_value
+
+    def _execute_router() -> Any:
+        # 매번 다른 응답 — 1차는 빈 array, 2차는 매칭
+        return SimpleNamespace(data=[{"id": "gen-fallback"}])
+
+    # 1차: eq.eq.eq.limit.execute → 빈 결과
+    chain_select.eq.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value = SimpleNamespace(
+        data=[]
+    )
+    # 2차: eq.eq.order.limit.execute → 매칭
+    chain_select.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = SimpleNamespace(
+        data=[{"id": "gen-fallback"}]
+    )
+
+    with patch("domain.batch.storage.get_client", return_value=mock_client):
+        result = storage.find_generated_content_by_triple("job-1", "slug-1", "kw-1")
+    assert result == "gen-fallback"
+    # 잠재 사용 회피 경고 무력화
+    _ = _execute_router
+
+
+def test_find_generated_content_by_triple_job_id_none_skips_primary(
+    mock_client: MagicMock,
+) -> None:
+    """job_id None → 1차 매칭 스킵, 바로 2차 fallback."""
+    chain = mock_client.table.return_value.select.return_value
+    # 2차 fallback 만 호출되어야 함 — primary path mock 안 함
+    chain.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = SimpleNamespace(
+        data=[{"id": "gen-only-fallback"}]
+    )
+
+    with patch("domain.batch.storage.get_client", return_value=mock_client):
+        result = storage.find_generated_content_by_triple(None, "slug-1", "kw-1")
+    assert result == "gen-only-fallback"
+
+
+def test_find_generated_content_by_triple_all_missing(mock_client: MagicMock) -> None:
+    chain = mock_client.table.return_value.select.return_value
+    chain.eq.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value = SimpleNamespace(
+        data=[]
+    )
+    chain.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = SimpleNamespace(
+        data=[]
+    )
+
+    with patch("domain.batch.storage.get_client", return_value=mock_client):
+        result = storage.find_generated_content_by_triple("job-1", "slug-1", "kw-1")
+    assert result is None

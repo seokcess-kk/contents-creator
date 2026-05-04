@@ -17,6 +17,7 @@
 - `csv_parser.py` — CSV 텍스트 → `(created, skipped, failed)`. 검증·중복 제거·폴백
 - `storage.py` — Supabase CRUD. payload 변환은 본 파일에만. `update_item_status` 는 상태 머신, `update_item_result` 는 결과 메타(pattern_card_id/generated_content_id/compliance_passed/search_volume/difficulty_grade) 책임 분리 (Phase B7+B8). `find_primary_in_cluster(batch_id, cluster_id)` 는 cluster 재사용 정책의 primary 조회 단일 출처 (Phase B8). cluster_dedupe **default OFF** — 본문 유사도 1페이지 노출 리스크 보수 처리
 - Phase B9 추가 — `update_item_review(*, review_status, status, reviewer)` 는 검수 액션 메타 갱신 (approve 시 status 동시 전환). `list_review_pending_items` 는 검수 큐 데이터 소스. `ItemStatus` 에 `ready_to_publish` 추가 (succeeded 의미 분리 — analyze 만 끝난 item 만 succeeded, generate/pipeline + compliance_passed=True 는 ready_to_publish, False/None 은 needs_review 안전망). `ready_to_publish_count` 는 DB 컬럼 미존재 — `count_items_by_status` 가 매번 in-memory 재집계. **운영 철학**: 후보 키워드는 모두 발행 대상, needs_review 는 폐기가 아닌 발행 전 대기. 핵심 액션 approve/needs_fix, reject 는 예외 (UI dropdown 보조)
+- Phase B10 추가 — `find_pattern_card_by_triple(slug, keyword)` + `find_generated_content_by_triple(job_id: str | None, slug, keyword)` 는 fire-and-forget 회수 실패 사후 백필용. job_id None 이면 1차 매칭 스킵 + slug+keyword fallback 만. `application/batch_orchestrator.backfill_unlinked_items(batch_id)` 가 idempotent 운영 도구로 호출
 
 ## 핵심 규칙
 

@@ -1186,7 +1186,31 @@
 - [x] `tests/test_application/test_batch_orchestrator.py` — generate/pipeline 의 compliance_passed True/False/None 분기 + 기존 회귀
 - [x] `tests/test_web/test_batches_api.py` — review queue 5 케이스 + GET /batches/{id} ready_to_publish_count 응답 검증
 
-### B9.6 검증 + commit
+### B9.6 검증 + commit ✅
+- [x] `bash .claude/hooks/build-check.sh` 그린
+- [x] `cd web/frontend && npx tsc --noEmit && npx next build` 그린 — `/batches/[id]/review` 라우트 등록
+- [x] commit `feat(batch): add review queue and ready-to-publish state` (`042c90c`)
+
+---
+
+## 🛠️ Phase B10 — Triple Link 사후 백필 (Phase 2 PR4, 2026-05-04 착수)
+
+> SPEC-BATCH §3 Phase 2 의 마지막 갈래 — fire-and-forget 회수 실패 사후 보강 운영 도구. 자동 cron 미사용. 운영자가 명시적으로 호출 (CLI / Web API). idempotent.
+
+### B10.1 도메인 + application ✅
+- [x] `domain/batch/storage.py` — `find_pattern_card_by_triple(slug, keyword)` 신규 (slug+keyword ORDER BY created_at DESC LIMIT 1) + `find_generated_content_by_triple(job_id, slug, keyword)` 신규 (job_id 1차 + slug+keyword 2차 fallback, **job_id None 시 1차 스킵**)
+- [x] `application/batch_orchestrator.py:backfill_unlinked_items(batch_id)` 신규 — list_items 순회 + idempotent (이미 채워진 FK skip) + matched/still_unlinked 카운트 반환
+
+### B10.2 Web API + CLI ✅
+- [x] `POST /batches/{id}/backfill-fk` — 동기 응답
+- [x] `scripts/run_batch.py --backfill-fk BATCH_ID` 옵션 + `_backfill` 헬퍼
+
+### B10.3 테스트 ✅ — storage 5 + orchestrator 4 + API 1
+- [x] `find_pattern_card_by_triple` 발견/부재
+- [x] `find_generated_content_by_triple` primary match / fallback / job_id None 1차 스킵 / 부재
+- [x] `backfill_unlinked_items` 양쪽 매칭 / pattern_card 만 / 부재 / idempotent
+- [x] `POST /backfill-fk` 응답 검증
+
+### B10.4 검증 + commit
 - [ ] `bash .claude/hooks/build-check.sh` 그린
-- [ ] `cd web/frontend && npx tsc --noEmit && npx next build` 그린
-- [ ] commit `feat(batch): add review queue and ready-to-publish state` (Phase 2 PR3)
+- [ ] commit `feat(batch): add triple-link FK backfill tool` (Phase 2 PR4)
