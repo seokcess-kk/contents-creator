@@ -20,6 +20,9 @@ ItemStatus = Literal[
     "analyzing",
     "ready_to_generate",
     "generating",
+    # Phase 2 PR3 — 발행 준비 상태 (succeeded 의미 분리).
+    # generate/pipeline 의 compliance_passed=True 시 자동 마킹 + 검수 승인 시 needs_review 에서 전환.
+    "ready_to_publish",
 ]
 Operation = Literal["analyze", "generate", "pipeline"]
 Mode = Literal["now", "overnight", "auto"]
@@ -39,6 +42,8 @@ class KeywordBatch(BaseModel):
     failed_count: int = Field(default=0, ge=0)
     skipped_count: int = Field(default=0, ge=0)
     needs_review_count: int = Field(default=0, ge=0)
+    # Phase 2 PR3 — 발행 준비 카운터. DB 컬럼 미반영, count_items_by_status 가 매번 재집계.
+    ready_to_publish_count: int = Field(default=0, ge=0)
     estimated_cost_usd: float = 0
     # Phase 2 사전 필터 임계값
     min_search_volume: int | None = None

@@ -670,6 +670,8 @@ def run_pipeline(
         # 분석이 캐시 hit 인 경우에도 compose 단계 pattern_cards lookup 으로 pc_id 회수.
         pattern_card_id=gen_result.pattern_card_id,
         generated_content_id=gen_result.generated_content_id,
+        # Phase B9 — batch 검수 큐 분기 위해 compliance_passed 도 PipelineResult 에 노출.
+        compliance_passed=gen_result.compliance_passed,
         error=error,
     )
 

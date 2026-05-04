@@ -1145,7 +1145,48 @@
 - [ ] `CLAUDE.md` 변경 이력 1줄
 - [ ] `domain/batch/CLAUDE.md` — find_primary_in_cluster + cluster_dedupe default OFF 명시
 
-### B8.7 검증 + commit
+### B8.7 검증 + commit ✅
+- [x] `bash .claude/hooks/build-check.sh` 그린 — 1160 passed, 76.51% coverage
+- [x] `cd web/frontend && npx tsc --noEmit && npx next build` 그린
+- [x] commit `feat(batch): Phase 2 PR2 — 사전 필터 + 클러스터 재사용` (`59a5f86`)
+
+---
+
+## 🩺 Phase B9 — 검수 큐 (Phase 2 PR3, 2026-05-04 착수)
+
+> SPEC-BATCH §3 Phase 2 의 세 번째 갈래. **운영 철학**: 후보 키워드는 모두 발행 대상. needs_review 는 폐기 X — 발행 전 확인/수정 대기. 핵심 액션: approve / needs_fix. reject 는 예외 (UI dropdown 보조). status 머신: succeeded → ready_to_publish 의미 분리.
+
+### B9.1 도메인 — model + storage ✅
+- [x] `domain/batch/model.py` — `ItemStatus` Literal 에 `"ready_to_publish"` 추가, `KeywordBatch.ready_to_publish_count` Pydantic 필드 (DB 미반영)
+- [x] `domain/batch/storage.py` — `count_items_by_status` 의 dict 에 `ready_to_publish_count` 추가 + `update_batch_status` payload 에서 ready_to_publish_count 제외 (DB 컬럼 없음)
+- [x] `update_item_review(item_id, *, review_status, status=None, reviewer=None)` 신규 — approve 시 status 동시 전환
+- [x] `list_review_pending_items(batch_id, limit=200)` 신규 — `status='needs_review' AND review_status='pending'`
+
+### B9.2 application — 자동 마킹 ✅
+- [x] `_run_operation` / `_run_member_with_primary` 가 `compliance_passed: bool | None` 반환
+- [x] `application/models.py` — `PipelineResult.compliance_passed` 필드 추가
+- [x] `application/orchestrator.py:run_pipeline` — PipelineResult.compliance_passed 채움
+- [x] `_dispatch_item` final status 분기:
+  - analyze → `succeeded` (분석만)
+  - generate/pipeline + compliance_passed=True → `ready_to_publish`
+  - generate/pipeline + compliance_passed=False/None → `needs_review` (안전망)
+
+### B9.3 Web API ✅
+- [x] `GET /batches/{id}/review` — list_review_pending_items + keyword_slug enrich
+- [x] `POST /batches/{id}/items/{item_id}/review` — approve→ready_to_publish, needs_fix, reject. ReviewActionRequest 본문, invalid action 400
+
+### B9.4 Frontend ✅
+- [x] `web/frontend/src/lib/api.ts` — `BatchSummary.ready_to_publish_count` + ReviewAction + listReviewQueue / reviewItem
+- [x] `web/frontend/src/app/batches/[id]/review/page.tsx` 신규 (Next 16 use(params))
+- [x] `web/frontend/src/components/BatchReviewQueue.tsx` 신규 — 폴링 5초, 액션 ApproveAction (승인 / 수정필요 / 거부 dropdown)
+- [x] `BatchProgressTable` counters 라벨 정정 ("발행 준비"/"분석 완료") + 검수 큐 link + StatusBadge ready_to_publish
+
+### B9.5 테스트 ✅ — 68 passed (storage 5 + orchestrator 3 + API 5 + 기존 회귀)
+- [x] `tests/test_batch/test_storage.py` — update_item_review 3 / list_review_pending_items 2 / count ready_to_publish_count 1
+- [x] `tests/test_application/test_batch_orchestrator.py` — generate/pipeline 의 compliance_passed True/False/None 분기 + 기존 회귀
+- [x] `tests/test_web/test_batches_api.py` — review queue 5 케이스 + GET /batches/{id} ready_to_publish_count 응답 검증
+
+### B9.6 검증 + commit
 - [ ] `bash .claude/hooks/build-check.sh` 그린
 - [ ] `cd web/frontend && npx tsc --noEmit && npx next build` 그린
-- [ ] commit `feat(batch): Phase 2 PR2 — 사전 필터 + 클러스터 재사용`
+- [ ] commit `feat(batch): add review queue and ready-to-publish state` (Phase 2 PR3)

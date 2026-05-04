@@ -43,13 +43,15 @@ export default function BatchProgressTable({ batchId }: Props) {
   if (error) return <div className="text-sm text-red-600 py-6">{error}</div>;
   if (!batch) return null;
 
+  // Phase B9 — counters 라벨 정정. succeeded → "분석 완료" (analyze 만), ready_to_publish 신규.
   const counters = [
     { key: "queued", label: "대기", color: "text-gray-700" },
     { key: "running", label: "진행", color: "text-blue-700" },
-    { key: "succeeded", label: "성공", value: batch.succeeded_count, color: "text-green-700" },
+    { key: "ready_to_publish", label: "발행 준비", value: batch.ready_to_publish_count, color: "text-green-700" },
+    { key: "needs_review", label: "검수 필요", value: batch.needs_review_count, color: "text-amber-700" },
+    { key: "succeeded", label: "분석 완료", value: batch.succeeded_count, color: "text-emerald-600" },
     { key: "failed", label: "실패", value: batch.failed_count, color: "text-red-700" },
     { key: "skipped", label: "스킵", value: batch.skipped_count, color: "text-gray-500" },
-    { key: "needs_review", label: "검수 대기", value: batch.needs_review_count, color: "text-amber-700" },
   ];
 
   async function handleRetry(itemId: string) {
@@ -74,22 +76,32 @@ export default function BatchProgressTable({ batchId }: Props) {
   return (
     <div className="space-y-3">
       <div className="bg-white rounded-lg shadow-sm ring-1 ring-gray-200 p-3">
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center justify-between mb-2 gap-3 flex-wrap">
           <div className="flex items-baseline gap-3">
             <h3 className="text-sm font-semibold text-gray-800">{batch.name || batch.id}</h3>
             <span className="text-xs text-gray-500">
               status={batch.status} · mode={batch.mode} · total={batch.total_count}
             </span>
           </div>
-          <button
-            onClick={handleCancel}
-            disabled={batch.status === "completed" || batch.status === "cancelled"}
-            className="text-xs px-2 py-1 text-red-700 hover:bg-red-50 disabled:text-gray-400 disabled:cursor-not-allowed rounded"
-          >
-            취소
-          </button>
+          <div className="flex items-center gap-3">
+            {batch.needs_review_count > 0 && (
+              <Link
+                href={`/batches/${batchId}/review`}
+                className="text-xs text-amber-700 hover:underline font-semibold"
+              >
+                → 검수 큐 ({batch.needs_review_count})
+              </Link>
+            )}
+            <button
+              onClick={handleCancel}
+              disabled={batch.status === "completed" || batch.status === "cancelled"}
+              className="text-xs px-2 py-1 text-red-700 hover:bg-red-50 disabled:text-gray-400 disabled:cursor-not-allowed rounded"
+            >
+              취소
+            </button>
+          </div>
         </div>
-        <div className="grid grid-cols-6 gap-2">
+        <div className="grid grid-cols-7 gap-2">
           {counters.map((c) => (
             <div key={c.key} className="text-center">
               <div className={`text-lg font-bold ${c.color}`}>{c.value ?? "-"}</div>
@@ -240,10 +252,12 @@ function StatusBadge({ status }: { status: string }) {
   const palette: Record<string, string> = {
     queued: "bg-gray-100 text-gray-700",
     running: "bg-blue-100 text-blue-700",
-    succeeded: "bg-green-100 text-green-700",
+    succeeded: "bg-emerald-100 text-emerald-700",
     failed: "bg-red-100 text-red-700",
     skipped: "bg-gray-100 text-gray-500",
     needs_review: "bg-amber-100 text-amber-700",
+    // Phase B9 — 발행 준비 상태 (succeeded 의미 분리).
+    ready_to_publish: "bg-green-100 text-green-700",
   };
   const cls = palette[status] || "bg-gray-100 text-gray-700";
   return <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold ${cls}`}>{status}</span>;

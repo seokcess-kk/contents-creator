@@ -265,6 +265,74 @@ def _item_with_slug(item: Any) -> dict[str, Any]:
     return body
 
 
+@router.get("/{batch_id}/review")
+def list_review_queue(batch_id: str) -> dict[str, Any]:
+    """검수 큐 — `status='needs_review' AND review_status='pending'` 만.
+
+    Phase 2 PR3 — `/batches/[id]/review` 페이지 데이터 소스. keyword_slug enrich 동일 패턴.
+    """
+    if not _supabase_configured():
+        raise HTTPException(status_code=503, detail="Supabase 미설정")
+    try:
+        batch = storage.get_batch(batch_id)
+        if batch is None:
+            raise HTTPException(status_code=404, detail="batch 미존재")
+        items = storage.list_review_pending_items(batch_id)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _supabase_error_response(exc, "list_review_queue") from exc
+    return {
+        "batch_id": batch_id,
+        "count": len(items),
+        "items": [_item_with_slug(it) for it in items],
+    }
+
+
+class ReviewActionRequest(BaseModel):
+    """검수 액션 본문 — approve / needs_fix / reject."""
+
+    action: str = Field(min_length=1)  # "approve" | "needs_fix" | "reject"
+    reviewer: str | None = None
+
+
+_REVIEW_ACTION_MAP: dict[str, dict[str, Any]] = {
+    "approve": {"review_status": "approved", "status": "ready_to_publish"},
+    "needs_fix": {"review_status": "needs_fix", "status": None},
+    "reject": {"review_status": "rejected", "status": None},
+}
+
+
+@router.post("/{batch_id}/items/{item_id}/review", status_code=200)
+def review_item(batch_id: str, item_id: str, body: ReviewActionRequest) -> dict[str, Any]:
+    """검수 액션 — 운영자가 needs_review item 을 처리.
+
+    Phase 2 PR3 — approve 시 status=ready_to_publish 로 동시 전환. needs_fix/reject 는
+    review_status 만 갱신 (status 그대로 needs_review 유지).
+    """
+    spec = _REVIEW_ACTION_MAP.get(body.action)
+    if spec is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"invalid action: {body.action!r} (allowed: approve / needs_fix / reject)",
+        )
+    try:
+        storage.update_item_review(
+            item_id,
+            review_status=spec["review_status"],
+            status=spec["status"],
+            reviewer=body.reviewer,
+        )
+    except Exception as exc:
+        raise _supabase_error_response(exc, "review") from exc
+    return {
+        "batch_id": batch_id,
+        "item_id": item_id,
+        "review_status": spec["review_status"],
+        "status": spec["status"],
+    }
+
+
 @router.post("/{batch_id}/cancel", status_code=200)
 def cancel_batch(batch_id: str) -> dict[str, Any]:
     """진행 중 batch 의 queued items 를 모두 cancelled 로. running 은 그대로 진행."""

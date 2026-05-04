@@ -535,6 +535,8 @@ export interface BatchSummary {
   status: "queued" | "running" | "completed" | "failed" | "cancelled";
   total_count: number;
   succeeded_count: number;
+  // Phase B9 — 발행 준비 카운터 (DB 미저장, GET /batches/{id} 가 매번 재집계).
+  ready_to_publish_count: number;
   failed_count: number;
   skipped_count: number;
   needs_review_count: number;
@@ -652,6 +654,28 @@ export function retryBatchItem(
   itemId: string,
 ): Promise<{ batch_id: string; item_id: string; status: string }> {
   return fetchJson(`/batches/${batchId}/items/${itemId}/retry`, { method: "POST" });
+}
+
+// ── 검수 큐 (Phase B9 PR3) ──
+
+export type ReviewAction = "approve" | "needs_fix" | "reject";
+
+export function listReviewQueue(
+  batchId: string,
+): Promise<{ batch_id: string; count: number; items: BatchItem[] }> {
+  return fetchJson(`/batches/${batchId}/review`);
+}
+
+export function reviewItem(
+  batchId: string,
+  itemId: string,
+  action: ReviewAction,
+  reviewer?: string,
+): Promise<{ batch_id: string; item_id: string; review_status: string; status: string | null }> {
+  return fetchJson(`/batches/${batchId}/items/${itemId}/review`, {
+    method: "POST",
+    body: JSON.stringify({ action, reviewer }),
+  });
 }
 
 // ── PatternCard 보관함 (Phase B7) ──

@@ -12,6 +12,7 @@ from domain.batch.model import (
     ItemStatus,
     KeywordBatch,
     KeywordBatchItem,
+    ReviewStatus,
 )
 
 logger = logging.getLogger(__name__)
@@ -158,6 +159,53 @@ def find_primary_in_cluster(batch_id: str, cluster_id: str) -> KeywordBatchItem 
     return _row_to_item(cast("dict[str, Any]", rows[0])) if rows else None
 
 
+def update_item_review(
+    item_id: str,
+    *,
+    review_status: ReviewStatus,
+    status: ItemStatus | None = None,
+    reviewer: str | None = None,
+) -> None:
+    """검수 액션 메타 갱신. status 가 None 아니면 동시에 status 도 전환 (approve 시 사용).
+
+    SPEC-BATCH §3 Phase 2 PR3 — 검수 액션:
+      - approve: review_status='approved', status='ready_to_publish'
+      - needs_fix: review_status='needs_fix' (status 그대로)
+      - reject: review_status='rejected' (status 그대로, 예외 상태)
+    reviewed_at 은 항상 now() 로 갱신. reviewer None 이면 payload 미포함.
+    """
+    payload: dict[str, Any] = {
+        "review_status": review_status,
+        "reviewed_at": datetime.now(UTC).isoformat(),
+    }
+    if status is not None:
+        payload["status"] = status
+        payload["completed_at"] = datetime.now(UTC).isoformat()
+    if reviewer is not None:
+        payload["reviewer"] = reviewer
+    get_client().table(_ITEM_TABLE).update(payload).eq("id", item_id).execute()
+
+
+def list_review_pending_items(batch_id: str, limit: int = 200) -> list[KeywordBatchItem]:
+    """검수 대기 큐 — `status='needs_review' AND review_status='pending'` 만.
+
+    PR3 검수 큐 페이지 (`/batches/[id]/review`) 의 데이터 소스.
+    """
+    result = (
+        get_client()
+        .table(_ITEM_TABLE)
+        .select("*")
+        .eq("batch_id", batch_id)
+        .eq("status", "needs_review")
+        .eq("review_status", "pending")
+        .order("created_at", desc=False)
+        .limit(limit)
+        .execute()
+    )
+    rows = result.data or []
+    return [_row_to_item(cast("dict[str, Any]", r)) for r in rows]
+
+
 def update_batch_status(
     batch_id: str,
     status: BatchStatus,
@@ -172,18 +220,26 @@ def update_batch_status(
     if completed_at is not None:
         payload["completed_at"] = completed_at.isoformat()
     if counters:
-        payload.update(counters)
+        # Phase 2 PR3 — ready_to_publish_count 는 DB 컬럼 미존재. payload 에서 제외.
+        # in-memory 응답에만 포함되며 매번 count_items_by_status 가 재집계.
+        payload.update({k: v for k, v in counters.items() if k != "ready_to_publish_count"})
     get_client().table(_BATCH_TABLE).update(payload).eq("id", batch_id).execute()
 
 
 def count_items_by_status(batch_id: str) -> dict[str, int]:
-    """batch 의 status 별 카운터 — counters 갱신용 집계."""
+    """batch 의 status 별 카운터 — counters 갱신용 집계.
+
+    Phase 2 PR3 — `ready_to_publish_count` 추가 (succeeded 와 의미 분리).
+    DB 컬럼은 succeeded_count/failed_count/skipped_count/needs_review_count 4개만 저장.
+    ready_to_publish_count 는 in-memory 응답에만 포함 (GET /batches/{id} 가 매번 재집계).
+    """
     items = list_items(batch_id, limit=10_000)
     counters: dict[str, int] = {
         "succeeded_count": 0,
         "failed_count": 0,
         "skipped_count": 0,
         "needs_review_count": 0,
+        "ready_to_publish_count": 0,
     }
     for it in items:
         if it.status == "succeeded":
@@ -194,6 +250,8 @@ def count_items_by_status(batch_id: str) -> dict[str, int]:
             counters["skipped_count"] += 1
         elif it.status == "needs_review":
             counters["needs_review_count"] += 1
+        elif it.status == "ready_to_publish":
+            counters["ready_to_publish_count"] += 1
     return counters
 
 

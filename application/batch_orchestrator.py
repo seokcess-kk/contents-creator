@@ -28,6 +28,7 @@ from config.settings import settings
 from domain.batch import csv_parser, storage
 from domain.batch.model import (
     BatchEnqueueResult,
+    ItemStatus,
     KeywordBatch,
     KeywordBatchItem,
     NotSupportedYetError,
@@ -185,33 +186,51 @@ def _dispatch_item(item_id: str) -> None:
     )
 
     try:
-        if primary is not None:
+        compliance_passed: bool | None = (
             _run_member_with_primary(item, primary)
-        else:
-            _run_operation(item, job_id)
+            if primary is not None
+            else _run_operation(item, job_id)
+        )
     except Exception as exc:
         _handle_item_failure(item, exc)
         return
 
+    # Phase B9 — operation 별 final status 분기 (사용자 운영 철학 반영).
+    # analyze 는 발행할 본문 없음 → succeeded 유지.
+    # generate/pipeline: compliance_passed=True → ready_to_publish, False/None → needs_review.
+    new_status: ItemStatus
+    if item.operation == "analyze":
+        new_status = "succeeded"
+    elif compliance_passed is True:
+        new_status = "ready_to_publish"
+    else:
+        # False (의료법 위반 잔존) / None (결과 모델 누락 / 중간 실패) 둘 다 검수 필요.
+        # 데이터 누락 방지 — 발행 준비 큐에서 빠지지 않도록 needs_review 안전망.
+        new_status = "needs_review"
     storage.update_item_status(
         item_id,
-        "succeeded",
+        new_status,
         completed_at=datetime.now(UTC),
     )
     logger.info(
-        "batch.item_succeeded item_id=%s keyword=%s operation=%s",
+        "batch.item_done item_id=%s keyword=%s operation=%s status=%s cp=%s",
         item_id,
         item.keyword,
         item.operation,
+        new_status,
+        compliance_passed,
     )
 
 
-def _run_operation(item: KeywordBatchItem, job_id: str) -> None:
+def _run_operation(item: KeywordBatchItem, job_id: str) -> bool | None:
     """operation 별 분기 — 단일 흐름 함수 호출 + Supabase id 회수.
 
     Phase B7 — 단일 흐름의 결과 모델에서 pattern_card_id / generated_content_id 를
     캡처해 storage.update_item_result() 로 keyword_batch_items FK 컬럼을 채움.
     회수 실패 (id None) 또는 update 실패 시에도 succeeded 마킹은 진행 (graceful).
+
+    Phase B9 — caller (`_dispatch_item`) 가 final status 분기를 결정할 수 있도록
+    `compliance_passed: bool | None` 반환 (analyze 는 None, generate/pipeline 는 결과 모델의 값).
     """
     pattern_card_id: str | None = None
     generated_content_id: str | None = None
@@ -235,6 +254,7 @@ def _run_operation(item: KeywordBatchItem, job_id: str) -> None:
             raise RuntimeError(pipeline_result.error or "pipeline 실패")
         pattern_card_id = pipeline_result.pattern_card_id
         generated_content_id = pipeline_result.generated_content_id
+        compliance_passed = pipeline_result.compliance_passed
     else:  # pragma: no cover — Pydantic Literal 로 미리 차단
         raise ValueError(f"알 수 없는 operation: {item.operation}")
 
@@ -248,13 +268,15 @@ def _run_operation(item: KeywordBatchItem, job_id: str) -> None:
 
     # job_id 는 logger 식별용 (current_job_id() 와는 별개 — single-flow 의 job_context 영향 X)
     logger.debug(
-        "batch.operation_done item_id=%s job_id=%s operation=%s pc_id=%s gen_id=%s",
+        "batch.operation_done item_id=%s job_id=%s operation=%s pc_id=%s gen_id=%s cp=%s",
         item.id,
         job_id,
         item.operation,
         pattern_card_id,
         generated_content_id,
+        compliance_passed,
     )
+    return compliance_passed
 
 
 def _record_item_result(
@@ -423,11 +445,14 @@ def _resolve_cluster_primary(
         time.sleep(interval)
 
 
-def _run_member_with_primary(item: KeywordBatchItem, primary: KeywordBatchItem) -> None:
+def _run_member_with_primary(item: KeywordBatchItem, primary: KeywordBatchItem) -> bool | None:
     """cluster member 의 operation 별 재사용 분기.
 
-    analyze: 분석 단계 0회, primary.pattern_card_id 즉시 복사 → succeeded.
+    analyze: 분석 단계 0회, primary.pattern_card_id 즉시 복사 → caller 가 succeeded 마킹.
     generate / pipeline: primary 의 PatternCard disk path 주입해 [6]~[10] 만 실행.
+
+    Phase B9 — caller (`_dispatch_item`) 가 final status 분기를 결정하도록
+    `compliance_passed: bool | None` 반환 (analyze 는 None, generate/pipeline 는 결과 모델의 값).
     """
     if item.id is None or primary.pattern_card_id is None:
         # 가드 — _resolve_cluster_primary 가 통과시키지 않을 케이스지만 안전망.
@@ -446,7 +471,7 @@ def _run_member_with_primary(item: KeywordBatchItem, primary: KeywordBatchItem) 
             primary.id,
             primary.pattern_card_id,
         )
-        return
+        return None
 
     pc_path = _resolve_primary_card_path(primary)
     if pc_path is None:
@@ -455,27 +480,33 @@ def _run_member_with_primary(item: KeywordBatchItem, primary: KeywordBatchItem) 
         )
 
     if item.operation == "generate":
-        result = orchestrator.run_generate_only(keyword=item.keyword, pattern_card_path=pc_path)
-        if result.status == StageStatus.FAILED:
-            raise RuntimeError(result.error or "generate 실패 (cluster 재사용)")
+        gen_result: GenerateResult = orchestrator.run_generate_only(
+            keyword=item.keyword, pattern_card_path=pc_path
+        )
+        if gen_result.status == StageStatus.FAILED:
+            raise RuntimeError(gen_result.error or "generate 실패 (cluster 재사용)")
         _record_item_result(
             item.id,
-            pattern_card_id=result.pattern_card_id or primary.pattern_card_id,
-            generated_content_id=result.generated_content_id,
-            compliance_passed=result.compliance_passed,
+            pattern_card_id=gen_result.pattern_card_id or primary.pattern_card_id,
+            generated_content_id=gen_result.generated_content_id,
+            compliance_passed=gen_result.compliance_passed,
         )
-    elif item.operation == "pipeline":
-        result = orchestrator.run_pipeline(keyword=item.keyword, pattern_card_path=pc_path)
-        if result.status == StageStatus.FAILED:
-            raise RuntimeError(result.error or "pipeline 실패 (cluster 재사용)")
+        return gen_result.compliance_passed
+    if item.operation == "pipeline":
+        pipe_result: PipelineResult = orchestrator.run_pipeline(
+            keyword=item.keyword, pattern_card_path=pc_path
+        )
+        if pipe_result.status == StageStatus.FAILED:
+            raise RuntimeError(pipe_result.error or "pipeline 실패 (cluster 재사용)")
         _record_item_result(
             item.id,
-            pattern_card_id=result.pattern_card_id or primary.pattern_card_id,
-            generated_content_id=result.generated_content_id,
-            compliance_passed=None,
+            pattern_card_id=pipe_result.pattern_card_id or primary.pattern_card_id,
+            generated_content_id=pipe_result.generated_content_id,
+            compliance_passed=pipe_result.compliance_passed,
         )
-    else:  # pragma: no cover — Pydantic Literal 로 미리 차단
-        raise ValueError(f"알 수 없는 operation: {item.operation}")
+        return pipe_result.compliance_passed
+    # pragma: no cover — Pydantic Literal 로 미리 차단
+    raise ValueError(f"알 수 없는 operation: {item.operation}")
 
 
 def _resolve_primary_card_path(primary: KeywordBatchItem) -> Path | None:

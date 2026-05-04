@@ -255,6 +255,115 @@ class TestListBatchItems:
         assert body["items"][0]["keyword_slug"] == _slugify("강남 다이어트 한의원")
 
 
+class TestReviewQueue:
+    """Phase B9 PR3 — 검수 큐 GET / 액션 POST."""
+
+    def test_list_review_queue_with_keyword_slug_enrich(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from application.orchestrator import _slugify
+
+        monkeypatch.setattr(storage, "get_batch", lambda _: _batch())
+        monkeypatch.setattr(
+            storage,
+            "list_review_pending_items",
+            lambda _id, **_: [_item(id="i-1", keyword="강남 다이어트")],
+        )
+        resp = client.get("/api/batches/b-1/review")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["count"] == 1
+        assert body["items"][0]["keyword_slug"] == _slugify("강남 다이어트")
+
+    def test_review_approve_transitions_status(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured: dict[str, Any] = {}
+
+        def _capture(item_id: str, **kwargs: Any) -> None:
+            captured["item_id"] = item_id
+            captured.update(kwargs)
+
+        monkeypatch.setattr(storage, "update_item_review", _capture)
+        resp = client.post(
+            "/api/batches/b-1/items/i-1/review",
+            json={"action": "approve", "reviewer": "alice"},
+        )
+        assert resp.status_code == 200
+        assert captured["review_status"] == "approved"
+        assert captured["status"] == "ready_to_publish"
+        assert captured["reviewer"] == "alice"
+
+    def test_review_needs_fix_keeps_status(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured: dict[str, Any] = {}
+
+        monkeypatch.setattr(
+            storage,
+            "update_item_review",
+            lambda item_id, **kwargs: captured.update({"item_id": item_id, **kwargs}),
+        )
+        resp = client.post(
+            "/api/batches/b-1/items/i-1/review",
+            json={"action": "needs_fix"},
+        )
+        assert resp.status_code == 200
+        assert captured["review_status"] == "needs_fix"
+        assert captured["status"] is None  # status 그대로
+
+    def test_review_reject_keeps_status(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured: dict[str, Any] = {}
+        monkeypatch.setattr(
+            storage,
+            "update_item_review",
+            lambda item_id, **kwargs: captured.update(kwargs),
+        )
+        resp = client.post(
+            "/api/batches/b-1/items/i-1/review",
+            json={"action": "reject"},
+        )
+        assert resp.status_code == 200
+        assert captured["review_status"] == "rejected"
+        assert captured["status"] is None
+
+    def test_review_invalid_action_returns_400(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        resp = client.post(
+            "/api/batches/b-1/items/i-1/review",
+            json={"action": "publish"},  # invalid
+        )
+        assert resp.status_code == 400
+
+
+class TestGetBatchReadyToPublishCount:
+    """Phase B9 PR3 — GET /batches/{id} 응답에 ready_to_publish_count 항상 포함."""
+
+    def test_response_includes_ready_to_publish_count(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(storage, "get_batch", lambda _: _batch())
+        monkeypatch.setattr(
+            storage,
+            "count_items_by_status",
+            lambda _id: {
+                "succeeded_count": 1,
+                "failed_count": 0,
+                "skipped_count": 0,
+                "needs_review_count": 1,
+                "ready_to_publish_count": 3,
+            },
+        )
+        resp = client.get("/api/batches/b-1")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ready_to_publish_count"] == 3
+        assert body["needs_review_count"] == 1
+
+
 class TestCancelBatch:
     def test_returns_cancelled_count(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch

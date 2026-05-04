@@ -148,6 +148,7 @@ class TestDispatchItem:
                 slug="kw",
                 pattern_card_id="pc-uuid-2",
                 generated_content_id="gen-uuid-2",
+                compliance_passed=True,
             )
             batch_orchestrator._dispatch_item("i-1")
             orch_mock.run_pipeline.assert_called_once_with("kw")
@@ -156,6 +157,9 @@ class TestDispatchItem:
         kwargs = storage_mock.update_item_result.call_args.kwargs
         assert kwargs["pattern_card_id"] == "pc-uuid-2"
         assert kwargs["generated_content_id"] == "gen-uuid-2"
+        # Phase B9 — compliance_passed=True → ready_to_publish 마킹
+        statuses = [c.args[1] for c in storage_mock.update_item_status.call_args_list]
+        assert "ready_to_publish" in statuses
 
     def test_generate_operation_propagates_ids(self, storage_mock: Any) -> None:
         """Phase B7 — generate 결과에서 두 id + compliance_passed 전파."""
@@ -191,6 +195,57 @@ class TestDispatchItem:
         # succeeded 마킹은 진행
         statuses = [c.args[1] for c in storage_mock.update_item_status.call_args_list]
         assert "succeeded" in statuses
+
+    def test_generate_compliance_failure_marks_needs_review(self, storage_mock: Any) -> None:
+        """Phase B9 — generate + compliance_passed=False → needs_review."""
+        storage_mock.get_item.return_value = _item(operation="generate")
+        with patch("application.batch_orchestrator.orchestrator") as orch_mock:
+            orch_mock.run_generate_only.return_value = GenerateResult(
+                status=StageStatus.SUCCEEDED,
+                keyword="kw",
+                slug="kw",
+                pattern_card_id="pc-1",
+                generated_content_id="gen-1",
+                compliance_passed=False,
+            )
+            batch_orchestrator._dispatch_item("i-1")
+        statuses = [c.args[1] for c in storage_mock.update_item_status.call_args_list]
+        assert "needs_review" in statuses
+        assert "ready_to_publish" not in statuses
+
+    def test_generate_compliance_none_marks_needs_review(self, storage_mock: Any) -> None:
+        """Phase B9 — generate + compliance_passed=None → needs_review (데이터 누락 안전망)."""
+        storage_mock.get_item.return_value = _item(operation="generate")
+        with patch("application.batch_orchestrator.orchestrator") as orch_mock:
+            orch_mock.run_generate_only.return_value = GenerateResult(
+                status=StageStatus.SUCCEEDED,
+                keyword="kw",
+                slug="kw",
+                pattern_card_id="pc-1",
+                generated_content_id="gen-1",
+                compliance_passed=None,
+            )
+            batch_orchestrator._dispatch_item("i-1")
+        statuses = [c.args[1] for c in storage_mock.update_item_status.call_args_list]
+        assert "needs_review" in statuses
+        assert "ready_to_publish" not in statuses
+        assert "succeeded" not in statuses
+
+    def test_pipeline_compliance_none_marks_needs_review(self, storage_mock: Any) -> None:
+        """Phase B9 — pipeline + compliance_passed=None → needs_review."""
+        storage_mock.get_item.return_value = _item(operation="pipeline")
+        with patch("application.batch_orchestrator.orchestrator") as orch_mock:
+            orch_mock.run_pipeline.return_value = PipelineResult(
+                status=StageStatus.SUCCEEDED,
+                keyword="kw",
+                slug="kw",
+                pattern_card_id="pc-1",
+                generated_content_id="gen-1",
+                compliance_passed=None,
+            )
+            batch_orchestrator._dispatch_item("i-1")
+        statuses = [c.args[1] for c in storage_mock.update_item_status.call_args_list]
+        assert "needs_review" in statuses
 
     def test_update_item_result_failure_does_not_block_succeeded(self, storage_mock: Any) -> None:
         """update_item_result 가 raise 해도 succeeded 마킹은 진행 (graceful)."""

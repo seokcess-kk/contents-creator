@@ -44,6 +44,8 @@ class PipelineResult(BaseModel):
     # SPEC-BATCH Phase 2 PR1 — 단일·batch 양쪽이 회수해 사용. Supabase 미설정/실패 시 None.
     pattern_card_id: str | None = None
     generated_content_id: str | None = None
+    # SPEC-BATCH Phase 2 PR3 — batch 검수 큐 분기 (compliance_passed=False 자동 needs_review).
+    compliance_passed: bool | None = None
     error: str | None = None
 
 

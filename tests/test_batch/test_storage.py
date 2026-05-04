@@ -189,6 +189,9 @@ def test_count_items_by_status_aggregates(mock_client: MagicMock) -> None:
         {"id": "i-4", "batch_id": "b-1", "keyword": "k4", "status": "skipped"},
         {"id": "i-5", "batch_id": "b-1", "keyword": "k5", "status": "needs_review"},
         {"id": "i-6", "batch_id": "b-1", "keyword": "k6", "status": "running"},
+        # Phase B9 — ready_to_publish 추가
+        {"id": "i-7", "batch_id": "b-1", "keyword": "k7", "status": "ready_to_publish"},
+        {"id": "i-8", "batch_id": "b-1", "keyword": "k8", "status": "ready_to_publish"},
     ]
     mock_client.table.return_value.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value.data = items_payload
     with patch("domain.batch.storage.get_client", return_value=mock_client):
@@ -198,4 +201,62 @@ def test_count_items_by_status_aggregates(mock_client: MagicMock) -> None:
         "failed_count": 1,
         "skipped_count": 1,
         "needs_review_count": 1,
+        "ready_to_publish_count": 2,
     }
+
+
+# ── Phase B9 PR3 — 검수 큐 ──
+
+
+def test_update_item_review_review_status_only(mock_client: MagicMock) -> None:
+    """status None — review_status + reviewed_at 만 갱신 (needs_fix / reject 케이스)."""
+    with patch("domain.batch.storage.get_client", return_value=mock_client):
+        storage.update_item_review("i-1", review_status="needs_fix")
+    payload = mock_client.table.return_value.update.call_args.args[0]
+    assert payload["review_status"] == "needs_fix"
+    assert "reviewed_at" in payload
+    assert "status" not in payload
+    assert "completed_at" not in payload
+
+
+def test_update_item_review_with_status_transition(mock_client: MagicMock) -> None:
+    """approve 케이스 — status=ready_to_publish 동시 전환 + completed_at 도 갱신."""
+    with patch("domain.batch.storage.get_client", return_value=mock_client):
+        storage.update_item_review(
+            "i-1",
+            review_status="approved",
+            status="ready_to_publish",
+            reviewer="alice",
+        )
+    payload = mock_client.table.return_value.update.call_args.args[0]
+    assert payload["review_status"] == "approved"
+    assert payload["status"] == "ready_to_publish"
+    assert payload["reviewer"] == "alice"
+    assert "reviewed_at" in payload
+    assert "completed_at" in payload
+
+
+def test_update_item_review_omits_reviewer_when_none(mock_client: MagicMock) -> None:
+    with patch("domain.batch.storage.get_client", return_value=mock_client):
+        storage.update_item_review("i-1", review_status="approved", status="ready_to_publish")
+    payload = mock_client.table.return_value.update.call_args.args[0]
+    assert "reviewer" not in payload
+
+
+def test_list_review_pending_items_filters(mock_client: MagicMock) -> None:
+    """status='needs_review' AND review_status='pending' 둘 다 eq 적용."""
+    items_payload = [
+        {"id": "i-1", "batch_id": "b-1", "keyword": "k1", "status": "needs_review"},
+    ]
+    mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value.data = items_payload
+    with patch("domain.batch.storage.get_client", return_value=mock_client):
+        items = storage.list_review_pending_items("b-1")
+    assert len(items) == 1
+    assert items[0].keyword == "k1"
+
+
+def test_list_review_pending_items_empty(mock_client: MagicMock) -> None:
+    mock_client.table.return_value.select.return_value.eq.return_value.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value.data = []
+    with patch("domain.batch.storage.get_client", return_value=mock_client):
+        items = storage.list_review_pending_items("b-1")
+    assert items == []
