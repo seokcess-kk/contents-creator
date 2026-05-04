@@ -935,3 +935,128 @@
 - 본 ranking 트랙은 SPEC-SEO-TEXT.md / SPEC-BRAND-CARD.md 어느 쪽에도 정의 없음. **별도 SPEC-RANKING.md 신규 작성 필요 여부는 사용자 결정 사항** — Phase R1 착수 전 확인. 미작성 시 `tasks/todo.md` 본 섹션이 사실상 SPEC 역할
 - SPEC v2 범위 변경 ❌ — 기존 8단계 파이프라인은 손대지 않음
 - 변경 이력 기록 대상: 루트 `CLAUDE.md` "변경 이력" 섹션에 `2026-04-24: 순위 추적 도메인(ranking) 추가, APScheduler in-process 통합` 1줄 추가 (Phase R7 단계에서)
+
+---
+
+# 키워드 배치 운영 시스템 (Batch Pipeline) MVP — 2026-05-04 착수
+
+> 목표: 100개 이상 키워드를 CSV 1회 업로드로 자동 처리. 단일 흐름 100% 보존.
+> SPEC 참조: SPEC-BATCH.md (전체 명세)
+> CLAUDE 규칙 준수: additive only, 단일 함수 시그니처 불변, Pydantic 반환, semaphore 단일 프로세스 명시
+>
+> 사용자 결정 (불변, 4 라운드 검토 완료):
+> 1. 단일 흐름 변경 0 — `application/orchestrator.py` 4 함수 그대로
+> 2. Phase 1 = `mode=now` 만 처리, `overnight`/`auto` 는 DB/API 받되 `400 Not Supported Yet`
+> 3. UI default operation = `analyze` (pipeline 명시 선택)
+> 4. PatternCard 모델 무수정 (재사용은 batch_item 컬럼만)
+> 5. FK nullable, Phase 1 은 `(job_id, slug, keyword)` triple link
+> 6. 클러스터링은 수동 (`cluster_id` + `cluster_role` CSV 컬럼)
+> 7. 단일 web process 전제, 멀티 워커는 Phase 3+
+
+## 🧭 핵심 설계 결정 (Phase 1 진입 전 확정)
+
+> **결정 1 — `domain/batch` 격리 도메인 등록**
+> `architecture-check.sh` 의 `STAGE_ORDER[batch]=0` 추가. `domain/batch` 는 다른 도메인 import 금지. `application/batch_orchestrator` 가 `domain/batch` + `application.orchestrator` 합성.
+>
+> **결정 2 — `BatchJobManager` 분리 (in-process MVP)**
+> 단일 `JobManager`(MAX_WORKERS=2) 와 별도. `BATCH_MAX_WORKERS=2~3` env. Phase 3 부터 worker process 분리.
+>
+> **결정 3 — BrightData semaphore 단일 프로세스 안전망**
+> `domain/crawler/brightdata_client.py` module-level `Semaphore(BRIGHTDATA_CONCURRENT_LIMIT, default 5)`. 멀티 워커 진입 시 Redis advisory lock 으로 교체 (Phase 3+).
+>
+> **결정 4 — Phase 1 상태 머신 단순화**
+> `queued → running → succeeded / needs_review / failed` (+ `skipped` Phase 2). `analyzing/ready_to_generate/generating` 은 dead state 회피 위해 Phase 2 활성.
+
+---
+
+## 📦 Phase B1~B6 — Batch Pipeline MVP (Phase 1, 3~4일 예상)
+
+### B1 — Supabase 마이그레이션 + 도메인 모델
+
+- [ ] B1.1 `config/schema.sql` 끝에 `keyword_batches` 테이블 SQL 추가 (SPEC-BATCH §4)
+- [ ] B1.2 같은 파일에 `keyword_batch_items` 테이블 SQL 추가 + 인덱스 4개
+- [ ] B1.3 Supabase 대시보드 SQL Editor 에 적용 + `select count(*) from keyword_batch_items` 확인 (둘 다 0)
+- [ ] B1.4 `domain/batch/__init__.py` + `model.py` (Pydantic: `KeywordBatch`, `KeywordBatchItem`, `BatchEnqueueResult`)
+- [ ] B1.5 `domain/batch/csv_parser.py` — CSV → list[KeywordBatchItem] 변환 + 검증 (필수 컬럼 누락, 중복 키워드, 형식 오류 분류)
+- [ ] B1.6 `domain/batch/storage.py` — Supabase CRUD (`insert_batch`, `insert_items`, `get_batch`, `list_items`, `update_item_status`, `update_item_result`)
+- [ ] B1.7 `domain/batch/CLAUDE.md` — 격리 규칙, 30/300줄, Pydantic 반환
+- [ ] B1.8 `architecture-check.sh` 의 `STAGE_ORDER` 에 `[batch]=0` 추가
+- [ ] B1.9 `tests/test_batch/test_csv_parser.py` (5건+) + `tests/test_batch/test_storage.py` (mock 기반 5건+)
+
+### B2 — Application: BatchJobManager + Orchestrator
+
+- [ ] B2.1 `application/batch_job_manager.py` — `JobManager` 패턴 참고 + 별도 thread pool. `BATCH_MAX_WORKERS` env 로딩
+- [ ] B2.2 `application/batch_orchestrator.py`:
+  - `enqueue_from_csv(csv_path, mode, ...) -> BatchEnqueueResult`
+  - `dispatch_item(item_id) -> None` (operation 분기 → `run_analyze_only/run_generate_only/run_pipeline`)
+  - `retry_item(item_id) -> None` (max_retries 체크)
+  - `cancel_batch(batch_id) -> int` (남은 queued 개수 반환)
+- [ ] B2.3 mode 검증: `now` 만 200, `overnight`/`auto` 는 `NotSupportedYetError` raise (router 가 400)
+- [ ] B2.4 `domain/crawler/brightdata_client.py` 에 module-level `Semaphore` 추가 — semaphore.acquire/release 가 `_fetch_with_retry` 진입/종료에 감김. **단일 프로세스 안전망** 주석 명시
+- [ ] B2.5 `tests/test_application/test_batch_orchestrator.py` (10건+) — operation 분기 / retry / cancel / NotSupportedYet
+- [ ] B2.6 `tests/test_application/test_batch_job_manager.py` (5건+) — worker 큐 동작, MAX_WORKERS 한도, exception isolation
+
+### B3 — Web API + WebSocket 진행 보고
+
+- [ ] B3.1 `web/api/routers/batches.py`:
+  - `POST /batches` — multipart CSV 또는 JSON. mode=now 만 200, 그 외 400
+  - `GET /batches?limit=20`
+  - `GET /batches/{id}`
+  - `GET /batches/{id}/items?status=...&limit=...`
+  - `POST /batches/{id}/cancel`
+  - `POST /batches/{id}/items/{item_id}/retry`
+- [ ] B3.2 `web/api/main.py` 에 router 등록 (lifespan 변경 없음)
+- [ ] B3.3 X-API-Key 인증 (`require_api_key` Depends 사용)
+- [ ] B3.4 `tests/test_web/test_batches_api.py` (8건+) — 인증/모드 검증/CSV 파싱/cancel/retry
+
+### B4 — CLI
+
+- [ ] B4.1 `scripts/run_batch.py` — argparse:
+  - `--csv <path>` `--mode now` `--max-workers N` `--name "..."`
+  - `--status <batch_id>`
+  - `--retry-item <item_id>`
+- [ ] B4.2 BatchEnqueueResult 를 사람이 읽기 좋게 출력 (created N / skipped M / failed K + error 샘플)
+- [ ] B4.3 `--status` 는 batch + 진행 요약 + 최근 5 실패 item 표시
+
+### B5 — Frontend (Next.js)
+
+- [ ] B5.1 `web/frontend/src/lib/api.ts` 에 `createBatch`, `listBatches`, `getBatch`, `getBatchItems`, `cancelBatch`, `retryBatchItem` 6 함수 추가
+- [ ] B5.2 `BatchUploadForm.tsx` — CSV file input + textarea(붙여넣기) + mode 라디오 (now 만 활성, overnight/auto 는 disabled + tooltip "Phase 3 예정") + operation default `analyze`
+- [ ] B5.3 `BatchProgressTable.tsx` — 5초 poll 로 batch 상태 + 카운터 (succeeded/failed/skipped/needs_review) 갱신
+- [ ] B5.4 `app/batches/page.tsx` — 배치 목록 (recent 20)
+- [ ] B5.5 `app/batches/[id]/page.tsx` — 단건 dashboard (BatchProgressTable + item 리스트 + 일괄 액션)
+- [ ] B5.6 navigation 에 "배치" 탭 추가
+
+### B6 — 검증 + 문서
+
+- [ ] B6.1 단일 흐름 보호 체크리스트 (SPEC-BATCH §8) 모두 그린
+  - `tests/test_application/test_orchestrator.py` 그린
+  - `python scripts/run_pipeline.py --keyword "테스트키워드"` smoke pass
+  - 단일 `POST /api/jobs` 응답 시간 회귀 없음
+- [ ] B6.2 `bash .claude/hooks/build-check.sh` 그린 (ruff/format/architecture/pyright/pytest 0 에러)
+- [ ] B6.3 `architecture-check.sh` 가 `domain/batch → 다른 도메인` 차단 검증
+- [ ] B6.4 운영 smoke — CSV 5건 (`tests/fixtures/batch/keywords_5.csv`) → 즉시 모드 → 5건 모두 succeeded 또는 needs_review 까지 도달
+- [ ] B6.5 운영 smoke 100건 (별도 fixture, opt-in) — 6~8h 안에 완주 + 단일 호출 영향 0
+- [ ] B6.6 `tasks/lessons.md` 에 "Phase 1 BatchJobManager + semaphore 운영 패턴" 기록
+- [ ] B6.7 루트 `CLAUDE.md` "변경 이력" 1줄 추가 — `2026-05-04: 키워드 배치 운영 시스템 (Batch Pipeline) Phase 1 추가`
+
+---
+
+## ⚠️ 위험 요소 (Risk Register — Phase 1)
+
+> SPEC-BATCH.md §9 의 B1~B8 참조. Phase 1 시점 가장 큰 리스크:
+>
+> - **B1 (full pipeline 실수)**: UI default `analyze`. CLI 도 `--operation analyze` 가 default. `pipeline` 은 명시 필요.
+> - **B2 (BrightData rate)**: semaphore default 5. 단일 호출과 합산 제한. 100건 batch 진행 중 단일 `/api/jobs` 호출이 503 안 받는지 통합 smoke 로 검증 (B6.5).
+> - **B5 (in-memory worker)**: deploy/restart 시 진행 중 item 은 DB 에 `running` 으로 남음. Phase 1 보호: 시작 시 `running` 상태이고 30분 이상 갱신 없는 item 은 자동 `queued` 복귀 (orchestrator startup hook).
+> - **B6 (FK 못 채움)**: Phase 1 은 `(job_id, slug, keyword)` triple link 만. 검수 큐 (Phase 2) 시 join 으로 generated_contents 회수.
+
+---
+
+## 🔮 Phase 2~4 (요약, 별도 todo 섹션 진입 시 분해)
+
+> 각 Phase 는 SPEC-BATCH.md §3 의 Phase 2/3/4 정의 참조. Phase 1 그린 + 운영 1주 후 진입.
+
+- **Phase 2 (3~4일)** — 사전 필터, cluster 재사용, 검수 큐, FK 정합성 보강
+- **Phase 3 (3~4일)** — Anthropic Batch API adapter (LLM 독립 호출 한정), worker process 분리
+- **Phase 4 (2~3일)** — Slack 알림, publication 자동 등록 (opt-in)
