@@ -749,3 +749,22 @@ curl: (22) The requested URL returned error: 409
 - **Cold start 흡수는 timeout 으로**, retry 가 아니라. POST 는 timeout 늘리고 GET 만 retry 거는 게 안전
 - **idempotency key 또는 idempotent 응답 — 둘 중 하나는 mutating endpoint 의 표준**. 외부 호출 (cron, webhook, queue) 에서 호출되는 endpoint 는 특히
 
+## 키워드 난이도 분석 속도 — Phase F 후속 튜닝 (2026-05-04)
+
+**배경**: F1~F4 적용 후 50키워드 ~50초. 추가 단축 여지 분석 결과 병목은 **BrightData SERP fetch (5~8초/건)**. lxml 은 이미 적용 완료. 즉시 적용 가능한 4가지를 한 PR 로 묶음.
+
+**1단계 변경** (즉시 효과):
+- `BRIGHT_DATA_BATCH_PARALLEL` 8 → 12 (env, settings 동적)
+- `BRIGHT_DATA_BATCH_RATE_SECONDS` 0.3 → 0.2
+- UI 청크 8 → 4 (첫 결과 ~3초 안에 표시)
+
+**2단계 변경** (캐시 적극 활용):
+- SERP 캐시 TTL 30분 → 60분 (`KEYWORD_DIFFICULTY_CACHE_TTL_SECONDS`)
+- 매 hit/miss 마다가 아니라 **50회 이벤트마다 1줄 stats 로그** — `serp_cache.stats hits=N misses=M hit_ratio=X% size=K ttl_sec=T`
+- 운영 1주일 후 hit_ratio 보고 TTL 추가 상향 결정 (2~6시간 시도 가능)
+
+**일반화 규칙**:
+- **속도 튜닝 상수는 settings 로 빼서 운영 중 env 로 보정**. 코드 배포 없이 hotfix 가능. 4xx 폭발 시 `BRIGHT_DATA_BATCH_PARALLEL=4` 즉시 하향
+- **로그는 매 호출마다 찍지 말고 누적 통계 주기적으로**. 매 hit 마다 INFO 가 찍히면 운영 로그 노이즈 + 진단 어려움. 50회마다 1줄이 적정
+- **UI 체감 속도 ≠ 백엔드 처리 시간**. 청크 작게 + 첫 결과 즉시 표시가 사용자 경험에 더 큼. 백엔드는 12 동시도 충분
+

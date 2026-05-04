@@ -25,11 +25,16 @@ from domain.keyword_difficulty.scorer import score_difficulty
 logger = logging.getLogger(__name__)
 
 _SERP_URL = "https://search.naver.com/search.naver?query={query}"
-# Bright Data rate 보호: 키워드당 최소 간격. 분당 60~100 호출 한도 안에서 안전.
-# 2026-04-29 F1: 1.0 → 0.3 으로 단축 (병렬 8과 함께 50 키워드 ~50초 목표)
-_BATCH_RATE_LIMIT_SEC = 0.3
-# 2026-04-29 F1: 3 → 8 로 상향. 배치 처리 시간 약 4배 단축
-_BATCH_DEFAULT_PARALLEL = 8
+
+
+def _batch_rate_limit_sec() -> float:
+    """settings 로부터 동적 로딩. 운영 중 env 로 즉시 보정 가능."""
+    return settings.keyword_difficulty_batch_rate_seconds
+
+
+def _batch_default_parallel() -> int:
+    """settings 로부터 동적 로딩. 운영 중 env 로 즉시 보정 가능."""
+    return settings.keyword_difficulty_batch_parallel
 
 
 def _build_client() -> BrightDataClient:
@@ -128,13 +133,15 @@ def analyze_keyword(
 def batch_analyze_keywords(
     keywords: list[str],
     *,
-    parallel: int = _BATCH_DEFAULT_PARALLEL,
+    parallel: int | None = None,
     persist: bool = True,
 ) -> list[KeywordDifficulty]:
     """다수 키워드를 병렬 분석. ThreadPoolExecutor + rate limit.
 
-    Bright Data 호출 비용·rate 보호를 위해 동시 실행 수를 제한 (기본 3).
-    각 워커는 호출 후 _BATCH_RATE_LIMIT_SEC 만큼 sleep.
+    Bright Data 호출 비용·rate 보호를 위해 동시 실행 수를 제한 (default settings).
+    각 워커는 호출 후 settings.keyword_difficulty_batch_rate_seconds 만큼 sleep.
+    parallel/rate 모두 settings 에서 읽어 운영 중 env 로 즉시 보정 가능
+    (2026-05-04 Phase F 후속 — 4xx 발생 시 코드 수정 없이 하향).
 
     Returns: 입력 순서와 무관한 결과 리스트. 실패한 키워드는 결과에서 제외되며 logging.error.
     """
@@ -143,17 +150,19 @@ def batch_analyze_keywords(
 
     cli = _build_client()
     results: list[KeywordDifficulty] = []
+    rate_sec = _batch_rate_limit_sec()
+    workers = parallel if parallel is not None else _batch_default_parallel()
 
     def _worker(kw: str) -> KeywordDifficulty | None:
         try:
             diff = analyze_keyword(kw, client=cli, persist=persist)
-            time.sleep(_BATCH_RATE_LIMIT_SEC)
+            time.sleep(rate_sec)
             return diff
         except Exception:
             logger.exception("keyword_difficulty.batch_worker_failed keyword=%s", kw)
             return None
 
-    with ThreadPoolExecutor(max_workers=max(1, parallel)) as executor:
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as executor:
         futures = {executor.submit(_worker, kw): kw for kw in keywords}
         for fut in as_completed(futures):
             res = fut.result()
@@ -161,8 +170,10 @@ def batch_analyze_keywords(
                 results.append(res)
 
     logger.info(
-        "keyword_difficulty.batch_completed requested=%d succeeded=%d",
+        "keyword_difficulty.batch_completed requested=%d succeeded=%d parallel=%d rate=%.2fs",
         len(keywords),
         len(results),
+        workers,
+        rate_sec,
     )
     return results

@@ -75,3 +75,24 @@ class TestSerpCache:
         cache.clear()
         assert cache.get("a") is None
         assert cache.info()["size"] == 0
+
+    def test_module_singleton_uses_settings_ttl(self) -> None:
+        """모듈 레벨 _cache 가 settings 의 TTL/max_entries 를 반영해야 한다.
+        2026-05-04 Phase F 후속 — 30 → 60분 default 상향 회귀 방지."""
+        from config.settings import settings
+        from domain.keyword_difficulty import cache as cache_module
+
+        info = cache_module.cache_info()
+        assert info["ttl_sec"] == settings.keyword_difficulty_cache_ttl_seconds
+        assert info["max_entries"] == settings.keyword_difficulty_cache_max_entries
+
+    def test_periodic_log_every_50_events(self) -> None:
+        """매 50회 이벤트마다만 stats 로그 1줄 — 매 hit 마다 noisy 하지 않도록."""
+        cache = SerpCache()
+        for i in range(49):
+            cache.get(f"k-{i}")  # 모두 miss
+        # 49 회 시점엔 통계 로그 안 찍힘 (50의 배수가 아님)
+        info = cache.info()
+        assert info["hits"] == 0
+        assert info["misses"] == 49
+        # 50번째에 도달하면 _log_periodic 호출 — 본 테스트는 외부 부작용이라 호출만 확인

@@ -83,8 +83,10 @@ export default function KeywordsPage() {
   const [filter, setFilter] = useState<DifficultyGrade | "all">("all");
   const [search, setSearch] = useState("");
 
-  // F4: 청크 분할 — 한 번의 batch 호출 = 8 키워드. 청크 단위 결과를 즉시 표에 반영.
-  const CHUNK_SIZE = 8;
+  // F4: 청크 분할 — 청크 단위 결과를 즉시 표에 반영.
+  // 2026-05-04: 8 → 4 로 축소. 첫 결과를 ~3초 안에 보여주는 게 사용자 체감에서 가장 큼.
+  // 백엔드 batch 자체는 BRIGHT_DATA_BATCH_PARALLEL=12 까지 처리 가능 (settings).
+  const CHUNK_SIZE = 4;
 
   const reload = useCallback(async () => {
     try {
@@ -131,7 +133,7 @@ export default function KeywordsPage() {
     setProgress({ done: 0, total: keywords.length });
 
     try {
-      // F4: 8개 청크로 나눠 순차 호출. 청크 완료 즉시 부분 결과 표 갱신.
+      // F4: 4개 청크로 나눠 순차 호출. 청크 완료 즉시 부분 결과 표 갱신.
       const chunks: string[][] = [];
       for (let i = 0; i < keywords.length; i += CHUNK_SIZE) {
         chunks.push(keywords.slice(i, i + CHUNK_SIZE));
@@ -228,7 +230,7 @@ export default function KeywordsPage() {
                 </span>
               </div>
             ) : (
-              <span className="text-xs text-gray-500">8개씩 청크로 분할 처리</span>
+              <span className="text-xs text-gray-500">4개씩 청크로 분할 처리 (첫 결과 빠르게)</span>
             )}
             <button
               type="button"

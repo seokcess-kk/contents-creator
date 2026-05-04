@@ -135,6 +135,24 @@ class Settings(BaseSettings):
     # publication 간 대기 (Bright Data rate 보호)
     ranking_check_sleep_seconds: float = 1.0
 
+    # 키워드 난이도 분석 속도 튜닝 (Phase F 후속, 2026-05-04).
+    # 8/0.3 → 12/0.2 로 상향, BrightData 분당 한도 (실측) 안에서 추가 성능 확보.
+    # 운영 중 4xx 발생 시 env 로 즉시 하향 (코드 수정 없이 보정 가능).
+    keyword_difficulty_batch_parallel: int = Field(
+        default=12, description="키워드 배치 분석 동시 worker 수"
+    )
+    keyword_difficulty_batch_rate_seconds: float = Field(
+        default=0.2, description="배치 worker 당 호출 후 sleep (초)"
+    )
+    # SERP 캐시 — TTL 30 → 60 분으로 상향. 같은 키워드 재분석 시 BrightData 호출 절감.
+    # SERP 변동 빈도 대비 60 분은 안전 (네이버 SERP 는 실시간성보다 안정성에 가까움).
+    keyword_difficulty_cache_ttl_seconds: int = Field(
+        default=3600, description="SERP HTML 메모리 캐시 TTL (초)"
+    )
+    keyword_difficulty_cache_max_entries: int = Field(
+        default=256, description="LRU 캐시 최대 항목 수"
+    )
+
 
 settings = Settings()
 
