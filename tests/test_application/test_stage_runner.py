@@ -130,14 +130,38 @@ class TestCrossAnalysis:
         mock_card = MagicMock()
         mock_card.analyzed_count = 8
         mock_cross.return_value = mock_card
-        mock_save.return_value = tmp_path / "analysis" / "pattern-card.json"
+        # Phase B7 — save_pattern_card 가 (path, supabase_id) tuple 반환.
+        mock_save.return_value = (tmp_path / "analysis" / "pattern-card.json", "pc-uuid-1")
 
         from application.stage_runner import run_stage_cross_analysis
 
         reporter = MagicMock(spec=NullProgressReporter)
-        result = run_stage_cross_analysis("kw", "slug", [], [], [], tmp_path, reporter)
-        assert result == mock_card
+        card, pattern_card_id = run_stage_cross_analysis(
+            "kw", "slug", [], [], [], tmp_path, reporter
+        )
+        assert card == mock_card
+        assert pattern_card_id == "pc-uuid-1"
         mock_save.assert_called_once()
+
+    @patch("domain.analysis.cross_analyzer.cross_analyze")
+    @patch("application.stage_runner.save_pattern_card")
+    def test_supabase_id_none_propagates(
+        self,
+        mock_save: MagicMock,
+        mock_cross: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Supabase 미설정/실패 시 (path, None) — graceful."""
+        mock_card = MagicMock()
+        mock_cross.return_value = mock_card
+        mock_save.return_value = (tmp_path / "analysis" / "pattern-card.json", None)
+
+        from application.stage_runner import run_stage_cross_analysis
+
+        _, pattern_card_id = run_stage_cross_analysis(
+            "kw", "slug", [], [], [], tmp_path, MagicMock(spec=NullProgressReporter)
+        )
+        assert pattern_card_id is None
 
 
 # ── [6] 아웃라인 생성 ──
@@ -309,10 +333,12 @@ class TestCompose:
         mock_outline_md.return_value = outline_md
 
         compliance = ComplianceReport(passed=True, iterations=1, final_text="")
+        # Phase B7 — _save_generated_to_supabase 가 tuple 반환.
+        mock_save_supabase.return_value = ("gen-uuid-1", "pc-uuid-1")
 
         from application.stage_runner import run_stage_compose
 
-        run_stage_compose(
+        result = run_stage_compose(
             MagicMock(),
             MagicMock(),
             compliance,
@@ -324,6 +350,10 @@ class TestCompose:
         assert (tmp_path / "content" / "seo-content.html").exists()
         assert (tmp_path / "content" / "outline.md").exists()
         mock_save_supabase.assert_called_once()
+        # Phase B7 — ComposeStageResult 가 회수된 두 id 를 동봉.
+        assert result.generated_content_id == "gen-uuid-1"
+        assert result.pattern_card_id == "pc-uuid-1"
+        assert "seo_content_md" in result.paths
 
 
 class TestMarkComplianceViolations:

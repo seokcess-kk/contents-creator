@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { getBatch, getBatchItems, retryBatchItem, cancelBatch, type BatchItem, type BatchSummary } from "@/lib/api";
 
@@ -129,6 +130,7 @@ export default function BatchProgressTable({ batchId }: Props) {
                 <th className="text-left py-1">status</th>
                 <th className="text-left py-1">retry</th>
                 <th className="text-left py-1">error</th>
+                <th className="text-left py-1">결과</th>
                 <th className="text-right py-1">액션</th>
               </tr>
             </thead>
@@ -142,6 +144,13 @@ export default function BatchProgressTable({ batchId }: Props) {
                   </td>
                   <td className="py-1 text-gray-500">{it.retry_count}/{it.max_retries}</td>
                   <td className="py-1 text-xs text-red-600 truncate max-w-[280px]">{it.error || "-"}</td>
+                  <td className="py-1 text-xs">
+                    {it.status === "succeeded" ? (
+                      <ResultLinks item={it} />
+                    ) : (
+                      <span className="text-gray-300">—</span>
+                    )}
+                  </td>
                   <td className="py-1 text-right">
                     {(it.status === "failed" || it.status === "needs_review") && (
                       <button
@@ -155,13 +164,75 @@ export default function BatchProgressTable({ batchId }: Props) {
                 </tr>
               ))}
               {items.length === 0 && (
-                <tr><td colSpan={6} className="text-center text-gray-500 py-6">표시할 item 없음</td></tr>
+                <tr><td colSpan={7} className="text-center text-gray-500 py-6">표시할 item 없음</td></tr>
               )}
             </tbody>
           </table>
         </div>
       </div>
     </div>
+  );
+}
+
+function ResultLinks({ item }: { item: BatchItem }) {
+  const links: React.ReactNode[] = [];
+  const showPattern = item.operation === "analyze" || item.operation === "pipeline";
+  const showResult = item.operation === "generate" || item.operation === "pipeline";
+
+  if (showPattern) {
+    if (item.pattern_card_id) {
+      links.push(
+        <Link
+          key="pattern"
+          href={`/patterns/by-id/${encodeURIComponent(item.pattern_card_id)}`}
+          className="text-blue-700 hover:underline"
+        >
+          → 패턴
+        </Link>,
+      );
+    } else {
+      links.push(
+        <span
+          key="pattern-missing"
+          className="text-gray-300"
+          title="FK 회수 실패 — Supabase 저장 미동작 가능"
+        >
+          —
+        </span>,
+      );
+    }
+  }
+
+  if (showResult) {
+    if (item.generated_content_id && item.keyword_slug) {
+      links.push(
+        <Link
+          key="result"
+          href={`/results/${encodeURIComponent(item.keyword_slug)}`}
+          className="text-blue-700 hover:underline"
+        >
+          → 결과
+        </Link>,
+      );
+    } else {
+      links.push(
+        <span
+          key="result-missing"
+          className="text-gray-300"
+          title="FK 회수 실패 — Supabase 저장 미동작 가능"
+        >
+          —
+        </span>,
+      );
+    }
+  }
+
+  return (
+    <span className="inline-flex items-center gap-2">
+      {links.map((node, idx) => (
+        <span key={idx}>{node}</span>
+      ))}
+    </span>
   );
 }
 

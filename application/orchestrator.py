@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from domain.analysis.pattern_card import PatternCard
 
+from application.job_context import current_job_id
 from application.models import (
     AnalyzeResult,
     BrandCardResult,
@@ -28,13 +29,13 @@ from application.models import (
     StageStatus,
     ValidateResult,
 )
-from application.job_context import current_job_id
 from application.progress import JobCancelled, LoggingProgressReporter, ProgressReporter
 from application.usage_tracker import save_usage_to_supabase, summarize_usages
 from config.settings import settings
 from domain.common.usage import collect_usage, record_usage, reset_usage, run_in_isolated_usage_ctx
 
 logger = logging.getLogger(__name__)
+
 
 def _harvest_usage(stage: str, keyword: str) -> dict[str, object]:
     """단계 종료 후 usage 수확 + Supabase 저장. summary dict 반환.
@@ -114,7 +115,11 @@ def _run_analysis_stages(
     output_dir: Path,
     reporter: ProgressReporter,
 ) -> tuple[AnalyzeResult, PatternCard | None]:
-    """[1]~[5] 분석 실행. (AnalyzeResult, PatternCard | None) 반환."""
+    """[1]~[5] 분석 실행. (AnalyzeResult, PatternCard | None) 반환.
+
+    Phase B7 — `run_stage_cross_analysis` 가 (card, supabase_id) 를 반환하도록 변경.
+    AnalyzeResult.pattern_card_id 에 회수된 id 전파 (Supabase 미설정/실패 시 None).
+    """
     from application.stage_runner import (
         run_stage_appeal_extraction,
         run_stage_cross_analysis,
@@ -263,7 +268,7 @@ def _run_analysis_stages(
 
     # [5] 교차 분석
     try:
-        card = run_stage_cross_analysis(
+        card, pattern_card_id = run_stage_cross_analysis(
             keyword, slug, physicals, semantics, appeals, output_dir, reporter
         )
         stages.append(StageResult(name="cross_analysis", status=StageStatus.SUCCEEDED))
@@ -285,6 +290,7 @@ def _run_analysis_stages(
         slug=slug,
         analyzed_count=card.analyzed_count,
         pattern_card_path=pc_path,
+        pattern_card_id=pattern_card_id,
         stages=stages,
     )
     return result, card
@@ -420,9 +426,10 @@ def _run_generation_stages(
 
     # [10] 조립
     try:
-        paths = run_stage_compose(
+        compose_result = run_stage_compose(
             outline, body, compliance, image_result, output_dir, reporter, pattern_card=card
         )
+        paths = compose_result.paths
         stages.append(StageResult(name="compose", status=StageStatus.SUCCEEDED))
     except Exception as exc:
         stages.append(StageResult(name="compose", status=StageStatus.FAILED, error=str(exc)))
@@ -449,6 +456,9 @@ def _run_generation_stages(
         images_skipped=img_skip,
         compliance_passed=compliance.passed,
         compliance_iterations=compliance.iterations,
+        # Phase B7 — Supabase 회수 id (Supabase 미설정/실패 시 None).
+        pattern_card_id=compose_result.pattern_card_id,
+        generated_content_id=compose_result.generated_content_id,
         stages=stages,
     )
 
@@ -656,6 +666,10 @@ def run_pipeline(
         slug=slug,
         output_path=output_dir,
         stages=all_stages,
+        # Phase B7 — generation 단계가 lookup/insert 시 회수한 두 id 를 그대로 전파.
+        # 분석이 캐시 hit 인 경우에도 compose 단계 pattern_cards lookup 으로 pc_id 회수.
+        pattern_card_id=gen_result.pattern_card_id,
+        generated_content_id=gen_result.generated_content_id,
         error=error,
     )
 

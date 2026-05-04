@@ -505,3 +505,4 @@ python scripts/run_batch.py --csv keywords.csv --auto-publish    # Phase 4
 ## 변경 이력
 
 - `2026-05-04`: v1 초안. Phase 1~4 정의, dual-mode (now/overnight/auto), 8 컬럼 CSV 스키마, `domain/batch` 격리 도메인. 외부 검토 4 라운드 반영 — operation 분기, mode now-only MVP, FK nullable triple link, PatternCard 모델 보호, cluster_role 명시.
+- `2026-05-04`: Phase 2 PR1 부분 완료 — **FK 회수 + PatternCard 보관함**. `pattern_card.py._save_to_supabase` / `stage_runner._save_generated_to_supabase` 가 insert id 회수, 단일 흐름 결과 모델(AnalyzeResult/GenerateResult/PipelineResult)에 두 nullable id 필드 전파. `batch_orchestrator._run_operation` 이 `update_item_result` 로 keyword_batch_items FK 채움. 신규 `pattern_cards` 라우터 + `/patterns/by-id/[id]` 페이지. 단일 흐름 시그니처 무변경. 사전 필터·cluster·검수 큐는 PR2 (별도 차수).

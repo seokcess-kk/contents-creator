@@ -15,7 +15,7 @@
   예외 (`CsvParseError`, `NotSupportedYetError`), Literal 타입 (`Mode`,
   `Operation`, `ItemStatus` 등)
 - `csv_parser.py` — CSV 텍스트 → `(created, skipped, failed)`. 검증·중복 제거·폴백
-- `storage.py` — Supabase CRUD. payload 변환은 본 파일에만
+- `storage.py` — Supabase CRUD. payload 변환은 본 파일에만. `update_item_status` 는 상태 머신, `update_item_result` 는 결과 메타(pattern_card_id/generated_content_id/compliance_passed) 책임 분리 (Phase B7)
 
 ## 핵심 규칙
 

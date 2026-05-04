@@ -70,6 +70,44 @@ class TestRunPipeline:
         mock_analyze.assert_called_once()
         mock_generate.assert_called_once()
 
+    @patch("application.orchestrator._run_generation_stages")
+    @patch("application.orchestrator._run_analysis_stages")
+    @patch("application.orchestrator._update_latest_link")
+    @patch("application.orchestrator._create_output_dir")
+    def test_pipeline_result_propagates_supabase_ids(
+        self,
+        mock_output: MagicMock,
+        mock_link: MagicMock,
+        mock_analyze: MagicMock,
+        mock_generate: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Phase B7 — PipelineResult 에 두 id 채워짐."""
+        from application.models import AnalyzeResult, GenerateResult
+
+        mock_output.return_value = tmp_path
+        mock_analyze.return_value = (
+            AnalyzeResult(
+                status=StageStatus.SUCCEEDED,
+                keyword="test",
+                slug="test",
+                analyzed_count=8,
+                pattern_card_id="pc-from-analysis",
+            ),
+            MagicMock(),
+        )
+        mock_generate.return_value = GenerateResult(
+            status=StageStatus.SUCCEEDED,
+            keyword="test",
+            slug="test",
+            pattern_card_id="pc-from-compose",
+            generated_content_id="gen-from-compose",
+        )
+        result = run_pipeline("test", reporter=NullProgressReporter())
+        # generation 단계의 두 id 가 PipelineResult 로 전파.
+        assert result.pattern_card_id == "pc-from-compose"
+        assert result.generated_content_id == "gen-from-compose"
+
     @patch("application.orchestrator._run_analysis_stages")
     @patch("application.orchestrator._create_output_dir")
     def test_analysis_failure_stops_pipeline(

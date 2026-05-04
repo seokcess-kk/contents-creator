@@ -18,13 +18,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from application.job_context import job_id_var
 from application.models import (
     AnalyzeResult,
     GenerateResult,
     PipelineResult,
     ValidateResult,
 )
-from application.job_context import job_id_var
 from application.orchestrator import (
     run_analyze_only,
     run_generate_only,

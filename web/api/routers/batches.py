@@ -23,6 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from application import batch_orchestrator
+from application.orchestrator import _slugify
 from config.settings import settings
 from domain.batch import storage
 from domain.batch.model import NotSupportedYetError
@@ -198,8 +199,20 @@ def list_batch_items(
     return {
         "batch_id": batch_id,
         "count": len(items),
-        "items": [it.model_dump(mode="json") for it in items],
+        "items": [_item_with_slug(it) for it in items],
     }
+
+
+def _item_with_slug(item: Any) -> dict[str, Any]:
+    """item 직렬화 + keyword_slug enrich.
+
+    Phase B7 — frontend BatchProgressTable 이 결과 페이지로 직링크 시 slug 가 필요.
+    backend `_slugify` 단일 출처 사용 (NFC 정규화 + 한글 보존 regex 일관성 보장,
+    frontend mirror 작성 시 한글 NFD 입력 등 미세 차이 발생 위험 회피).
+    """
+    body = item.model_dump(mode="json")
+    body["keyword_slug"] = _slugify(item.keyword)
+    return body
 
 
 @router.post("/{batch_id}/cancel", status_code=200)

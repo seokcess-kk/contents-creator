@@ -167,6 +167,23 @@ class TestListBatchItems:
         assert resp.status_code == 200
         assert resp.json()["count"] == 1
 
+    def test_response_includes_keyword_slug(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Phase B7 — 응답 item 에 keyword_slug enrich (frontend 직링크용)."""
+        from application.orchestrator import _slugify
+
+        monkeypatch.setattr(storage, "get_batch", lambda _: _batch())
+        monkeypatch.setattr(
+            storage,
+            "list_items",
+            lambda _id, **_: [_item(id="i-1", keyword="강남 다이어트 한의원")],
+        )
+        resp = client.get("/api/batches/b-1/items")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["items"][0]["keyword_slug"] == _slugify("강남 다이어트 한의원")
+
 
 class TestCancelBatch:
     def test_returns_cancelled_count(

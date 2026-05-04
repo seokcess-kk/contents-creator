@@ -21,7 +21,7 @@ from datetime import UTC, datetime
 
 from application import batch_job_manager, orchestrator
 from application.job_context import current_job_id
-from application.models import GenerateResult, PipelineResult
+from application.models import AnalyzeResult, GenerateResult, PipelineResult
 from domain.batch import csv_parser, storage
 from domain.batch.model import (
     BatchEnqueueResult,
@@ -158,26 +158,83 @@ def _dispatch_item(item_id: str) -> None:
 
 
 def _run_operation(item: KeywordBatchItem, job_id: str) -> None:
-    """operation 별 분기 — 단일 흐름 함수를 그대로 호출 (시그니처 불변)."""
+    """operation 별 분기 — 단일 흐름 함수 호출 + Supabase id 회수.
+
+    Phase B7 — 단일 흐름의 결과 모델에서 pattern_card_id / generated_content_id 를
+    캡처해 storage.update_item_result() 로 keyword_batch_items FK 컬럼을 채움.
+    회수 실패 (id None) 또는 update 실패 시에도 succeeded 마킹은 진행 (graceful).
+    """
+    pattern_card_id: str | None = None
+    generated_content_id: str | None = None
+    compliance_passed: bool | None = None
+
     if item.operation == "analyze":
-        orchestrator.run_analyze_only(item.keyword)
+        analyze_result: AnalyzeResult = orchestrator.run_analyze_only(item.keyword)
+        if analyze_result.status == "failed":
+            raise RuntimeError(analyze_result.error or "analyze 실패")
+        pattern_card_id = analyze_result.pattern_card_id
     elif item.operation == "generate":
         result: GenerateResult = orchestrator.run_generate_only(keyword=item.keyword)
         if result.status == "failed":
             raise RuntimeError(result.error or "generate 실패")
+        pattern_card_id = result.pattern_card_id
+        generated_content_id = result.generated_content_id
+        compliance_passed = result.compliance_passed
     elif item.operation == "pipeline":
         pipeline_result: PipelineResult = orchestrator.run_pipeline(item.keyword)
         if pipeline_result.status == "failed":
             raise RuntimeError(pipeline_result.error or "pipeline 실패")
+        pattern_card_id = pipeline_result.pattern_card_id
+        generated_content_id = pipeline_result.generated_content_id
     else:  # pragma: no cover — Pydantic Literal 로 미리 차단
         raise ValueError(f"알 수 없는 operation: {item.operation}")
+
+    if item.id is not None:
+        _record_item_result(
+            item.id,
+            pattern_card_id=pattern_card_id,
+            generated_content_id=generated_content_id,
+            compliance_passed=compliance_passed,
+        )
+
     # job_id 는 logger 식별용 (current_job_id() 와는 별개 — single-flow 의 job_context 영향 X)
     logger.debug(
-        "batch.operation_done item_id=%s job_id=%s operation=%s",
+        "batch.operation_done item_id=%s job_id=%s operation=%s pc_id=%s gen_id=%s",
         item.id,
         job_id,
         item.operation,
+        pattern_card_id,
+        generated_content_id,
     )
+
+
+def _record_item_result(
+    item_id: str,
+    *,
+    pattern_card_id: str | None,
+    generated_content_id: str | None,
+    compliance_passed: bool | None,
+) -> None:
+    """결과 메타 graceful update. 모든 인자 None 이면 호출 자체 스킵.
+
+    Supabase 미설정/실패 시 logger.warning + 무시 — succeeded 마킹은 차단되지 않음.
+    """
+    if pattern_card_id is None and generated_content_id is None and compliance_passed is None:
+        return
+    try:
+        storage.update_item_result(
+            item_id,
+            pattern_card_id=pattern_card_id,
+            generated_content_id=generated_content_id,
+            compliance_passed=compliance_passed,
+        )
+    except Exception as exc:
+        logger.warning(
+            "batch.fk_link_failed item_id=%s err=%s",
+            item_id,
+            exc,
+            exc_info=True,
+        )
 
 
 def _handle_item_failure(item: KeywordBatchItem, exc: Exception) -> None:

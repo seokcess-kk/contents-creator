@@ -161,7 +161,8 @@ def diagnose() -> dict[str, object]:
         "naver_ad_secret_key_len": len(secret_key),
         "naver_ad_secret_key_endswith_ws": bool(secret_key) and secret_key != secret_key.strip(),
         "naver_ad_customer_id": customer_id,
-        "naver_ad_customer_id_endswith_ws": bool(customer_id) and customer_id != customer_id.strip(),
+        "naver_ad_customer_id_endswith_ws": bool(customer_id)
+        and customer_id != customer_id.strip(),
     }
 
     if not (api_key and secret_key and customer_id):

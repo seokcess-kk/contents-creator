@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 if TYPE_CHECKING:
     from domain.generation.body_quality_enforcer import SectionIssue
@@ -34,6 +34,18 @@ from domain.storage import upload_bytes
 logger = logging.getLogger(__name__)
 
 MAX_COMPLIANCE_ITERATIONS = 2
+
+
+class ComposeStageResult(NamedTuple):
+    """[10] 조립 단계 결과 + Supabase 회수 id.
+
+    SPEC-BATCH Phase 2 PR1 — orchestrator 가 GenerateResult 에 두 id 를 채우기 위해
+    paths dict 와 함께 회수된 id 를 동봉. id 는 Supabase 미설정/실패 시 None.
+    """
+
+    paths: dict[str, Path]
+    generated_content_id: str | None
+    pattern_card_id: str | None
 
 
 def _storage_prefix(output_dir: Path) -> str:
@@ -312,20 +324,23 @@ def run_stage_cross_analysis(
     appeals: list[AppealAnalysis],
     output_dir: Path,
     reporter: ProgressReporter,
-) -> PatternCard:
-    """[5] 교차 분석 → 패턴 카드 생성. LLM 불필요."""
+) -> tuple[PatternCard, str | None]:
+    """[5] 교차 분석 → 패턴 카드 생성 + Supabase id 회수. LLM 불필요.
+
+    Phase B7 — `save_pattern_card` 의 (path, supabase_id) 중 id 를 caller 에 전달.
+    """
     from domain.analysis.cross_analyzer import cross_analyze
 
     reporter.stage_start("cross_analysis")
 
     card = cross_analyze(keyword, slug, physicals, semantics, appeals)
-    save_pattern_card(card, output_dir)
+    _, pattern_card_id = save_pattern_card(card, output_dir)
 
     reporter.stage_end(
         "cross_analysis",
         {"analyzed_count": card.analyzed_count, "keyword": keyword},
     )
-    return card
+    return card, pattern_card_id
 
 
 # ── [6] 아웃라인 + 도입부 생성 ──
@@ -781,8 +796,11 @@ def run_stage_compose(
     output_dir: Path,
     reporter: ProgressReporter,
     pattern_card: PatternCard | None = None,
-) -> dict[str, Path]:
-    """[10] intro + body 조립 → md/html + outline.md 저장 + 품질 검증."""
+) -> ComposeStageResult:
+    """[10] intro + body 조립 → md/html + outline.md 저장 + 품질 검증.
+
+    Phase B7 — generated_contents/pattern_cards 의 회수된 id 를 ComposeStageResult 로 반환.
+    """
     from domain.composer.assembler import assemble_content, insert_images_into_text
     from domain.composer.naver_html import convert_to_naver_html
     from domain.composer.outline_md import convert_outline_to_md
@@ -845,7 +863,7 @@ def run_stage_compose(
         "outline_md": outline_md_path,
     }
 
-    _save_generated_to_supabase(
+    generated_content_id, pattern_card_id = _save_generated_to_supabase(
         keyword=outline.title,
         slug=output_dir.parent.name,
         outline_md=outline_md.content,
@@ -878,7 +896,11 @@ def run_stage_compose(
         "compose",
         {**{k: str(v) for k, v in paths.items()}, **quality_summary},
     )
-    return paths
+    return ComposeStageResult(
+        paths=paths,
+        generated_content_id=generated_content_id,
+        pattern_card_id=pattern_card_id,
+    )
 
 
 def _save_generated_to_supabase(
@@ -890,14 +912,17 @@ def _save_generated_to_supabase(
     compliance_passed: bool,
     compliance_iterations: int,
     output_path: str,
-) -> None:
+) -> tuple[str | None, str | None]:
     """Supabase generated_contents 테이블에 저장. 실패해도 파이프라인 중단 안 함.
 
+    반환: `(generated_content_id, pattern_card_id)`. lookup 한 pattern_cards.id 와
+    insert 한 generated_contents.id 양쪽을 caller (run_stage_compose) 가 회수해
+    GenerateResult 에 채운다. Supabase 미설정/실패 시 둘 다 None.
     slug 는 웹 라우터 (web/api/routers/results.py) 에서 최신 본문 조회에 쓰인다.
     """
     try:
-        from config.supabase import get_client
         from application.job_context import current_job_id
+        from config.supabase import get_client
 
         client = get_client()
         pc_result = (
@@ -909,22 +934,41 @@ def _save_generated_to_supabase(
             .limit(1)
             .execute()
         )
-        pc_id = pc_result.data[0]["id"] if pc_result.data else None  # type: ignore[index,call-overload]
+        pc_id_raw = pc_result.data[0]["id"] if pc_result.data else None  # type: ignore[index,call-overload]
+        pc_id = str(pc_id_raw) if pc_id_raw is not None else None
 
-        client.table("generated_contents").insert(
-            {
-                "pattern_card_id": pc_id,
-                "keyword": keyword,
-                "slug": slug,
-                "job_id": current_job_id(),
-                "outline_md": outline_md,
-                "content_md": content_md,
-                "content_html": content_html,
-                "compliance_passed": compliance_passed,
-                "compliance_iterations": compliance_iterations,
-                "output_path": output_path,
-            }
-        ).execute()
+        gen_result = (
+            client.table("generated_contents")
+            .insert(
+                {
+                    "pattern_card_id": pc_id,
+                    "keyword": keyword,
+                    "slug": slug,
+                    "job_id": current_job_id(),
+                    "outline_md": outline_md,
+                    "content_md": content_md,
+                    "content_html": content_html,
+                    "compliance_passed": compliance_passed,
+                    "compliance_iterations": compliance_iterations,
+                    "output_path": output_path,
+                }
+            )
+            .execute()
+        )
         logger.info("generated_content.supabase_saved slug=%s", slug)
+        return _extract_first_id(gen_result), pc_id
     except Exception:
         logger.warning("generated_content.supabase_save_failed", exc_info=True)
+        return None, None
+
+
+def _extract_first_id(result: Any) -> str | None:
+    """Supabase insert(...).execute() 응답에서 첫 row 의 id 안전 추출."""
+    data = getattr(result, "data", None)
+    if not isinstance(data, list) or not data:
+        return None
+    row = data[0]
+    if not isinstance(row, dict):
+        return None
+    raw = row.get("id")
+    return str(raw) if raw is not None else None

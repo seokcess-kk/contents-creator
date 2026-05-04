@@ -13,6 +13,8 @@ import pytest
 
 from application import batch_orchestrator
 from application.models import (
+    AnalyzeResult,
+    GenerateResult,
     PipelineResult,
     StageStatus,
 )
@@ -112,6 +114,12 @@ class TestDispatchItem:
     def test_analyze_operation_calls_run_analyze_only(self, storage_mock: Any) -> None:
         storage_mock.get_item.return_value = _item(operation="analyze")
         with patch("application.batch_orchestrator.orchestrator") as orch_mock:
+            orch_mock.run_analyze_only.return_value = AnalyzeResult(
+                status=StageStatus.SUCCEEDED,
+                keyword="kw",
+                slug="kw",
+                pattern_card_id="pc-uuid-1",
+            )
             batch_orchestrator._dispatch_item("i-1")
             orch_mock.run_analyze_only.assert_called_once_with("kw")
             orch_mock.run_pipeline.assert_not_called()
@@ -119,6 +127,11 @@ class TestDispatchItem:
         statuses = [c.args[1] for c in storage_mock.update_item_status.call_args_list]
         assert "running" in statuses
         assert "succeeded" in statuses
+        # Phase B7 — pattern_card_id 가 update_item_result 로 전파
+        storage_mock.update_item_result.assert_called_once()
+        kwargs = storage_mock.update_item_result.call_args.kwargs
+        assert kwargs["pattern_card_id"] == "pc-uuid-1"
+        assert kwargs["generated_content_id"] is None
 
     def test_pipeline_operation_calls_run_pipeline(self, storage_mock: Any) -> None:
         storage_mock.get_item.return_value = _item(operation="pipeline")
@@ -127,10 +140,66 @@ class TestDispatchItem:
                 status=StageStatus.SUCCEEDED,
                 keyword="kw",
                 slug="kw",
-                output_dir=None,
+                pattern_card_id="pc-uuid-2",
+                generated_content_id="gen-uuid-2",
             )
             batch_orchestrator._dispatch_item("i-1")
             orch_mock.run_pipeline.assert_called_once_with("kw")
+        # Phase B7 — pipeline 결과의 두 id 모두 전파
+        storage_mock.update_item_result.assert_called_once()
+        kwargs = storage_mock.update_item_result.call_args.kwargs
+        assert kwargs["pattern_card_id"] == "pc-uuid-2"
+        assert kwargs["generated_content_id"] == "gen-uuid-2"
+
+    def test_generate_operation_propagates_ids(self, storage_mock: Any) -> None:
+        """Phase B7 — generate 결과에서 두 id + compliance_passed 전파."""
+        storage_mock.get_item.return_value = _item(operation="generate")
+        with patch("application.batch_orchestrator.orchestrator") as orch_mock:
+            orch_mock.run_generate_only.return_value = GenerateResult(
+                status=StageStatus.SUCCEEDED,
+                keyword="kw",
+                slug="kw",
+                pattern_card_id="pc-3",
+                generated_content_id="gen-3",
+                compliance_passed=True,
+            )
+            batch_orchestrator._dispatch_item("i-1")
+        storage_mock.update_item_result.assert_called_once()
+        kwargs = storage_mock.update_item_result.call_args.kwargs
+        assert kwargs["pattern_card_id"] == "pc-3"
+        assert kwargs["generated_content_id"] == "gen-3"
+        assert kwargs["compliance_passed"] is True
+
+    def test_no_ids_no_update_item_result(self, storage_mock: Any) -> None:
+        """모든 id None 일 때 update_item_result 호출 자체 스킵."""
+        storage_mock.get_item.return_value = _item(operation="analyze")
+        with patch("application.batch_orchestrator.orchestrator") as orch_mock:
+            orch_mock.run_analyze_only.return_value = AnalyzeResult(
+                status=StageStatus.SUCCEEDED,
+                keyword="kw",
+                slug="kw",
+                pattern_card_id=None,
+            )
+            batch_orchestrator._dispatch_item("i-1")
+        storage_mock.update_item_result.assert_not_called()
+        # succeeded 마킹은 진행
+        statuses = [c.args[1] for c in storage_mock.update_item_status.call_args_list]
+        assert "succeeded" in statuses
+
+    def test_update_item_result_failure_does_not_block_succeeded(self, storage_mock: Any) -> None:
+        """update_item_result 가 raise 해도 succeeded 마킹은 진행 (graceful)."""
+        storage_mock.get_item.return_value = _item(operation="analyze")
+        storage_mock.update_item_result.side_effect = RuntimeError("supabase down")
+        with patch("application.batch_orchestrator.orchestrator") as orch_mock:
+            orch_mock.run_analyze_only.return_value = AnalyzeResult(
+                status=StageStatus.SUCCEEDED,
+                keyword="kw",
+                slug="kw",
+                pattern_card_id="pc-1",
+            )
+            batch_orchestrator._dispatch_item("i-1")
+        statuses = [c.args[1] for c in storage_mock.update_item_status.call_args_list]
+        assert "succeeded" in statuses
 
     def test_failure_under_max_retries_reschedules(
         self, storage_mock: Any, manager_mock: Any

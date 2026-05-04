@@ -1060,3 +1060,44 @@
 - **Phase 2 (3~4일)** — 사전 필터, cluster 재사용, 검수 큐, FK 정합성 보강
 - **Phase 3 (3~4일)** — Anthropic Batch API adapter (LLM 독립 호출 한정), worker process 분리
 - **Phase 4 (2~3일)** — Slack 알림, publication 자동 등록 (opt-in)
+
+---
+
+## 🔗 Phase B7 — FK 회수 + PatternCard 보관함 (Phase 2 PR1, 2026-05-04 착수)
+
+> SPEC-BATCH §3 Phase 2 의 첫 갈래. batch 로 처리한 키워드도 단일 진입과 동일한 운영 워크플로우(보관함 노출 → URL 등록 → 순위 추적)에 자연스럽게 진입. 사전 필터·클러스터 재사용·검수 큐는 PR2 로 분리.
+
+### B7.1 도메인 — id 회수 ✅
+- [x] `domain/analysis/pattern_card.py` — `_save_to_supabase` 가 `str | None` 반환, `save_pattern_card` 가 `(Path, str | None)` tuple 반환. `_extract_inserted_id` 헬퍼 추가
+- [x] `domain/batch/storage.py` — `update_item_result` 신규 함수 (partial update + 모든 None 시 noop)
+
+### B7.2 application — id 전파 ✅
+- [x] `application/models.py` — `AnalyzeResult.pattern_card_id`, `GenerateResult.pattern_card_id`+`generated_content_id`, `PipelineResult.pattern_card_id`+`generated_content_id` (모두 nullable, default None)
+- [x] `application/stage_runner.py` — `run_stage_cross_analysis` tuple 반환, `_save_generated_to_supabase` tuple 반환, `ComposeStageResult` NamedTuple 도입
+- [x] `application/orchestrator.py` — id propagation (시그니처 무변경)
+- [x] `application/batch_orchestrator.py` — `_run_operation` 의 3 분기에서 id 캡처 + `_record_item_result` 헬퍼 (graceful try/except)
+
+### B7.3 Web API ✅
+- [x] `web/api/routers/pattern_cards.py` 신규 — `GET /pattern-cards/recent` / `by-id/{id}` / `by-slug/{slug}/latest`
+- [x] `web/api/main.py` — pattern_cards router include
+- [x] `web/api/routers/batches.py` — `list_batch_items` 응답에 `keyword_slug` enrich (backend `_slugify` 단일 출처)
+
+### B7.4 Frontend ✅
+- [x] `web/frontend/src/lib/api.ts` — `PatternCardSummary`/`Detail` 타입 + `listRecentPatternCards`/`getPatternCardById`/`getPatternCardBySlugLatest` 함수 + `BatchItem.keyword_slug` 필드
+- [x] `web/frontend/src/app/patterns/by-id/[id]/page.tsx` 신규 — 분석 카드 그리드 (target_reader, sections, dia_plus, image_pattern, appeal_points, related_keywords, distributions)
+- [x] `web/frontend/src/components/BatchProgressTable.tsx` — `결과` 컬럼 추가 + `ResultLinks` inner component (analyze→패턴 / generate→결과 / pipeline→둘 다, id None 시 placeholder + tooltip)
+
+### B7.5 테스트 ✅ — 108 passed
+- [x] `tests/test_analysis/test_pattern_card.py` — `save_pattern_card` tuple / `_extract_inserted_id` / `_save_to_supabase` mock 8 케이스
+- [x] `tests/test_batch/test_storage.py` — `update_item_result` partial / noop / Supabase raise
+- [x] `tests/test_application/test_stage_runner.py` — `run_stage_cross_analysis` tuple / `run_stage_compose` ComposeStageResult
+- [x] `tests/test_application/test_orchestrator.py` — `PipelineResult` 두 id propagation 검증
+- [x] `tests/test_application/test_batch_orchestrator.py` — analyze/generate/pipeline × (id 회수 / 모두 None / update 실패) 검증
+- [x] `tests/test_application/test_pr1_id_propagation.py` 신규 — 단일 흐름이 batch storage 호출 안 함 (cross-coupling 0)
+- [x] `tests/test_web/test_pattern_cards_router.py` 신규 — recent/by-id/by-slug × (200 / 404 / 503 table missing)
+- [x] `tests/test_web/test_batches_api.py` — `keyword_slug` enrich 검증
+
+### B7.6 문서 + 검증
+- [ ] `bash .claude/hooks/build-check.sh` 그린
+- [ ] `cd web/frontend && npx tsc --noEmit && npx next build` 그린
+- [ ] commit `feat(batch): Phase 2 PR1 — FK 회수 + PatternCard 보관함`

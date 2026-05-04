@@ -107,6 +107,40 @@ def test_update_item_status_includes_only_provided_fields(mock_client: MagicMock
     assert "job_id" not in payload
 
 
+def test_update_item_result_partial_payload(mock_client: MagicMock) -> None:
+    """Phase B7 — None 아닌 인자만 update payload 에 포함."""
+    with patch("domain.batch.storage.get_client", return_value=mock_client):
+        storage.update_item_result(
+            "i-1",
+            pattern_card_id="pc-uuid-1",
+            generated_content_id=None,  # None 은 제외
+            compliance_passed=True,
+        )
+    update_call = mock_client.table.return_value.update.call_args
+    payload = update_call.args[0]
+    assert payload == {"pattern_card_id": "pc-uuid-1", "compliance_passed": True}
+
+
+def test_update_item_result_all_none_is_noop(mock_client: MagicMock) -> None:
+    """모든 인자 None 이면 Supabase 호출 없이 즉시 return."""
+    with patch("domain.batch.storage.get_client", return_value=mock_client):
+        storage.update_item_result("i-1")
+    # get_client 은 호출되지 않거나 호출됐어도 update 자체가 호출되면 안 됨.
+    mock_client.table.return_value.update.assert_not_called()
+
+
+def test_update_item_result_propagates_supabase_error(mock_client: MagicMock) -> None:
+    """본 함수는 raise — caller (batch_orchestrator) 가 try/except 로 graceful 처리."""
+    mock_client.table.return_value.update.return_value.eq.return_value.execute.side_effect = (
+        RuntimeError("supabase down")
+    )
+    with (
+        patch("domain.batch.storage.get_client", return_value=mock_client),
+        pytest.raises(RuntimeError, match="supabase down"),
+    ):
+        storage.update_item_result("i-1", pattern_card_id="pc-1")
+
+
 def test_count_items_by_status_aggregates(mock_client: MagicMock) -> None:
     items_payload = [
         {"id": "i-1", "batch_id": "b-1", "keyword": "k1", "status": "succeeded"},

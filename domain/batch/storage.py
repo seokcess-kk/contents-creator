@@ -101,6 +101,34 @@ def update_item_status(
     get_client().table(_ITEM_TABLE).update(payload).eq("id", item_id).execute()
 
 
+def update_item_result(
+    item_id: str,
+    *,
+    pattern_card_id: str | None = None,
+    generated_content_id: str | None = None,
+    compliance_passed: bool | None = None,
+    quality_score: float | None = None,
+) -> None:
+    """item 결과 메타 partial update. 모든 인자 None 이면 noop (Supabase 호출 0).
+
+    SPEC-BATCH §3 Phase 2 PR1 — `_run_operation` 이 회수한 id 를 batch item 에
+    반영해 BatchProgressTable 의 결과 직링크를 가능하게 한다. status 머신은
+    `update_item_status` 가 담당 — 책임 분리.
+    """
+    payload: dict[str, Any] = {}
+    if pattern_card_id is not None:
+        payload["pattern_card_id"] = pattern_card_id
+    if generated_content_id is not None:
+        payload["generated_content_id"] = generated_content_id
+    if compliance_passed is not None:
+        payload["compliance_passed"] = compliance_passed
+    if quality_score is not None:
+        payload["quality_score"] = quality_score
+    if not payload:
+        return
+    get_client().table(_ITEM_TABLE).update(payload).eq("id", item_id).execute()
+
+
 def update_batch_status(
     batch_id: str,
     status: BatchStatus,

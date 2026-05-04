@@ -570,6 +570,8 @@ export interface BatchItem {
   started_at: string | null;
   completed_at: string | null;
   created_at: string | null;
+  // Phase B7 — backend 가 _slugify(keyword) 로 enrich. 결과 페이지 직링크용.
+  keyword_slug: string | null;
 }
 
 export interface BatchEnqueueResult {
@@ -636,4 +638,33 @@ export function retryBatchItem(
   itemId: string,
 ): Promise<{ batch_id: string; item_id: string; status: string }> {
   return fetchJson(`/batches/${batchId}/items/${itemId}/retry`, { method: "POST" });
+}
+
+// ── PatternCard 보관함 (Phase B7) ──
+
+export interface PatternCardSummary {
+  id: string;
+  keyword: string;
+  slug: string;
+  analyzed_count: number;
+  created_at: string | null;
+}
+
+export interface PatternCardDetail extends PatternCardSummary {
+  output_path: string | null;
+  data: Record<string, unknown>;
+}
+
+export function listRecentPatternCards(
+  limit = 50,
+): Promise<{ count: number; items: PatternCardSummary[]; warning?: string }> {
+  return fetchJson(`/pattern-cards/recent?limit=${limit}`);
+}
+
+export function getPatternCardById(id: string): Promise<PatternCardDetail> {
+  return fetchJson(`/pattern-cards/by-id/${encodeURIComponent(id)}`);
+}
+
+export function getPatternCardBySlugLatest(slug: string): Promise<PatternCardDetail> {
+  return fetchJson(`/pattern-cards/by-slug/${encodeURIComponent(slug)}/latest`);
 }

@@ -41,6 +41,9 @@ class PipelineResult(BaseModel):
     slug: str
     output_path: Path | None = None
     stages: list[StageResult] = Field(default_factory=list)
+    # SPEC-BATCH Phase 2 PR1 — 단일·batch 양쪽이 회수해 사용. Supabase 미설정/실패 시 None.
+    pattern_card_id: str | None = None
+    generated_content_id: str | None = None
     error: str | None = None
 
 
@@ -52,6 +55,8 @@ class AnalyzeResult(BaseModel):
     slug: str
     analyzed_count: int = 0
     pattern_card_path: Path | None = None
+    # SPEC-BATCH Phase 2 PR1 — 회수된 pattern_cards.id (Supabase). 미설정/실패 시 None.
+    pattern_card_id: str | None = None
     stages: list[StageResult] = Field(default_factory=list)
     error: str | None = None
 
@@ -70,6 +75,9 @@ class GenerateResult(BaseModel):
     images_skipped: int = 0
     compliance_passed: bool | None = None
     compliance_iterations: int | None = None
+    # SPEC-BATCH Phase 2 PR1 — Supabase 회수 id. 미설정/실패 시 None.
+    pattern_card_id: str | None = None
+    generated_content_id: str | None = None
     stages: list[StageResult] = Field(default_factory=list)
     error: str | None = None
 

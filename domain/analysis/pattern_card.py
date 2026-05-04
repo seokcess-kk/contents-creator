@@ -128,40 +128,65 @@ class PatternCard(BaseModel):
 # ── 저장 / 로드 ──
 
 
-def save_pattern_card(card: PatternCard, output_dir: Path) -> Path:
-    """pattern-card.json 저장 + Supabase best-effort 저장. 반환: 저장 경로."""
+def save_pattern_card(card: PatternCard, output_dir: Path) -> tuple[Path, str | None]:
+    """pattern-card.json 저장 + Supabase best-effort 저장.
+
+    반환: (저장 경로, Supabase row id). Supabase 미설정/실패 시 id 는 None.
+    Phase B7 — batch_orchestrator 가 회수해 keyword_batch_items.pattern_card_id 채움.
+    """
     analysis_dir = output_dir / "analysis"
     analysis_dir.mkdir(parents=True, exist_ok=True)
     path = analysis_dir / "pattern-card.json"
     path.write_text(card.model_dump_json(indent=2), encoding="utf-8")
     logger.info("pattern_card.saved path=%s", path)
 
-    _save_to_supabase(card, str(output_dir))
-    return path
+    supabase_id = _save_to_supabase(card, str(output_dir))
+    return path, supabase_id
 
 
-def _save_to_supabase(card: PatternCard, output_path: str) -> None:
-    """Supabase pattern_cards 테이블에 저장. 실패해도 파이프라인 중단 안 함."""
+def _save_to_supabase(card: PatternCard, output_path: str) -> str | None:
+    """Supabase pattern_cards 테이블에 저장. 실패해도 파이프라인 중단 안 함.
+
+    반환: insert 응답에서 회수한 id (`uuid` 문자열). 실패/응답 비어 있음 → None.
+    """
     try:
         from config.supabase import get_client
 
         client = get_client()
-        client.table("pattern_cards").insert(
-            {
-                "keyword": card.keyword,
-                "slug": card.slug,
-                "analyzed_count": card.analyzed_count,
-                "data": card.model_dump(),
-                "output_path": output_path,
-            }
-        ).execute()
+        result = (
+            client.table("pattern_cards")
+            .insert(
+                {
+                    "keyword": card.keyword,
+                    "slug": card.slug,
+                    "analyzed_count": card.analyzed_count,
+                    "data": card.model_dump(),
+                    "output_path": output_path,
+                }
+            )
+            .execute()
+        )
         logger.info("pattern_card.supabase_saved keyword=%s", card.keyword)
+        return _extract_inserted_id(result)
     except Exception:
         logger.warning(
             "pattern_card.supabase_save_failed keyword=%s",
             card.keyword,
             exc_info=True,
         )
+        return None
+
+
+def _extract_inserted_id(result: Any) -> str | None:
+    """Supabase insert(...).execute() 응답에서 첫 row 의 id 안전 추출."""
+    data = getattr(result, "data", None)
+    if not isinstance(data, list) or not data:
+        return None
+    row = data[0]
+    if not isinstance(row, dict):
+        return None
+    raw = row.get("id")
+    return str(raw) if raw is not None else None
 
 
 def load_pattern_card(path: Path) -> PatternCard:
