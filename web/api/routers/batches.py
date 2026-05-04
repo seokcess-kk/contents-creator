@@ -196,16 +196,33 @@ def list_batches(limit: int = Query(default=20, ge=1, le=200)) -> dict[str, Any]
 
     Supabase 미설정 또는 마이그레이션 미적용 시 빈 결과 + warning. 페이지 진입
     경험을 깨뜨리지 않도록 graceful 처리 (운영자는 detail 메시지로 인지).
+
+    Phase B9 fix — `ready_to_publish_count` 가 DB 컬럼이 아닌 in-memory 집계라
+    각 batch 마다 `count_items_by_status` 재집계해 응답 dict 에 merge. 목록
+    UI 가 발행 준비 카운터를 정확히 표시. limit 20 기준 N+1 쿼리 비용 허용.
     """
     if not _supabase_configured():
         return {"count": 0, "items": [], "warning": "Supabase 미설정"}
     try:
         batches = storage.list_batches(limit=limit)
+        items: list[dict[str, Any]] = []
+        for b in batches:
+            body = b.model_dump(mode="json")
+            if b.id is not None:
+                try:
+                    body.update(storage.count_items_by_status(b.id))
+                except Exception:
+                    logger.warning(
+                        "list_batches.counters_recompute_failed batch_id=%s",
+                        b.id,
+                        exc_info=True,
+                    )
+            items.append(body)
     except Exception as exc:
         raise _supabase_error_response(exc, "list_batches") from exc
     return {
-        "count": len(batches),
-        "items": [b.model_dump(mode="json") for b in batches],
+        "count": len(items),
+        "items": items,
     }
 
 
@@ -360,7 +377,22 @@ def cancel_batch(batch_id: str) -> dict[str, Any]:
 
 @router.post("/{batch_id}/items/{item_id}/retry", status_code=202)
 def retry_item(batch_id: str, item_id: str) -> dict[str, Any]:
-    """단건 수동 재시도 — failed/succeeded/needs_review 만 가능."""
+    """단건 수동 재시도 — failed/succeeded/needs_review/ready_to_publish 만 가능.
+
+    Phase B9 fix — batch_id 와 item.batch_id 소속 일치 검증 (review API 와 동일 패턴).
+    다른 batch 의 item 재시도 차단.
+    """
+    try:
+        item = storage.get_item(item_id)
+    except Exception as exc:
+        raise _supabase_error_response(exc, "retry") from exc
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"item 미존재: {item_id}")
+    if item.batch_id != batch_id:
+        raise HTTPException(
+            status_code=404,
+            detail=f"item {item_id} 가 batch {batch_id} 에 속하지 않습니다.",
+        )
     try:
         batch_orchestrator.retry_item(item_id)
     except ValueError as exc:

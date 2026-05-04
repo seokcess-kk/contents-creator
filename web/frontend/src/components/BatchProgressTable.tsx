@@ -118,7 +118,9 @@ export default function BatchProgressTable({ batchId }: Props) {
             ["", "전체"],
             ["queued", "대기"],
             ["running", "진행"],
-            ["succeeded", "성공"],
+            ["ready_to_publish", "발행 준비"],
+            ["needs_review", "검수 필요"],
+            ["succeeded", "분석 완료"],
             ["failed", "실패"],
             ["skipped", "스킵"],
           ].map(([val, label]) => (

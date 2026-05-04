@@ -189,9 +189,46 @@ class TestListBatches:
             "list_batches",
             lambda limit=20: [_batch(id="b-1"), _batch(id="b-2")],
         )
+        # Phase B9 fix — list_batches API 가 count_items_by_status 재집계.
+        monkeypatch.setattr(
+            storage,
+            "count_items_by_status",
+            lambda _id: {
+                "succeeded_count": 0,
+                "failed_count": 0,
+                "skipped_count": 0,
+                "needs_review_count": 0,
+                "ready_to_publish_count": 0,
+            },
+        )
         resp = client.get("/api/batches")
         assert resp.status_code == 200
         assert resp.json()["count"] == 2
+
+    def test_each_batch_has_ready_to_publish_count(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Phase B9 fix — 응답의 각 batch dict 에 ready_to_publish_count 항상 포함."""
+        monkeypatch.setattr(
+            storage,
+            "list_batches",
+            lambda limit=20: [_batch(id="b-1")],
+        )
+        monkeypatch.setattr(
+            storage,
+            "count_items_by_status",
+            lambda _id: {
+                "succeeded_count": 1,
+                "failed_count": 0,
+                "skipped_count": 0,
+                "needs_review_count": 1,
+                "ready_to_publish_count": 3,
+            },
+        )
+        resp = client.get("/api/batches")
+        body = resp.json()
+        assert body["items"][0]["ready_to_publish_count"] == 3
+        assert body["items"][0]["needs_review_count"] == 1
 
 
 class TestGetBatch:
@@ -522,6 +559,8 @@ class TestRetryItem:
     def test_returns_202_on_success(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        # Phase B9 fix — retry API 도 batch_id 소속 검증을 위해 get_item mock.
+        monkeypatch.setattr(storage, "get_item", lambda _: _item(id="i-1", batch_id="b-1"))
         monkeypatch.setattr(batch_orchestrator, "retry_item", lambda _: None)
         resp = client.post("/api/batches/b-1/items/i-1/retry")
         assert resp.status_code == 202
@@ -529,9 +568,41 @@ class TestRetryItem:
     def test_400_when_invalid_state(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        monkeypatch.setattr(storage, "get_item", lambda _: _item(id="i-1", batch_id="b-1"))
+
         def _raise(_: str) -> None:
             raise ValueError("재시도 가능 상태 아님 (현재: running)")
 
         monkeypatch.setattr(batch_orchestrator, "retry_item", _raise)
         resp = client.post("/api/batches/b-1/items/i-1/retry")
         assert resp.status_code == 400
+
+    def test_retry_item_missing_returns_404(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Phase B9 fix — item 미존재 → 404."""
+        monkeypatch.setattr(storage, "get_item", lambda _: None)
+        called = {"count": 0}
+        monkeypatch.setattr(
+            batch_orchestrator,
+            "retry_item",
+            lambda _: called.update({"count": called["count"] + 1}),
+        )
+        resp = client.post("/api/batches/b-1/items/missing/retry")
+        assert resp.status_code == 404
+        assert called["count"] == 0  # retry_item 호출 안 됨
+
+    def test_retry_batch_mismatch_returns_404(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Phase B9 fix — item.batch_id != batch_id → 404, 다른 batch 재시도 차단."""
+        monkeypatch.setattr(storage, "get_item", lambda _: _item(id="i-1", batch_id="b-OTHER"))
+        called = {"count": 0}
+        monkeypatch.setattr(
+            batch_orchestrator,
+            "retry_item",
+            lambda _: called.update({"count": called["count"] + 1}),
+        )
+        resp = client.post("/api/batches/b-1/items/i-1/retry")
+        assert resp.status_code == 404
+        assert called["count"] == 0

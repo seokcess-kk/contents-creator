@@ -67,10 +67,11 @@ export default function BatchesPage() {
                   <th className="text-left py-2">mode</th>
                   <th className="text-left py-2">status</th>
                   <th className="text-right py-2">total</th>
-                  <th className="text-right py-2">성공</th>
+                  <th className="text-right py-2">발행 준비</th>
+                  <th className="text-right py-2">검수 필요</th>
+                  <th className="text-right py-2">분석 완료</th>
                   <th className="text-right py-2">실패</th>
                   <th className="text-right py-2">스킵</th>
-                  <th className="text-right py-2">검수</th>
                   <th className="text-left py-2">생성</th>
                 </tr>
               </thead>
@@ -88,10 +89,11 @@ export default function BatchesPage() {
                       <BatchStatusBadge status={b.status} />
                     </td>
                     <td className="py-1.5 text-right text-gray-800">{b.total_count}</td>
-                    <td className="py-1.5 text-right text-green-700">{b.succeeded_count}</td>
+                    <td className="py-1.5 text-right text-green-700">{b.ready_to_publish_count ?? 0}</td>
+                    <td className="py-1.5 text-right text-amber-700">{b.needs_review_count}</td>
+                    <td className="py-1.5 text-right text-emerald-600">{b.succeeded_count}</td>
                     <td className="py-1.5 text-right text-red-700">{b.failed_count}</td>
                     <td className="py-1.5 text-right text-gray-500">{b.skipped_count}</td>
-                    <td className="py-1.5 text-right text-amber-700">{b.needs_review_count}</td>
                     <td className="py-1.5 text-xs text-gray-600">
                       {b.created_at ? new Date(b.created_at).toLocaleString("ko-KR") : "-"}
                     </td>

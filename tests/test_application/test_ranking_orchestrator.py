@@ -144,7 +144,10 @@ class TestRegisterPublication:
 
         keyword_difficulty_mock.assert_called_once_with("kw", persist=True)
         storage_mock.update_publication_keyword_difficulty.assert_called_once_with("pub-1", "kd-1")
-        generated_content_client_mock.table.assert_called_with("generated_contents")
+        # Phase B9 fix — _attach_generated_content + _attach_batch_item 둘 다 호출됨.
+        called_tables = [c.args[0] for c in generated_content_client_mock.table.call_args_list]
+        assert "generated_contents" in called_tables
+        assert "keyword_batch_items" in called_tables
 
     def test_draft_does_not_attach_keyword_difficulty(self, storage_mock: MagicMock) -> None:
         storage_mock.insert_publication.return_value = _publication(url=None, slug=None)
@@ -306,8 +309,12 @@ class TestKeywordDifficultyAttach:
     ) -> None:
         ranking_orchestrator._attach_generated_content(_publication(job_id="job-1", slug="slug-1"))
 
+        # Phase B9 fix — _attach_generated_content 가 _attach_batch_item 도 호출.
+        # generated_contents 는 job_id 매칭, batch_items 는 job_id+keyword 매칭이므로
+        # eq("job_id", "job-1") 호출이 한 번 이상 있는지 확인.
         table = generated_content_client_mock.table.return_value
-        table.update.return_value.eq.assert_called_once_with("job_id", "job-1")
+        eq_calls = table.update.return_value.eq.call_args_list
+        assert any(c.args == ("job_id", "job-1") for c in eq_calls)
 
     def test_attach_generated_content_falls_back_to_slug(
         self, generated_content_client_mock: MagicMock
@@ -315,7 +322,26 @@ class TestKeywordDifficultyAttach:
         ranking_orchestrator._attach_generated_content(_publication(job_id=None, slug="slug-1"))
 
         table = generated_content_client_mock.table.return_value
-        table.update.return_value.eq.assert_called_once_with("slug", "slug-1")
+        # Phase B9 fix — _attach_generated_content 가 _attach_batch_item 도 호출하므로
+        # eq 가 한 번 이상 호출됨. job_id 없으니 generated_contents 는 slug 매칭 한 번,
+        # batch_items 도 keyword 매칭 한 번 → eq 호출 인자 중 하나가 ("slug", "slug-1") 인지.
+        eq_calls = table.update.return_value.eq.call_args_list
+        assert any(c.args == ("slug", "slug-1") for c in eq_calls)
+
+    def test_attach_batch_item_with_job_id_filters_by_keyword(
+        self, generated_content_client_mock: MagicMock
+    ) -> None:
+        """Phase B9 fix — publication 등록 시 keyword_batch_items.publication_id 백필.
+
+        job_id + keyword 매칭으로 batch item 의 publication_id 도 함께 채움.
+        """
+        ranking_orchestrator._attach_batch_item(
+            _publication(job_id="job-1", slug="slug-1", keyword="다이어트")
+        )
+
+        # client.table 이 keyword_batch_items 로 한 번 이상 호출됐는지
+        called_tables = [c.args[0] for c in generated_content_client_mock.table.call_args_list]
+        assert "keyword_batch_items" in called_tables
 
 
 class TestDeletePublication:

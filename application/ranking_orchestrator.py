@@ -311,7 +311,12 @@ def _ensure_keyword_difficulty_attached(publication: Publication, *, force: bool
 
 
 def _attach_generated_content(publication: Publication) -> None:
-    """Link generated content rows to the publication by job_id first, then slug."""
+    """Link generated content rows to the publication by job_id first, then slug.
+
+    Phase B9 fix — publication 등록 시 generated_contents.publication_id 외에
+    keyword_batch_items.publication_id 도 백필. batch item 이 후보 키워드부터
+    발행 URL까지 종단 분석의 기준점이 되도록 함 (사용자 운영 철학 §4 데이터 누적).
+    """
     if publication.id is None or publication.url is None:
         return
     if not publication.job_id and not publication.slug:
@@ -326,8 +331,7 @@ def _attach_generated_content(publication: Publication) -> None:
             client.table("generated_contents").update(payload).eq(
                 "job_id", publication.job_id
             ).execute()
-            return
-        if publication.slug:
+        elif publication.slug:
             client.table("generated_contents").update(payload).eq(
                 "slug", publication.slug
             ).execute()
@@ -337,6 +341,44 @@ def _attach_generated_content(publication: Publication) -> None:
             publication.id,
             publication.slug,
             publication.job_id,
+            exc_info=True,
+        )
+
+    _attach_batch_item(publication)
+
+
+def _attach_batch_item(publication: Publication) -> None:
+    """publication.publication_id 를 keyword_batch_items 에도 백필.
+
+    Phase B9 fix — batch item 이 발행 URL 까지 추적되도록 generated_contents.id
+    또는 (job_id, keyword) triple 로 매칭. graceful (실패해도 publication 등록은
+    영향 없음).
+    """
+    if publication.id is None:
+        return
+    try:
+        from config.supabase import get_client
+
+        client = get_client()
+        payload = {"publication_id": publication.id}
+
+        # 1차: generated_content_id 매칭 (가장 정확)
+        if publication.job_id and publication.keyword:
+            client.table("keyword_batch_items").update(payload).eq("job_id", publication.job_id).eq(
+                "keyword", publication.keyword
+            ).execute()
+            return
+        # 2차 fallback: keyword 만으로 (job_id 없는 publication 호환)
+        if publication.keyword:
+            client.table("keyword_batch_items").update(payload).eq(
+                "keyword", publication.keyword
+            ).execute()
+    except Exception:
+        logger.warning(
+            "publication.batch_item_attach_failed publication_id=%s job_id=%r keyword=%r",
+            publication.id,
+            publication.job_id,
+            publication.keyword,
             exc_info=True,
         )
 
