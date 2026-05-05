@@ -172,6 +172,18 @@ class Settings(BaseSettings):
         default=1.0, description="cluster member 의 primary 상태 polling 주기 (초)"
     )
 
+    # SPEC-BATCH Phase 4 PR1 — Slack 알림 (선택). webhook 미설정 시 모든 알림 noop.
+    # 검수 큐가 1차 운영 도구이므로 개별 의료법 위반 알림은 별도 toggle 로 제어
+    # (운영 노이즈 회피). 대량 처리 중 false 가 default.
+    slack_webhook_url: str | None = Field(
+        default=None,
+        description="Slack incoming webhook URL — 미설정 시 모든 알림 noop",
+    )
+    slack_notify_compliance_violations: bool = Field(
+        default=False,
+        description="개별 의료법 위반 알림 ON/OFF (검수 큐 외 추가 알림이 필요할 때만 true)",
+    )
+
     # SPEC-BATCH Phase 3 PR2 — overnight cron 시간대 게이트.
     # `scripts/run_batch.py --dispatch-overnight` 가 외부 cron (GitHub Actions /
     # Render cron) 에서 호출되며, 게이트 시간대가 아니면 noop (exit 0). 운영자가

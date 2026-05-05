@@ -1239,3 +1239,30 @@
 ### B15.5 검증 + commit
 - [ ] `bash .claude/hooks/build-check.sh` 그린
 - [ ] commit `feat(batch): Phase 3 PR2 — atomic claim + cron overnight 시간대 게이트`
+
+---
+
+## 🔔 Phase B16 — 알림 인프라 (Phase 4 PR1, 2026-05-05 착수)
+
+> SPEC-BATCH §3 Phase 4 PR1. webhook 미설정 시 noop, 실패 graceful 의 env-driven 인프라. 운영 중요 사건 (의료법 위반 / 배치 완료 / 배치 전체 실패 / 야간 dispatch) 을 운영자에게 알린다.
+
+### B16.1 application — notifier 모듈 ✅
+- [x] `application/notifier.py` — Slack webhook. `send_text` / `send_batch_completed` / `send_batch_failed` / `send_compliance_violation` / `send_overnight_dispatched`. webhook URL 미설정 → 모든 함수 즉시 noop. requests.post 5초 timeout, 실패 graceful (logger.warning)
+
+### B16.2 batch_orchestrator hook 적용 ✅
+- [x] `_dispatch_item` final status 분기 직후: `compliance_passed is False AND operation in (generate, pipeline)` 시 `send_compliance_violation` 호출
+- [x] `recompute_batch_status`: queued/running → completed 첫 전이 시 1회. failed_count == total_count → `send_batch_failed`, 그 외 → `send_batch_completed` (counters + estimated_cost_usd)
+- [x] `dispatch_overnight_batches`: dispatched_items > 0 시 `send_overnight_dispatched(batches, items)`
+- [x] `_run_operation` / `_run_member_with_primary` 반환을 `tuple[bool | None, list[str]]` 로 확장 — 위반 카테고리 전파
+- [x] 모든 알림 호출은 try/except 흡수 — slack 다운이 본 흐름 차단 X
+
+### B16.3 settings + 토글 ✅
+- [x] `config/settings.py` — `slack_webhook_url` (default None), `slack_notify_compliance_violations` (default False — 검수 큐 외 추가 알림 필요할 때만 활성)
+
+### B16.4 테스트 ✅ — 13건
+- [x] `tests/test_application/test_notifier.py` — 10 케이스 (webhook 미설정 noop / 호출 시 payload / 예외 graceful / 4xx 흡수 / batch_completed counters / batch_failed reason / compliance toggle off / categories / overnight zero items / overnight counts)
+- [x] `tests/test_application/test_batch_orchestrator.py` 추가 — recompute 4 (completed first / 이미 completed 중복 방지 / 전체 실패 / notifier 실패 graceful) + _dispatch_item 4 (violation triggers / passed=True 0 / None 0 / analyze 0) + overnight 1
+
+### B16.5 검증 + commit
+- [ ] `bash .claude/hooks/build-check.sh` 그린
+- [ ] commit `feat(batch): Phase 4 PR1 — 알림 인프라 (Slack webhook)`

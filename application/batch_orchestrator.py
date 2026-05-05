@@ -21,7 +21,7 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
-from application import batch_job_manager, orchestrator
+from application import batch_job_manager, notifier, orchestrator
 from application.job_context import current_job_id
 from application.models import AnalyzeResult, GenerateResult, PipelineResult, StageStatus
 from config.settings import settings
@@ -219,7 +219,7 @@ def _dispatch_item(item_id: str) -> None:
     )
 
     try:
-        compliance_passed: bool | None = (
+        compliance_passed, compliance_violations = (
             _run_member_with_primary(item, primary)
             if primary is not None
             else _run_operation(item, job_id)
@@ -254,8 +254,18 @@ def _dispatch_item(item_id: str) -> None:
         compliance_passed,
     )
 
+    # Phase 4 PR1 — 의료법 위반 단건 알림 (generate/pipeline + compliance_passed=False).
+    # webhook 미설정 또는 toggle off 면 notifier 가 자체 noop. 알림 실패도 본 흐름 영향 X.
+    if compliance_passed is False and item.operation in ("generate", "pipeline"):
+        try:
+            notifier.send_compliance_violation(item, compliance_violations)
+        except Exception:
+            logger.warning(
+                "batch.notify.compliance_violation_failed item_id=%s", item_id, exc_info=True
+            )
 
-def _run_operation(item: KeywordBatchItem, job_id: str) -> bool | None:
+
+def _run_operation(item: KeywordBatchItem, job_id: str) -> tuple[bool | None, list[str]]:
     """operation 별 분기 — 단일 흐름 함수 호출 + Supabase id 회수.
 
     Phase B7 — 단일 흐름의 결과 모델에서 pattern_card_id / generated_content_id 를
@@ -264,6 +274,9 @@ def _run_operation(item: KeywordBatchItem, job_id: str) -> bool | None:
 
     Phase B9 — caller (`_dispatch_item`) 가 final status 분기를 결정할 수 있도록
     `compliance_passed: bool | None` 반환 (analyze 는 None, generate/pipeline 는 결과 모델의 값).
+
+    Phase 4 PR1 — 의료법 위반 알림에 카테고리 노출을 위해 `compliance_violations`
+    도 함께 반환. analyze 는 빈 리스트.
     """
     pattern_card_id: str | None = None
     generated_content_id: str | None = None
@@ -313,7 +326,7 @@ def _run_operation(item: KeywordBatchItem, job_id: str) -> bool | None:
         generated_content_id,
         compliance_passed,
     )
-    return compliance_passed
+    return compliance_passed, compliance_violations
 
 
 def _record_item_result(
@@ -491,7 +504,9 @@ def _resolve_cluster_primary(
         time.sleep(interval)
 
 
-def _run_member_with_primary(item: KeywordBatchItem, primary: KeywordBatchItem) -> bool | None:
+def _run_member_with_primary(
+    item: KeywordBatchItem, primary: KeywordBatchItem
+) -> tuple[bool | None, list[str]]:
     """cluster member 의 operation 별 재사용 분기.
 
     analyze: 분석 단계 0회, primary.pattern_card_id 즉시 복사 → caller 가 succeeded 마킹.
@@ -499,6 +514,9 @@ def _run_member_with_primary(item: KeywordBatchItem, primary: KeywordBatchItem) 
 
     Phase B9 — caller (`_dispatch_item`) 가 final status 분기를 결정하도록
     `compliance_passed: bool | None` 반환 (analyze 는 None, generate/pipeline 는 결과 모델의 값).
+
+    Phase 4 PR1 — 의료법 위반 알림 카테고리 노출을 위해 `compliance_violations` 도
+    함께 반환.
     """
     if item.id is None or primary.pattern_card_id is None:
         # 가드 — _resolve_cluster_primary 가 통과시키지 않을 케이스지만 안전망.
@@ -517,7 +535,7 @@ def _run_member_with_primary(item: KeywordBatchItem, primary: KeywordBatchItem) 
             primary.id,
             primary.pattern_card_id,
         )
-        return None
+        return None, []
 
     pc_path = _resolve_primary_card_path(primary)
     if pc_path is None:
@@ -536,8 +554,9 @@ def _run_member_with_primary(item: KeywordBatchItem, primary: KeywordBatchItem) 
             pattern_card_id=gen_result.pattern_card_id or primary.pattern_card_id,
             generated_content_id=gen_result.generated_content_id,
             compliance_passed=gen_result.compliance_passed,
+            compliance_violations=gen_result.compliance_violations,
         )
-        return gen_result.compliance_passed
+        return gen_result.compliance_passed, gen_result.compliance_violations
     if item.operation == "pipeline":
         pipe_result: PipelineResult = orchestrator.run_pipeline(
             keyword=item.keyword, pattern_card_path=pc_path
@@ -549,8 +568,9 @@ def _run_member_with_primary(item: KeywordBatchItem, primary: KeywordBatchItem) 
             pattern_card_id=pipe_result.pattern_card_id or primary.pattern_card_id,
             generated_content_id=pipe_result.generated_content_id,
             compliance_passed=pipe_result.compliance_passed,
+            compliance_violations=pipe_result.compliance_violations,
         )
-        return pipe_result.compliance_passed
+        return pipe_result.compliance_passed, pipe_result.compliance_violations
     # pragma: no cover — Pydantic Literal 로 미리 차단
     raise ValueError(f"알 수 없는 operation: {item.operation}")
 
@@ -756,6 +776,11 @@ def dispatch_overnight_batches(*, batch_id: str | None = None) -> dict[str, int]
         dispatched_items,
         skipped_batches,
     )
+    # Phase 4 PR1 — 야간 dispatch 시작 알림 (dispatched_items==0 이면 notifier 가 noop).
+    try:
+        notifier.send_overnight_dispatched(dispatched_batches, dispatched_items)
+    except Exception:
+        logger.warning("batch.notify.overnight_dispatched_failed", exc_info=True)
     return {
         "dispatched_batches": dispatched_batches,
         "dispatched_items": dispatched_items,
@@ -877,6 +902,10 @@ def recompute_batch_status(batch_id: str) -> KeywordBatch | None:
 
     호출 시점: 마지막 item dispatch 완료 후. Phase 1 은 worker 가 자체적으로
     호출 안 하고 (race 회피), 외부 polling 또는 cron 으로 트리거.
+
+    Phase 4 PR1 — status 가 'queued/running' → 'completed' 로 전이될 때 한 번만
+    Slack 알림. 이미 'completed' 상태에서 재호출되면 알림 중복 방지를 위해 noop.
+    failed_count == total_count 면 배치 전체 실패로 간주해 즉시 알림.
     """
     batch = storage.get_batch(batch_id)
     if batch is None:
@@ -890,13 +919,30 @@ def recompute_batch_status(batch_id: str) -> KeywordBatch | None:
         new_status = "running"
     else:
         new_status = "completed"
+    previously_completed = batch.status == "completed"
     storage.update_batch_status(
         batch_id,
         new_status,  # type: ignore[arg-type]
         counters=counters,
         completed_at=datetime.now(UTC) if new_status == "completed" else None,
     )
-    return storage.get_batch(batch_id)
+    refreshed = storage.get_batch(batch_id)
+
+    # Phase 4 PR1 — completed 첫 진입 시 1회 알림.
+    if refreshed is not None and new_status == "completed" and not previously_completed:
+        try:
+            failed_total = counters.get("failed_count", 0)
+            if failed_total >= batch.total_count and batch.total_count > 0:
+                notifier.send_batch_failed(
+                    refreshed,
+                    f"all {failed_total} items failed",
+                )
+            else:
+                notifier.send_batch_completed(refreshed, counters)
+        except Exception:
+            logger.warning("batch.notify.completed_failed batch_id=%s", batch_id, exc_info=True)
+
+    return refreshed
 
 
 __all__ = [

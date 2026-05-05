@@ -271,6 +271,81 @@ class TestDispatchItem:
         assert "needs_review" in statuses
         assert "ready_to_publish" not in statuses
 
+    def test_compliance_failure_triggers_violation_notifier(self, storage_mock: Any) -> None:
+        """Phase 4 PR1 — generate/pipeline + compliance_passed=False 시 notifier 1회 호출."""
+        storage_mock.get_item.return_value = _item(operation="pipeline")
+        with (
+            patch("application.batch_orchestrator.orchestrator") as orch_mock,
+            patch("application.batch_orchestrator.notifier") as notif,
+        ):
+            orch_mock.run_pipeline.return_value = PipelineResult(
+                status=StageStatus.SUCCEEDED,
+                keyword="kw",
+                slug="kw",
+                pattern_card_id="pc-1",
+                generated_content_id="gen-1",
+                compliance_passed=False,
+                compliance_violations=["효과 과장", "1인칭 홍보"],
+            )
+            batch_orchestrator._dispatch_item("i-1")
+        notif.send_compliance_violation.assert_called_once()
+        # 위반 카테고리 인자 검증
+        categories = notif.send_compliance_violation.call_args.args[1]
+        assert "효과 과장" in categories
+        assert "1인칭 홍보" in categories
+
+    def test_compliance_passed_no_violation_notifier(self, storage_mock: Any) -> None:
+        """compliance_passed=True 면 notifier 호출 0."""
+        storage_mock.get_item.return_value = _item(operation="pipeline")
+        with (
+            patch("application.batch_orchestrator.orchestrator") as orch_mock,
+            patch("application.batch_orchestrator.notifier") as notif,
+        ):
+            orch_mock.run_pipeline.return_value = PipelineResult(
+                status=StageStatus.SUCCEEDED,
+                keyword="kw",
+                slug="kw",
+                pattern_card_id="pc-1",
+                generated_content_id="gen-1",
+                compliance_passed=True,
+            )
+            batch_orchestrator._dispatch_item("i-1")
+        notif.send_compliance_violation.assert_not_called()
+
+    def test_compliance_none_no_violation_notifier(self, storage_mock: Any) -> None:
+        """compliance_passed=None (데이터 누락) 은 알림 X — False 일 때만 알림."""
+        storage_mock.get_item.return_value = _item(operation="generate")
+        with (
+            patch("application.batch_orchestrator.orchestrator") as orch_mock,
+            patch("application.batch_orchestrator.notifier") as notif,
+        ):
+            orch_mock.run_generate_only.return_value = GenerateResult(
+                status=StageStatus.SUCCEEDED,
+                keyword="kw",
+                slug="kw",
+                pattern_card_id="pc-1",
+                generated_content_id="gen-1",
+                compliance_passed=None,
+            )
+            batch_orchestrator._dispatch_item("i-1")
+        notif.send_compliance_violation.assert_not_called()
+
+    def test_analyze_compliance_no_violation_notifier(self, storage_mock: Any) -> None:
+        """analyze 는 의료법 검증 무관 — 알림 X."""
+        storage_mock.get_item.return_value = _item(operation="analyze")
+        with (
+            patch("application.batch_orchestrator.orchestrator") as orch_mock,
+            patch("application.batch_orchestrator.notifier") as notif,
+        ):
+            orch_mock.run_analyze_only.return_value = AnalyzeResult(
+                status=StageStatus.SUCCEEDED,
+                keyword="kw",
+                slug="kw",
+                pattern_card_id="pc-1",
+            )
+            batch_orchestrator._dispatch_item("i-1")
+        notif.send_compliance_violation.assert_not_called()
+
     def test_generate_compliance_none_marks_needs_review(self, storage_mock: Any) -> None:
         """Phase B9 — generate + compliance_passed=None → needs_review (데이터 누락 안전망)."""
         storage_mock.get_item.return_value = _item(operation="generate")
@@ -435,6 +510,79 @@ class TestRecomputeBatchStatus:
         batch_orchestrator.recompute_batch_status("b-1")
         assert storage_mock.update_batch_status.call_args.args[1] == "completed"
 
+    # ── Phase 4 PR1 — 알림 hook ──
+
+    def test_completed_first_time_calls_notifier(self, storage_mock: Any) -> None:
+        """queued/running → completed 전이 시 send_batch_completed 1회 호출."""
+        storage_mock.get_batch.side_effect = [
+            _batch(id="b-1", total_count=3, status="running"),  # 호출 1: 전이 전
+            _batch(id="b-1", total_count=3, status="completed"),  # 호출 2: refreshed
+        ]
+        storage_mock.count_items_by_status.return_value = {
+            "succeeded_count": 1,
+            "failed_count": 0,
+            "skipped_count": 0,
+            "needs_review_count": 0,
+            "ready_to_publish_count": 2,
+        }
+        with patch("application.batch_orchestrator.notifier") as notif:
+            batch_orchestrator.recompute_batch_status("b-1")
+        notif.send_batch_completed.assert_called_once()
+        notif.send_batch_failed.assert_not_called()
+
+    def test_already_completed_no_double_notification(self, storage_mock: Any) -> None:
+        """이미 completed 상태에서 재호출 — 알림 스킵 (중복 방지)."""
+        storage_mock.get_batch.side_effect = [
+            _batch(id="b-1", total_count=3, status="completed"),  # 이미 completed
+            _batch(id="b-1", total_count=3, status="completed"),
+        ]
+        storage_mock.count_items_by_status.return_value = {
+            "succeeded_count": 3,
+            "failed_count": 0,
+            "skipped_count": 0,
+            "needs_review_count": 0,
+            "ready_to_publish_count": 0,
+        }
+        with patch("application.batch_orchestrator.notifier") as notif:
+            batch_orchestrator.recompute_batch_status("b-1")
+        notif.send_batch_completed.assert_not_called()
+
+    def test_all_failed_calls_send_batch_failed(self, storage_mock: Any) -> None:
+        """failed_count == total_count → send_batch_failed."""
+        storage_mock.get_batch.side_effect = [
+            _batch(id="b-1", total_count=3, status="running"),
+            _batch(id="b-1", total_count=3, status="completed"),
+        ]
+        storage_mock.count_items_by_status.return_value = {
+            "succeeded_count": 0,
+            "failed_count": 3,
+            "skipped_count": 0,
+            "needs_review_count": 0,
+            "ready_to_publish_count": 0,
+        }
+        with patch("application.batch_orchestrator.notifier") as notif:
+            batch_orchestrator.recompute_batch_status("b-1")
+        notif.send_batch_failed.assert_called_once()
+        notif.send_batch_completed.assert_not_called()
+
+    def test_notifier_failure_does_not_raise(self, storage_mock: Any) -> None:
+        """notifier.send_batch_completed 가 raise 해도 recompute 자체는 graceful."""
+        storage_mock.get_batch.side_effect = [
+            _batch(id="b-1", total_count=2, status="running"),
+            _batch(id="b-1", total_count=2, status="completed"),
+        ]
+        storage_mock.count_items_by_status.return_value = {
+            "succeeded_count": 2,
+            "failed_count": 0,
+            "skipped_count": 0,
+            "needs_review_count": 0,
+            "ready_to_publish_count": 0,
+        }
+        with patch("application.batch_orchestrator.notifier") as notif:
+            notif.send_batch_completed.side_effect = RuntimeError("slack down")
+            # 예외 raise 안 하고 정상 반환
+            batch_orchestrator.recompute_batch_status("b-1")
+
 
 class TestDispatchOvernightBatches:
     """Phase 3 PR1 — overnight batch 일괄 dispatch."""
@@ -472,8 +620,26 @@ class TestDispatchOvernightBatches:
         result = batch_orchestrator.dispatch_overnight_batches(batch_id="b-on")
         assert result["dispatched_batches"] == 1
         assert result["dispatched_items"] == 1
-        # list_batches 는 호출 안 됨 (단건 path)
-        storage_mock.list_batches.assert_not_called()
+
+    def test_overnight_dispatch_calls_notifier(self, storage_mock: Any, manager_mock: Any) -> None:
+        """Phase 4 PR1 — dispatched_items > 0 시 send_overnight_dispatched 호출."""
+        storage_mock.list_batches.return_value = [
+            _batch(id="b-on", mode="overnight", status="queued"),
+        ]
+        storage_mock.list_items.return_value = [
+            _item(id="i-1", batch_id="b-on"),
+            _item(id="i-2", batch_id="b-on"),
+        ]
+        with patch("application.batch_orchestrator.notifier") as notif:
+            batch_orchestrator.dispatch_overnight_batches()
+        notif.send_overnight_dispatched.assert_called_once_with(1, 2)
+
+    def test_overnight_dispatch_no_items_skips_notifier(self, storage_mock: Any) -> None:
+        """overnight queued batch 부재 → early return, notifier 호출 0."""
+        storage_mock.list_batches.return_value = [_batch(id="b-1", mode="now", status="queued")]
+        with patch("application.batch_orchestrator.notifier") as notif:
+            batch_orchestrator.dispatch_overnight_batches()
+        notif.send_overnight_dispatched.assert_not_called()
 
     def test_specific_batch_not_overnight_skips(self, storage_mock: Any) -> None:
         """batch_id 가 overnight/auto 가 아니면 skip."""

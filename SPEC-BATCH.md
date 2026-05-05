@@ -217,7 +217,18 @@ needs_review + review action reject                  → review_status=rejected 
 
 ---
 
-### Phase 4 (2~3일) — 알림 + publication 자동 등록 ⏸ 외부 의존 미충족
+### Phase 4 PR1 ✅ 알림 인프라 (env-driven, missing → noop) — 2026-05-05
+
+**활성**: `application/notifier.py` 신규. `SLACK_WEBHOOK_URL` env 미설정 시 모든 알림 noop. requests.post 5초 timeout, 실패 graceful (logger.warning).
+
+**hook 위치**:
+- `_dispatch_item` final status 분기: `compliance_passed=False AND operation in (generate, pipeline)` 시 `send_compliance_violation`. `slack_notify_compliance_violations=False` (default) 면 toggle off — 검수 큐가 1차 운영 도구이므로 노이즈 회피
+- `recompute_batch_status`: 'queued/running' → 'completed' 첫 전이 시 1회 알림. failed_count == total_count 면 `send_batch_failed`, 그 외 `send_batch_completed` (counters + 추정 비용)
+- `dispatch_overnight_batches`: dispatched_items > 0 시 `send_overnight_dispatched`
+
+**카테고리 전파**: `_run_operation` / `_run_member_with_primary` 의 반환을 `tuple[bool | None, list[str]]` 로 확장해 `compliance_violations` 까지 함께 전달 → 알림에 위반 카테고리 노출.
+
+### Phase 4 PR2 (2~3일) — publication 자동 등록 ⏸ 정책 결정 의존
 
 **알림 채널** (env 미설정 시 스킵):
 - `SLACK_WEBHOOK_URL` (권장)
@@ -655,4 +666,5 @@ python scripts/run_batch.py --csv keywords.csv --auto-publish    # Phase 4
 - `2026-05-05`: SPEC-BATCH **v2 정합화** — 운영 철학 §0 신설, Phase 2 상태 머신·검수 큐·UI/UX 반영, §4 schema 의 cluster_dedupe default false + compliance_violations + ready_to_publish 명시, §5 Pydantic 모델 갱신, §7 환경변수 + Phase 2 누락 항목 추가, §9 risk register 4 항목 추가 (B9~B12), §11 운영 화면 표 신설.
 - `2026-05-05`: Phase 3 PR1 — **overnight 모드 골격 + 운영자 시간대 일괄 dispatch**. mode=overnight 활성화 (NotSupportedYetError 제거). DB 저장만 + `dispatch_overnight_batches()` 트리거 진입점 (CLI `--dispatch-overnight` + API `POST /batches/dispatch-overnight`). BatchUploadForm radio 활성화 + /batches 목록 banner 일괄 dispatch 버튼. (commit `d112e0b`)
 - `2026-05-05`: Phase 3 결정 정정 — **Anthropic Batch API adapter 보류**. 운영 안정성·검수/발행 동선·사후 분석 구조가 비용 최적화보다 우선. mode=overnight 의미를 "Batch API" 가 아니라 "운영자 시간대 일괄 dispatch (일반 API 그대로)" 로 재정의. mode=auto 는 priority 라우팅. Batch API 도입은 운영 데이터 누적 + 비용/SLA 데이터 분석 후 Phase 5+ 별도 PR.
+- `2026-05-05`: Phase 4 PR1 — **알림 인프라 (Slack webhook)**. `application/notifier.py` 신규: `send_text` / `send_batch_completed` / `send_batch_failed` / `send_compliance_violation` / `send_overnight_dispatched`. webhook URL 미설정 시 모든 함수 noop, requests.post 5초 timeout + 실패 graceful (logger.warning). hook 위치: `_dispatch_item` final status 분기 (의료법 위반 단건, default OFF toggle), `recompute_batch_status` 의 completed 첫 전이 (요약 또는 전체 실패), `dispatch_overnight_batches` 의 야간 dispatch 시작. `_run_operation` / `_run_member_with_primary` 반환을 `tuple[bool | None, list[str]]` 로 확장해 위반 카테고리 전파. settings: `slack_webhook_url`, `slack_notify_compliance_violations` (default False).
 - `2026-05-05`: Phase 3 PR2 — **Worker process 분리: atomic claim + cron 시간대 게이트**. (1) `domain/batch/storage.claim_item_for_dispatch(item_id, *, job_id)` 신규 — PostgREST `eq("status","queued")` 필터로 race-safe queued→running 전환. 멀티 워커 (web process + 외부 cron) 진입 시 동일 item 중복 dispatch 차단. `_dispatch_item` 의 status check + update_item_status('running') 패턴을 atomic claim 으로 교체. (2) `scripts/run_batch.py --dispatch-overnight` 에 KST 시간대 게이트 추가 — `BATCH_OVERNIGHT_HOUR_KST` (default 22) + `BATCH_OVERNIGHT_FORCE` env. `--overnight-batch-id` 명시 또는 force 시 게이트 우회. 외부 cron 이 매시간 호출해도 활성 시간대 외에는 noop (exit 0). 테스트 +8 (claim 성공/실패 / dispatch claim_failed no-op / overnight gate 4 케이스).
