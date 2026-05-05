@@ -388,8 +388,7 @@ def review_item(batch_id: str, item_id: str, body: ReviewActionRequest) -> dict[
         raise HTTPException(
             status_code=400,
             detail=(
-                f"invalid action: {body.action!r} "
-                "(allowed: approve / needs_fix / reject / revert)"
+                f"invalid action: {body.action!r} (allowed: approve / needs_fix / reject / revert)"
             ),
         )
     try:

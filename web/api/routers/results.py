@@ -176,21 +176,45 @@ def get_image(slug: str, filename: str) -> FileResponse | RedirectResponse:
     return RedirectResponse(url=url, status_code=307)
 
 
+_RECENT_COLUMNS_WITH_KEYWORD = (
+    "slug, keyword, created_at, compliance_passed, compliance_iterations, output_path"
+)
+_RECENT_COLUMNS_FALLBACK = "slug, created_at, compliance_passed, compliance_iterations, output_path"
+
+
 @router.get("/recent", dependencies=[Depends(require_api_key)])
 def list_recent(limit: int = 50) -> list[dict]:
     """완료된 원고 목록(최신순). generated_contents 테이블 기반 — 영구 저장.
 
     - limit: 최대 1~200 (기본 50)
     - slug 가 NULL 인 레거시 행은 제외
+
+    Phase B9 hotfix — schema.sql line 215 의 `alter table generated_contents add
+    column if not exists keyword` 가 미적용된 환경에서 keyword select 가 깨지는
+    현상 graceful fallback. 컬럼 부재 시 keyword 없는 결과 반환.
     """
     limit = max(1, min(limit, 200))
+    client = get_client()
     try:
-        client = get_client()
         resp = (
             client.table("generated_contents")
-            .select(
-                "slug, keyword, created_at, compliance_passed, compliance_iterations, output_path"
-            )
+            .select(_RECENT_COLUMNS_WITH_KEYWORD)
+            .not_.is_("slug", "null")
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return resp.data or []  # type: ignore[no-any-return]
+    except Exception as exc:
+        # keyword 컬럼 부재 (schema 마이그레이션 미적용) 일 가능성 — fallback.
+        logger.warning(
+            "recent results keyword fetch failed (schema migration?) — fallback: %s",
+            exc,
+        )
+    try:
+        resp = (
+            client.table("generated_contents")
+            .select(_RECENT_COLUMNS_FALLBACK)
             .not_.is_("slug", "null")
             .order("created_at", desc=True)
             .limit(limit)
@@ -209,11 +233,21 @@ def get_slug_meta(slug: str) -> dict:
     Phase B9 fix #5 — /results/[slug] 페이지가 keyword 를 slug.replace(/-/g, ' ')
     로 추정하던 부정확함 제거. 한국어 spacing 정확한 원본 keyword 를 generated_contents
     에서 fetch.
+
+    keyword 컬럼 미적용 환경 (schema.sql ALTER 미실행) 에서는 graceful 처리 — 404
+    대신 keyword=null 로 반환해 frontend 가 slug fallback 사용.
     """
     row = _fetch_latest_row(slug, "keyword, created_at, compliance_passed, compliance_iterations")
     if row is None:
+        # keyword 컬럼 부재 가능성 — keyword 없는 컬럼으로 retry.
+        row = _fetch_latest_row(slug, "created_at, compliance_passed, compliance_iterations")
+    if row is None:
         raise HTTPException(status_code=404, detail=f"slug 메타 미존재: {slug}")
-    return {"slug": slug, **row}
+    return {
+        "slug": slug,
+        "keyword": row.get("keyword"),
+        **{k: v for k, v in row.items() if k != "keyword"},
+    }
 
 
 @router.get("/{slug}/runs", dependencies=[Depends(require_slug_access)])
