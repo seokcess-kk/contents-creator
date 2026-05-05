@@ -282,25 +282,51 @@ def _item_with_slug(item: Any) -> dict[str, Any]:
     return body
 
 
-@router.get("/{batch_id}/review")
-def list_review_queue(batch_id: str) -> dict[str, Any]:
-    """검수 큐 — `status='needs_review' AND review_status='pending'` 만.
+_REVIEW_TAB_FILTER: dict[str, dict[str, str | None]] = {
+    "pending": {"review_status": "pending", "item_status": "needs_review"},
+    "needs_fix": {"review_status": "needs_fix", "item_status": "needs_review"},
+    "approved": {"review_status": "approved", "item_status": "ready_to_publish"},
+    "rejected": {"review_status": "rejected", "item_status": "needs_review"},
+}
 
-    Phase 2 PR3 — `/batches/[id]/review` 페이지 데이터 소스. keyword_slug enrich 동일 패턴.
+
+@router.get("/{batch_id}/review")
+def list_review_queue(
+    batch_id: str,
+    tab: str = Query(default="pending"),
+) -> dict[str, Any]:
+    """검수 큐 — review_status 탭 별 조회 (Phase B9 fix #4).
+
+    tab 파라미터:
+      - pending (default): 검수 대기 (review_status=pending + status=needs_review)
+      - needs_fix: 수정 필요 마킹됨
+      - approved: 승인 완료 (status=ready_to_publish)
+      - rejected: 거부 (예외)
     """
     if not _supabase_configured():
         raise HTTPException(status_code=503, detail="Supabase 미설정")
+    spec = _REVIEW_TAB_FILTER.get(tab)
+    if spec is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"invalid tab: {tab!r} (allowed: {', '.join(_REVIEW_TAB_FILTER)})",
+        )
     try:
         batch = storage.get_batch(batch_id)
         if batch is None:
             raise HTTPException(status_code=404, detail="batch 미존재")
-        items = storage.list_review_pending_items(batch_id)
+        items = storage.list_review_pending_items(
+            batch_id,
+            review_status=spec["review_status"],
+            item_status=spec["item_status"],
+        )
     except HTTPException:
         raise
     except Exception as exc:
         raise _supabase_error_response(exc, "list_review_queue") from exc
     return {
         "batch_id": batch_id,
+        "tab": tab,
         "count": len(items),
         "items": [_item_with_slug(it) for it in items],
     }

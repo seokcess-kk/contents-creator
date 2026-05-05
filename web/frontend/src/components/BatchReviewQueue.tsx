@@ -9,6 +9,7 @@ import {
   type BatchItem,
   type BatchSummary,
   type ReviewAction,
+  type ReviewTab,
 } from "@/lib/api";
 
 interface Props {
@@ -25,6 +26,13 @@ interface LastAction {
   message: string;
 }
 
+const _TABS: { key: ReviewTab; label: string }[] = [
+  { key: "pending", label: "검수 대기" },
+  { key: "needs_fix", label: "수정 필요" },
+  { key: "approved", label: "승인됨" },
+  { key: "rejected", label: "거부됨" },
+];
+
 export default function BatchReviewQueue({ batchId }: Props) {
   const [items, setItems] = useState<BatchItem[]>([]);
   const [batch, setBatch] = useState<BatchSummary | null>(null);
@@ -33,6 +41,7 @@ export default function BatchReviewQueue({ batchId }: Props) {
   const [reviewer, setReviewer] = useState<string>("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [lastAction, setLastAction] = useState<LastAction | null>(null);
+  const [activeTab, setActiveTab] = useState<ReviewTab>("pending");
 
   // 검수자 이름 localStorage 복원/저장.
   useEffect(() => {
@@ -49,7 +58,7 @@ export default function BatchReviewQueue({ batchId }: Props) {
   const reload = useCallback(async () => {
     try {
       const [queueRes, batchRes] = await Promise.all([
-        listReviewQueue(batchId),
+        listReviewQueue(batchId, activeTab),
         getBatch(batchId).catch(() => null),
       ]);
       setItems(queueRes.items);
@@ -60,7 +69,7 @@ export default function BatchReviewQueue({ batchId }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [batchId]);
+  }, [batchId, activeTab]);
 
   useEffect(() => {
     reload();
@@ -183,10 +192,30 @@ export default function BatchReviewQueue({ batchId }: Props) {
         </div>
       )}
 
+      {/* 탭 — review_status 별 */}
+      <div className="flex items-center gap-1 border-b border-gray-200">
+        {_TABS.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => {
+              setActiveTab(t.key);
+              setSelectedIds(new Set());
+            }}
+            className={`text-xs px-3 py-1.5 font-semibold border-b-2 -mb-px ${
+              activeTab === t.key
+                ? "border-amber-600 text-amber-700"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
       <div className="bg-white rounded-lg shadow-sm ring-1 ring-gray-200 p-3">
         <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
           <h3 className="text-sm font-semibold text-gray-800">
-            검수 큐 ({items.length})
+            {_TABS.find((t) => t.key === activeTab)?.label} ({items.length})
             {readyCount > 0 && (
               <span className="ml-3 text-xs font-normal text-gray-500">
                 ·{" "}
@@ -207,13 +236,15 @@ export default function BatchReviewQueue({ batchId }: Props) {
               placeholder="검수자 (선택)"
               className="px-2 py-1 text-xs border border-gray-300 rounded w-32"
             />
-            <button
-              onClick={handleBulkApprove}
-              disabled={selectedIds.size === 0}
-              className="text-xs px-3 py-1 bg-emerald-600 text-white rounded font-semibold hover:bg-emerald-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
-            >
-              선택 일괄 승인 ({selectedIds.size})
-            </button>
+            {activeTab === "pending" && (
+              <button
+                onClick={handleBulkApprove}
+                disabled={selectedIds.size === 0}
+                className="text-xs px-3 py-1 bg-emerald-600 text-white rounded font-semibold hover:bg-emerald-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+              >
+                선택 일괄 승인 ({selectedIds.size})
+              </button>
+            )}
           </div>
         </div>
         <p className="text-[11px] text-gray-500">

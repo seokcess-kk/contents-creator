@@ -7,7 +7,11 @@ import PublicationForm from "@/components/PublicationForm";
 import PublicationLineage from "@/components/PublicationLineage";
 import PublicationStatusBadge from "@/components/PublicationStatusBadge";
 import RankingTimeline from "@/components/RankingTimeline";
-import { getLatestPublicationBySlug, type Publication } from "@/lib/api";
+import {
+  getLatestPublicationBySlug,
+  getSlugMeta,
+  type Publication,
+} from "@/lib/api";
 
 export default function ResultDetailPage({
   params,
@@ -17,6 +21,7 @@ export default function ResultDetailPage({
   const { slug: rawSlug } = use(params);
   const slug = decodeURIComponent(rawSlug);
   const [publication, setPublication] = useState<Publication | null>(null);
+  const [originalKeyword, setOriginalKeyword] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
@@ -25,8 +30,17 @@ export default function ResultDetailPage({
       .catch(() => setPublication(null));
   }, [slug, refreshKey]);
 
-  // 키워드 추정: publication 이 없으면 slug 그대로 사용
-  const inferredKeyword = publication?.keyword ?? slug.replace(/-/g, " ");
+  // Phase B9 fix #5 — generated_contents.keyword 에서 원본 키워드 fetch.
+  // slug.replace(/-/g, " ") 추정은 한국어 spacing 부정확. publication 또는 메타 우선.
+  useEffect(() => {
+    getSlugMeta(slug)
+      .then((meta) => setOriginalKeyword(meta.keyword))
+      .catch(() => setOriginalKeyword(null));
+  }, [slug]);
+
+  // 우선순위: publication.keyword > generated_contents.keyword > slug→spaces fallback.
+  const inferredKeyword =
+    publication?.keyword ?? originalKeyword ?? slug.replace(/-/g, " ");
 
   return (
     <div className="space-y-3">

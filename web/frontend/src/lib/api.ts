@@ -101,6 +101,19 @@ export function listRecentResults(limit = 50): Promise<RecentResult[]> {
   return fetchJson(`/results/recent?limit=${limit}`);
 }
 
+// Phase B9 fix #5 — slug 메타 (원본 keyword 등) 조회. PublicationForm 의 keyword
+// 정확도 보강 (slug.replace(/-/g, " ") 추정 대신 원본 keyword 사용).
+export interface SlugMeta {
+  slug: string;
+  keyword: string | null;
+  created_at: string | null;
+  compliance_passed: boolean | null;
+  compliance_iterations: number | null;
+}
+export function getSlugMeta(slug: string): Promise<SlugMeta> {
+  return fetchJson(`/results/${encodeURIComponent(slug)}/meta`);
+}
+
 // 작업 취소
 export async function cancelJob(id: string): Promise<void> {
   const res = await fetch(`${API_BASE}/jobs/${id}`, {
@@ -661,10 +674,13 @@ export function retryBatchItem(
 // "revert" 는 검수 액션 후 Undo (review_status=pending + status=needs_review 복귀).
 export type ReviewAction = "approve" | "needs_fix" | "reject" | "revert";
 
+export type ReviewTab = "pending" | "needs_fix" | "approved" | "rejected";
+
 export function listReviewQueue(
   batchId: string,
-): Promise<{ batch_id: string; count: number; items: BatchItem[] }> {
-  return fetchJson(`/batches/${batchId}/review`);
+  tab: ReviewTab = "pending",
+): Promise<{ batch_id: string; tab: string; count: number; items: BatchItem[] }> {
+  return fetchJson(`/batches/${batchId}/review?tab=${tab}`);
 }
 
 export function reviewItem(

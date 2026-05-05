@@ -188,7 +188,9 @@ def list_recent(limit: int = 50) -> list[dict]:
         client = get_client()
         resp = (
             client.table("generated_contents")
-            .select("slug, created_at, compliance_passed, compliance_iterations, output_path")
+            .select(
+                "slug, keyword, created_at, compliance_passed, compliance_iterations, output_path"
+            )
             .not_.is_("slug", "null")
             .order("created_at", desc=True)
             .limit(limit)
@@ -198,6 +200,20 @@ def list_recent(limit: int = 50) -> list[dict]:
     except Exception:
         logger.warning("recent results fetch failed", exc_info=True)
         raise HTTPException(status_code=500, detail="failed to fetch recent results") from None
+
+
+@router.get("/{slug}/meta", dependencies=[Depends(require_slug_access)])
+def get_slug_meta(slug: str) -> dict:
+    """slug 의 메타 정보 (keyword 등) 조회.
+
+    Phase B9 fix #5 — /results/[slug] 페이지가 keyword 를 slug.replace(/-/g, ' ')
+    로 추정하던 부정확함 제거. 한국어 spacing 정확한 원본 keyword 를 generated_contents
+    에서 fetch.
+    """
+    row = _fetch_latest_row(slug, "keyword, created_at, compliance_passed, compliance_iterations")
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"slug 메타 미존재: {slug}")
+    return {"slug": slug, **row}
 
 
 @router.get("/{slug}/runs", dependencies=[Depends(require_slug_access)])

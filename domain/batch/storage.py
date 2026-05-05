@@ -273,22 +273,28 @@ def update_item_review(
     get_client().table(_ITEM_TABLE).update(payload).eq("id", item_id).execute()
 
 
-def list_review_pending_items(batch_id: str, limit: int = 200) -> list[KeywordBatchItem]:
-    """검수 대기 큐 — `status='needs_review' AND review_status='pending'` 만.
+def list_review_pending_items(
+    batch_id: str,
+    limit: int = 200,
+    *,
+    review_status: str | None = "pending",
+    item_status: str | None = "needs_review",
+) -> list[KeywordBatchItem]:
+    """검수 큐 — review_status / item_status 필터 지원 (Phase B9 fix #4 확장).
 
-    PR3 검수 큐 페이지 (`/batches/[id]/review`) 의 데이터 소스.
+    탭 별 의미 (frontend BatchReviewQueue 가 호출):
+      - pending  : review_status=pending  + status=needs_review  (검수 대기, default)
+      - needs_fix: review_status=needs_fix + status=needs_review (수정 필요 마킹됨)
+      - approved : review_status=approved + status=ready_to_publish (승인됨)
+      - rejected : review_status=rejected + status=needs_review (거부 예외)
+    None 인자는 해당 필터 적용 안 함.
     """
-    result = (
-        get_client()
-        .table(_ITEM_TABLE)
-        .select("*")
-        .eq("batch_id", batch_id)
-        .eq("status", "needs_review")
-        .eq("review_status", "pending")
-        .order("created_at", desc=False)
-        .limit(limit)
-        .execute()
-    )
+    query = get_client().table(_ITEM_TABLE).select("*").eq("batch_id", batch_id)
+    if item_status is not None:
+        query = query.eq("status", item_status)
+    if review_status is not None:
+        query = query.eq("review_status", review_status)
+    result = query.order("created_at", desc=False).limit(limit).execute()
     rows = result.data or []
     return [_row_to_item(cast("dict[str, Any]", r)) for r in rows]
 

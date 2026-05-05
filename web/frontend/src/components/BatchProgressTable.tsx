@@ -101,7 +101,51 @@ export default function BatchProgressTable({ batchId }: Props) {
             </button>
           </div>
         </div>
-        <div className="grid grid-cols-7 gap-2">
+        {/* 진행률 progress bar — total 대비 종결 상태 비율 */}
+        {batch.total_count > 0 && (
+          <div className="mb-2">
+            <div className="flex items-center justify-between text-[10px] text-gray-500 mb-0.5">
+              <span>진행률</span>
+              <span>
+                {(() => {
+                  const done =
+                    (batch.ready_to_publish_count ?? 0) +
+                    batch.succeeded_count +
+                    batch.failed_count +
+                    batch.skipped_count +
+                    batch.needs_review_count;
+                  const pct = Math.round((done / batch.total_count) * 100);
+                  return `${done} / ${batch.total_count} (${pct}%)`;
+                })()}
+              </span>
+            </div>
+            <div className="w-full h-1.5 bg-gray-100 rounded overflow-hidden flex">
+              {(() => {
+                const total = batch.total_count;
+                const ready = batch.ready_to_publish_count ?? 0;
+                const review = batch.needs_review_count;
+                const succ = batch.succeeded_count;
+                const fail = batch.failed_count;
+                const skip = batch.skipped_count;
+                const segs = [
+                  { w: ready, color: "bg-green-500" },
+                  { w: review, color: "bg-amber-500" },
+                  { w: succ, color: "bg-emerald-400" },
+                  { w: fail, color: "bg-red-500" },
+                  { w: skip, color: "bg-gray-400" },
+                ];
+                return segs.map((s, i) => (
+                  <div
+                    key={i}
+                    className={s.color}
+                    style={{ width: `${(s.w / total) * 100}%` }}
+                  />
+                ));
+              })()}
+            </div>
+          </div>
+        )}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
           {counters.map((c) => (
             <div key={c.key} className="text-center">
               <div className={`text-lg font-bold ${c.color}`}>{c.value ?? "-"}</div>
@@ -157,7 +201,18 @@ export default function BatchProgressTable({ batchId }: Props) {
                     <StatusBadge status={it.status} />
                   </td>
                   <td className="py-1 text-gray-500">{it.retry_count}/{it.max_retries}</td>
-                  <td className="py-1 text-xs text-red-600 truncate max-w-[280px]">{it.error || "-"}</td>
+                  <td className="py-1 text-xs truncate max-w-[280px]">
+                    {it.error ? (
+                      it.status === "skipped" && it.error.startsWith("prefilter:") ? (
+                        // 사전 필터 사유 — 운영자에게 정상 흐름임을 색으로 시그널.
+                        <span className="text-amber-700" title={it.error}>{it.error}</span>
+                      ) : (
+                        <span className="text-red-600" title={it.error}>{it.error}</span>
+                      )
+                    ) : (
+                      "-"
+                    )}
+                  </td>
                   <td className="py-1 text-xs">
                     <ResultLinks item={it} />
                   </td>
