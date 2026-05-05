@@ -59,7 +59,11 @@ ready_to_publish → published → tracking
 ## 2. 핵심 원칙 (불변)
 
 1. **단일 흐름 100% 보존** — `application/orchestrator.py` 4 함수 시그니처 불변, 기존 CLI/웹 API 무수정 (additive only)
-2. **Dual-mode** — `now`(일반 API) / `overnight`(Anthropic Batch API) / `auto`(priority 기반 라우팅). **Phase 1~2 는 `now` 만 처리**, `overnight`·`auto` 는 DB/API 받되 `400 Not Supported Yet`
+2. **Tri-mode (Phase 3 결정 후)**:
+   - `now` — 즉시 실행 (일반 API)
+   - `overnight` — 운영자가 시간대 지정해 worker 가 일괄 dispatch. **Anthropic Batch API 아님** (일반 API 그대로, 운영자 통제권/즉시성 우선). PR1 활성
+   - `auto` — priority 라우팅 (≤3 즉시 / ≥4 overnight 보류)
+   - Anthropic Batch API adapter 는 운영 데이터 누적 후 별도 PR (Phase 5+)
 3. **자원 격리** — `JobManager`(단일 전용) ↔ `BatchJobManager`(배치 전용) 분리. BrightData 동시성은 단일 프로세스 semaphore (Phase 1~2 안전망 한정 — 멀티 워커 진입 시 Redis advisory lock 필요)
 4. **수동 우선** — 클러스터링은 사용자 입력 `cluster_id` + `cluster_role` 부터. 자동 클러스터링은 운영 데이터 누적 후
 5. **UI default = `analyze`** — 100개 full pipeline 실수 차단. `pipeline` 은 명시 선택만 가능
@@ -173,41 +177,41 @@ needs_review + review action reject                  → review_status=rejected 
 
 ---
 
-### Phase 3 (3~4일) — Anthropic Batch API adapter (LLM 독립 호출 한정) + worker process 분리 ⏸ 외부 의존 미충족
+### Phase 3 — overnight 모드 골격 + 운영자 시간대 일괄 dispatch (PR1 ✅) + worker process 분리 (PR2~ 후속)
 
-**중요** — Anthropic Batch API 는 **pipeline 전체를 대체하지 않는다**. BrightData 크롤링·Gemini 이미지·Supabase 저장·compliance flow 는 일반 흐름 유지. **LLM 독립 호출 구간만** Batch API 로 라우팅.
+**Phase 3 결정 (2026-05-05)** — **Anthropic Batch API adapter 는 운영 데이터 누적 후 별도 PR**. 명시 폐기는 아니지만, 초기 버전의 우선순위는 운영 안정성·검수/발행 동선·사후 분석 구조이며, 비용 최적화는 운영 데이터로 trade-off 판단 후 도입.
 
-**Batch API 적용 대상** (의존 없는 단발 LLM 호출):
-- 분석 단계 [4a]/[4b] 카드 추출 (키워드 N개 동시 batch 가능)
+**왜 Batch API 를 즉시 도입하지 않는가**:
+- 운영 철학 §0: 후보 키워드는 모두 발행 대상이라 시스템이 거르지 않는다 — 24h SLA 가 즉시 발행/검수 동선과 충돌
+- 의존 체인 (outline → body → compliance/fix) 은 어차피 Batch 못 함 — 적용 가능 구간이 [4a]/[4b] + 단발 검증만이라 절감폭은 **-30~40%** (전체 -50% 아님)
+- 운영 데이터 없이 비용 최적화 도입은 성급. LLM 호출 누적 비용·SLA 부담 데이터 본 후 별도 PR
+
+**현재 mode 의미 재정의 (PR1 활성)**:
+- `mode=now` — 즉시 실행 (기본). enqueue 직후 worker pool 에 submit
+- `mode=overnight` — 운영자가 지정한 시간대에 worker 가 일괄 dispatch. **Batch API 아님** (일반 API 그대로). DB 에 status=queued 로 저장만, `dispatch_overnight_batches()` 트리거 시 일괄 처리
+- `mode=auto` — priority 라우팅. priority ≤ 3 인 item 은 즉시, priority ≥ 4 는 overnight 큐에 보류
+
+**적용 가능 구간** (Anthropic Batch API 도입 시 후보, 현재는 미적용):
+- 분석 단계 [4a]/[4b] 카드 추출 (키워드 N개 동시 batch)
 - 의료법 검증 단일 프롬프트 (compliance/checker.py)
-- 톤·품질 평가 같은 후처리 단발 호출
-- 적용 시 **약 -30~40% 비용** (전체 pipeline 의 일부만 batch)
+- 톤·품질 평가 후처리 단발 호출
 
-**Batch API 적용 제외** (의존 체인):
-- outline → body → compliance/fix 순차 의존 — 한 번에 batch 못 함
+**적용 제외** (의존 체인):
+- outline → body → compliance/fix 순차 의존
 - 스트리밍이 필요한 인터랙티브 호출
-- 이 구간은 `mode="overnight"` 여도 **일반 API 그대로**
 
-**Dual-mode 라우팅** (Phase 3 활성화):
-```python
-if item.mode == "now" or (item.mode == "auto" and item.priority <= 3):
-    enqueue_immediate(item)              # 일반 API 큐
-elif item.mode == "overnight" or (item.mode == "auto" and item.priority >= 4):
-    enqueue_overnight_with_batch_api(item)  # 야간 worker + LLM 독립 호출만 batch API
-```
-
-**Worker process 분리**:
+**Worker process 분리** (Phase 3 PR2~):
 - Phase 1~2 의 `BatchJobManager` 는 web process in-memory MVP
-- Phase 3 부터 별도 worker process 또는 Render cron command 로 분리
-- 야간 시작 시간 (default 22:00 KST) 에 `mode="overnight" + status="queued"` 일괄 처리
+- 별도 worker process 또는 Render cron command 로 분리
+- 야간 시작 시간 (default 22:00 KST) 에 mode IN (overnight, auto AND priority>=4) + status=queued 일괄 처리
 
-**멀티 워커 진입 시 자원 보호**:
+**멀티 워커 진입 시 자원 보호** (Phase 3 PR3~):
 - BrightData 단일 프로세스 semaphore 한계 도달 → Redis 또는 Supabase advisory lock 으로 전역 한도 강제
 
-**외부 prerequisite**:
-- 🔑 Anthropic Batch API endpoint 사용량 분리 추적
-- 🏗️ Redis 인스턴스 (advisory lock)
-- 🚀 Render worker service 또는 cron 분리
+**Anthropic Batch API 도입 재검토 트리거** (Phase 5+ 별도 PR):
+- LLM 호출 누적 비용이 월 임계값 초과
+- 24h SLA 가 운영 흐름에 실제로 부담 안 된다는 데이터 확인
+- 운영자 통제권 vs 비용 절감 trade-off 분석
 
 ---
 
@@ -647,3 +651,5 @@ python scripts/run_batch.py --csv keywords.csv --auto-publish    # Phase 4
 - `2026-05-05`: Phase B13 — **인사이트** (`/insights`). 난이도/검색량 × Top10 진입율 + D+N 진입 비율. sample_size 0 시 graceful 안내. (commit `c53bae1`)
 - `2026-05-05`: Phase B14 — **검수 큐 위반 카테고리 tooltip**. ComplianceReport.violations → `compliance_violations: list[str]` propagation (PipelineResult/GenerateResult/KeywordBatchItem). storage update_item_result graceful (jsonb 컬럼 미적용 시 빼고 retry). schema.sql ALTER 추가. BatchReviewQueue 의 ComplianceCell 한글 카테고리 (효과 과장 / 1인칭 홍보 / ...) hover. (commit `6993d64`)
 - `2026-05-05`: SPEC-BATCH **v2 정합화** — 운영 철학 §0 신설, Phase 2 상태 머신·검수 큐·UI/UX 반영, §4 schema 의 cluster_dedupe default false + compliance_violations + ready_to_publish 명시, §5 Pydantic 모델 갱신, §7 환경변수 + Phase 2 누락 항목 추가, §9 risk register 4 항목 추가 (B9~B12), §11 운영 화면 표 신설.
+- `2026-05-05`: Phase 3 PR1 — **overnight 모드 골격 + 운영자 시간대 일괄 dispatch**. mode=overnight 활성화 (NotSupportedYetError 제거). DB 저장만 + `dispatch_overnight_batches()` 트리거 진입점 (CLI `--dispatch-overnight` + API `POST /batches/dispatch-overnight`). BatchUploadForm radio 활성화 + /batches 목록 banner 일괄 dispatch 버튼. (commit `d112e0b`)
+- `2026-05-05`: Phase 3 결정 정정 — **Anthropic Batch API adapter 보류**. 운영 안정성·검수/발행 동선·사후 분석 구조가 비용 최적화보다 우선. mode=overnight 의미를 "Batch API" 가 아니라 "운영자 시간대 일괄 dispatch (일반 API 그대로)" 로 재정의. mode=auto 는 priority 라우팅. Batch API 도입은 운영 데이터 누적 + 비용/SLA 데이터 분석 후 Phase 5+ 별도 PR.

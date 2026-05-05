@@ -18,8 +18,10 @@ export default function BatchUploadForm({ onCreated }: Props) {
   const [maxDifficulty, setMaxDifficulty] = useState<string>("");
   const [clusterDedupe, setClusterDedupe] = useState(false);
 
-  // Phase 3 PR1 — overnight 모드 활성화. auto 는 Phase 3 PR2 (priority 라우팅) 후.
-  const [mode, setMode] = useState<"now" | "overnight">("now");
+  // Phase 3 (2026-05-05) — overnight + auto 모두 활성. auto = priority 라우팅
+  // (priority<=3 즉시 실행, priority>=4 overnight 큐 보류). Anthropic Batch API 는
+  // 운영 데이터 누적 후 별도 PR (Phase 5+) 이라 overnight 의미는 "일반 API 일괄 dispatch".
+  const [mode, setMode] = useState<"now" | "overnight" | "auto">("now");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -83,7 +85,7 @@ export default function BatchUploadForm({ onCreated }: Props) {
         </div>
         <div className="col-span-5 lg:col-span-2">
           <label className="block text-xs font-semibold text-gray-700 mb-1">처리 모드</label>
-          <div className="flex items-center gap-3 text-sm">
+          <div className="flex items-center gap-3 text-sm flex-wrap">
             <label className="inline-flex items-center gap-1 cursor-pointer">
               <input
                 type="radio"
@@ -94,7 +96,7 @@ export default function BatchUploadForm({ onCreated }: Props) {
             </label>
             <label
               className="inline-flex items-center gap-1 cursor-pointer"
-              title="DB 저장만 — 야간 cron 또는 운영자가 'overnight dispatch' 트리거 시 일괄 처리"
+              title="DB 저장만 — 운영자가 'overnight dispatch' 트리거 시 일괄 처리"
             >
               <input
                 type="radio"
@@ -102,6 +104,17 @@ export default function BatchUploadForm({ onCreated }: Props) {
                 onChange={() => setMode("overnight")}
               />{" "}
               야간
+            </label>
+            <label
+              className="inline-flex items-center gap-1 cursor-pointer"
+              title="priority 라우팅 — priority≤3 은 즉시 실행, priority≥4 는 overnight 큐 보류"
+            >
+              <input
+                type="radio"
+                checked={mode === "auto"}
+                onChange={() => setMode("auto")}
+              />{" "}
+              자동 (priority)
             </label>
           </div>
         </div>

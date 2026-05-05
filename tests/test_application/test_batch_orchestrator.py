@@ -77,9 +77,24 @@ class TestEnqueueFromCsv:
         inserted = storage_mock.insert_batch.call_args.args[0]
         assert inserted.mode == "overnight"
 
-    def test_auto_mode_raises_not_supported(self, storage_mock: Any) -> None:
+    def test_auto_mode_priority_routing(self, storage_mock: Any, manager_mock: Any) -> None:
+        """Phase 3 (2026-05-05) — mode='auto' 활성화: priority<=3 즉시, >=4 overnight 보류."""
+        storage_mock.insert_batch.return_value = _batch(id="b-auto")
+        storage_mock.insert_items.return_value = [
+            _item(id="i-prio2", batch_id="b-auto", priority=2),  # 즉시
+            _item(id="i-prio5", batch_id="b-auto", priority=5),  # 보류
+            _item(id="i-prio7", batch_id="b-auto", priority=7),  # 보류
+        ]
+        batch_orchestrator.enqueue_from_csv("keyword\nkw\n", mode="auto")
+        # priority<=3 인 1건만 submit
+        submitted_ids = [
+            c.args[1] for c in manager_mock.get_default_manager.return_value.submit.call_args_list
+        ]
+        assert submitted_ids == ["i-prio2"]
+
+    def test_unknown_mode_raises_not_supported(self, storage_mock: Any) -> None:
         with pytest.raises(NotSupportedYetError):
-            batch_orchestrator.enqueue_from_csv("keyword\nkw\n", mode="auto")
+            batch_orchestrator.enqueue_from_csv("keyword\nkw\n", mode="weekly")
 
     def test_creates_batch_and_items(self, storage_mock: Any, manager_mock: Any) -> None:
         storage_mock.insert_batch.return_value = _batch(id="b-new")
@@ -439,10 +454,23 @@ class TestDispatchOvernightBatches:
         storage_mock.list_batches.assert_not_called()
 
     def test_specific_batch_not_overnight_skips(self, storage_mock: Any) -> None:
-        """batch_id 가 overnight 가 아니면 skip."""
+        """batch_id 가 overnight/auto 가 아니면 skip."""
         storage_mock.get_batch.return_value = _batch(id="b-now", mode="now", status="queued")
         result = batch_orchestrator.dispatch_overnight_batches(batch_id="b-now")
         assert result["dispatched_batches"] == 0
+
+    def test_auto_mode_batch_dispatched(self, storage_mock: Any, manager_mock: Any) -> None:
+        """Phase 3 — mode=auto batch 도 dispatch_overnight 가 처리. priority 라우팅으로
+        보류된 priority>=4 item 들이 일괄 실행."""
+        storage_mock.list_batches.return_value = [
+            _batch(id="b-auto", mode="auto", status="queued"),
+        ]
+        storage_mock.list_items.return_value = [
+            _item(id="i-prio5", batch_id="b-auto", priority=5),
+        ]
+        result = batch_orchestrator.dispatch_overnight_batches()
+        assert result["dispatched_batches"] == 1
+        assert result["dispatched_items"] == 1
 
 
 class TestBackfillUnlinkedItems:

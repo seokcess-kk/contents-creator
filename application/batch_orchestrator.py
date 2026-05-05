@@ -77,22 +77,23 @@ def enqueue_from_csv(
         cluster_dedupe: 같은 cluster_id 의 primary→member PatternCard 재사용 활성.
             **default False** (본문 유사도로 인한 1페이지 노출 리스크 방지).
 
-    Phase 3 PR1 — mode 'overnight' 활성화:
-        - mode='now': 즉시 dispatch (auto_dispatch=True 시)
-        - mode='overnight': DB 저장만, dispatch 보류. 운영자/cron 이
-          `dispatch_overnight_batches()` 호출 시 일괄 처리.
-        - mode='auto': overnight 와 동일 (Phase 3 PR2 의 priority 라우팅 후 활성화)
+    Phase 3 결정 (2026-05-05) — mode 의미 재정의:
+        - mode='now': 즉시 dispatch (auto_dispatch=True 시 즉시 worker submit)
+        - mode='overnight': DB 저장만, dispatch 보류. **Anthropic Batch API 아님**.
+          운영자/cron 이 `dispatch_overnight_batches()` 호출 시 일괄 처리.
+        - mode='auto': priority 라우팅. priority<=3 인 item 만 즉시 submit, priority>=4 는
+          overnight 큐에 보류. dispatch_overnight 시 함께 처리됨.
+
+    Anthropic Batch API adapter 는 운영 데이터 누적 후 별도 PR (Phase 5+).
 
     Raises:
-        NotSupportedYetError: mode 가 'auto' 일 때 (Phase 3 PR2 후 활성).
+        NotSupportedYetError: mode 가 알려지지 않은 값.
         ValueError: CSV 형식 오류 (헤더 누락 등) — API 가 400 으로 변환.
     """
-    if mode == "auto":
+    if mode not in ("now", "overnight", "auto"):
         raise NotSupportedYetError(
-            f"mode='auto' 는 Phase 3 PR2 (priority 기반 라우팅) 후 활성. (요청: {mode!r})"
+            f"지원되지 않는 mode: {mode!r} (allowed: now / overnight / auto)"
         )
-    if mode not in ("now", "overnight"):
-        raise NotSupportedYetError(f"지원되지 않는 mode: {mode!r} (allowed: now / overnight)")
 
     parsed_items, skipped, failed = csv_parser.parse_csv(
         csv_text, batch_id="pending", default_mode=mode
@@ -116,13 +117,18 @@ def enqueue_from_csv(
 
     inserted_items = storage.insert_items(parsed_items)
 
-    # Phase 3 PR1 — overnight 모드는 즉시 dispatch 안 함. 야간 cron 또는 운영자
-    # 명시 호출 (`dispatch_overnight_batches`) 시 일괄 처리.
-    if auto_dispatch and inserted_items and mode == "now":
+    # Phase 3 (2026-05-05) — mode 별 dispatch 정책:
+    #   now: 모든 item 즉시 submit
+    #   overnight: 즉시 submit 안 함 (운영자 시간대에 일괄 처리)
+    #   auto: priority<=3 만 즉시 submit, 나머지는 overnight 큐에 보류
+    if auto_dispatch and inserted_items and mode != "overnight":
         manager = batch_job_manager.get_default_manager()
         for it in inserted_items:
-            if it.id is not None:
-                manager.submit(_dispatch_item_safely, it.id)
+            if it.id is None:
+                continue
+            if mode == "auto" and it.priority >= 4:
+                continue  # overnight 보류 — dispatch_overnight_batches() 가 처리
+            manager.submit(_dispatch_item_safely, it.id)
 
     logger.info(
         "batch.enqueued batch_id=%s total=%d created=%d skipped=%d failed=%d "
@@ -754,16 +760,31 @@ def dispatch_overnight_batches(*, batch_id: str | None = None) -> dict[str, int]
     }
 
 
+_DISPATCH_OVERNIGHT_MODES = frozenset({"overnight", "auto"})
+
+
 def _list_overnight_queued_batches(*, batch_id: str | None = None) -> list[KeywordBatch]:
-    """overnight + queued batch 목록. batch_id 지정 시 단건만."""
+    """overnight 또는 auto + queued/running batch 목록. batch_id 지정 시 단건만.
+
+    Phase 3 결정 (2026-05-05) — mode=auto 도 함께 처리. auto 의 priority>=4 인 item 이
+    enqueue 시 보류된 상태로 status=queued 로 남아 있음. dispatch_overnight 트리거 시
+    같이 처리. batch.status 는 queued/running 둘 다 (auto 의 priority<=3 이 즉시 실행되며
+    batch 가 running 으로 전이된 경우 포함).
+    """
     if batch_id is not None:
         b = storage.get_batch(batch_id)
-        if b is None or b.mode != "overnight" or b.status != "queued":
+        if b is None or b.mode not in _DISPATCH_OVERNIGHT_MODES:
+            return []
+        if b.status not in ("queued", "running"):
             return []
         return [b]
     # 전체 — list_batches 후 필터.
     all_batches = storage.list_batches(limit=200)
-    return [b for b in all_batches if b.mode == "overnight" and b.status == "queued"]
+    return [
+        b
+        for b in all_batches
+        if b.mode in _DISPATCH_OVERNIGHT_MODES and b.status in ("queued", "running")
+    ]
 
 
 def backfill_unlinked_items(batch_id: str) -> dict[str, int]:
