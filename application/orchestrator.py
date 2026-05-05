@@ -456,6 +456,8 @@ def _run_generation_stages(
         images_skipped=img_skip,
         compliance_passed=compliance.passed,
         compliance_iterations=compliance.iterations,
+        # Phase B14 — 검수 큐 tooltip 위해 위반된 카테고리 list 노출.
+        compliance_violations=[v.category for v in compliance.violations],
         # Phase B7 — Supabase 회수 id (Supabase 미설정/실패 시 None).
         pattern_card_id=compose_result.pattern_card_id,
         generated_content_id=compose_result.generated_content_id,
@@ -672,6 +674,8 @@ def run_pipeline(
         generated_content_id=gen_result.generated_content_id,
         # Phase B9 — batch 검수 큐 분기 위해 compliance_passed 도 PipelineResult 에 노출.
         compliance_passed=gen_result.compliance_passed,
+        # Phase B14 — 검수 큐 tooltip.
+        compliance_violations=gen_result.compliance_violations,
         error=error,
     )
 

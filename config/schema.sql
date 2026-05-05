@@ -221,6 +221,10 @@ alter table generated_contents
 create index if not exists idx_generated_contents_publication
     on generated_contents (publication_id, created_at desc);
 
+-- Phase B14 (2026-05-05) — 검수 큐 tooltip 용 위반 카테고리 리스트.
+alter table keyword_batch_items
+    add column if not exists compliance_violations jsonb default '[]'::jsonb;
+
 
 -- ============================================================
 -- ranking_snapshots — 네이버 SERP 순위 시계열 (append-only)

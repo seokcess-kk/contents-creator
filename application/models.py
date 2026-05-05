@@ -46,6 +46,8 @@ class PipelineResult(BaseModel):
     generated_content_id: str | None = None
     # SPEC-BATCH Phase 2 PR3 — batch 검수 큐 분기 (compliance_passed=False 자동 needs_review).
     compliance_passed: bool | None = None
+    # Phase B14 — 검수 큐 tooltip 용. 위반된 카테고리 리스트 (list[str]). 빈 list 면 위반 없음.
+    compliance_violations: list[str] = Field(default_factory=list)
     error: str | None = None
 
 
@@ -77,6 +79,8 @@ class GenerateResult(BaseModel):
     images_skipped: int = 0
     compliance_passed: bool | None = None
     compliance_iterations: int | None = None
+    # Phase B14 — 위반된 카테고리 리스트. 빈 list 면 위반 없음.
+    compliance_violations: list[str] = Field(default_factory=list)
     # SPEC-BATCH Phase 2 PR1 — Supabase 회수 id. 미설정/실패 시 None.
     pattern_card_id: str | None = None
     generated_content_id: str | None = None

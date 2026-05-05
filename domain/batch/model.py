@@ -92,6 +92,8 @@ class KeywordBatchItem(BaseModel):
     generated_content_id: str | None = None
     quality_score: float | None = None
     compliance_passed: bool | None = None
+    # Phase B14 — 위반된 의료법 카테고리 리스트 (검수 큐 tooltip). DB jsonb 컬럼.
+    compliance_violations: list[str] = Field(default_factory=list)
 
     # 검수 (Phase 2)
     review_status: ReviewStatus = "pending"

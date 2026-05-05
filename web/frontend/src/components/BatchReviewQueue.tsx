@@ -297,13 +297,7 @@ export default function BatchReviewQueue({ batchId }: Props) {
                   </td>
                   <td className="py-1 text-gray-700">{it.difficulty_grade ?? "-"}</td>
                   <td className="py-1 text-xs">
-                    {it.compliance_passed === true ? (
-                      <span className="text-emerald-700">통과</span>
-                    ) : it.compliance_passed === false ? (
-                      <span className="text-red-700">위반</span>
-                    ) : (
-                      <span className="text-gray-400">미실행</span>
-                    )}
+                    <ComplianceCell item={it} />
                   </td>
                   <td className="py-1 text-xs">
                     <ResultLink item={it} />
@@ -349,6 +343,43 @@ function actionLabel(action: ReviewAction): string {
     case "revert":
       return "복원";
   }
+}
+
+// 의료법 카테고리 한글 라벨 (rules.py 의 ViolationCategory enum 매핑 — frontend mirror).
+const _VIOLATION_LABELS: Record<string, string> = {
+  exaggerated_efficacy: "효과 과장",
+  comparative_superiority: "비교 우위",
+  before_after_photo_implication: "전후 비교",
+  testimonial_imitation: "체험담",
+  first_person_promotion: "1인칭 홍보",
+  guarantee_claim: "보장 표현",
+  pricing_misleading: "가격 오인",
+  unverified_specialty: "검증 안 된 전문성",
+  no_side_effects_claim: "부작용 없음",
+  price_discount_hype: "할인 과장",
+};
+
+function ComplianceCell({ item }: { item: BatchItem }) {
+  if (item.compliance_passed === true) {
+    return <span className="text-emerald-700">통과</span>;
+  }
+  if (item.compliance_passed === false) {
+    const violations = item.compliance_violations || [];
+    if (violations.length === 0) {
+      return <span className="text-red-700">위반</span>;
+    }
+    const labels = violations.map((v) => _VIOLATION_LABELS[v] ?? v);
+    const tooltip = labels.join(" / ");
+    return (
+      <span
+        className="text-red-700 cursor-help underline decoration-dotted"
+        title={`위반 카테고리: ${tooltip}`}
+      >
+        위반 ({violations.length})
+      </span>
+    );
+  }
+  return <span className="text-gray-400">미실행</span>;
 }
 
 function ResultLink({ item }: { item: BatchItem }) {

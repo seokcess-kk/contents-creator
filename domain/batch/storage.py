@@ -111,6 +111,7 @@ def update_item_result(
     quality_score: float | None = None,
     search_volume: int | None = None,
     difficulty_grade: str | None = None,
+    compliance_violations: list[str] | None = None,
 ) -> None:
     """item 결과 메타 partial update. 모든 인자 None 이면 noop (Supabase 호출 0).
 
@@ -120,6 +121,10 @@ def update_item_result(
 
     PR2 추가 — `search_volume`/`difficulty_grade` 는 사전 필터 결과 메타 (통과·미달
     무관하게 저장되어 검수 큐에서 운영자가 확인).
+
+    Phase B14 추가 — `compliance_violations` 는 위반된 의료법 카테고리 리스트
+    (검수 큐 tooltip 용). DB jsonb 컬럼이 미적용 환경에서는 graceful 처리 — Supabase
+    오류 시 violations 만 빼고 retry.
     """
     payload: dict[str, Any] = {}
     if pattern_card_id is not None:
@@ -134,9 +139,24 @@ def update_item_result(
         payload["search_volume"] = search_volume
     if difficulty_grade is not None:
         payload["difficulty_grade"] = difficulty_grade
+    if compliance_violations is not None:
+        payload["compliance_violations"] = compliance_violations
     if not payload:
         return
-    get_client().table(_ITEM_TABLE).update(payload).eq("id", item_id).execute()
+    try:
+        get_client().table(_ITEM_TABLE).update(payload).eq("id", item_id).execute()
+    except Exception as exc:
+        # Phase B14 — compliance_violations 컬럼 미적용 환경 graceful: 빼고 retry.
+        if "compliance_violations" in payload:
+            logger.warning(
+                "batch.update_item_result.violations_column_missing item_id=%s — fallback",
+                item_id,
+            )
+            del payload["compliance_violations"]
+            if payload:
+                get_client().table(_ITEM_TABLE).update(payload).eq("id", item_id).execute()
+            return
+        raise exc
 
 
 def find_primary_in_cluster(batch_id: str, cluster_id: str) -> KeywordBatchItem | None:
@@ -566,6 +586,7 @@ def _row_to_item(row: dict[str, Any]) -> KeywordBatchItem:
         generated_content_id=row.get("generated_content_id"),
         quality_score=row.get("quality_score"),
         compliance_passed=row.get("compliance_passed"),
+        compliance_violations=row.get("compliance_violations") or [],
         review_status=row.get("review_status") or "pending",
         reviewer=row.get("reviewer"),
         reviewed_at=row.get("reviewed_at"),

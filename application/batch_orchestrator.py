@@ -249,6 +249,7 @@ def _run_operation(item: KeywordBatchItem, job_id: str) -> bool | None:
     pattern_card_id: str | None = None
     generated_content_id: str | None = None
     compliance_passed: bool | None = None
+    compliance_violations: list[str] = []
 
     if item.operation == "analyze":
         analyze_result: AnalyzeResult = orchestrator.run_analyze_only(item.keyword)
@@ -262,6 +263,7 @@ def _run_operation(item: KeywordBatchItem, job_id: str) -> bool | None:
         pattern_card_id = result.pattern_card_id
         generated_content_id = result.generated_content_id
         compliance_passed = result.compliance_passed
+        compliance_violations = result.compliance_violations
     elif item.operation == "pipeline":
         pipeline_result: PipelineResult = orchestrator.run_pipeline(item.keyword)
         if pipeline_result.status == "failed":
@@ -269,6 +271,7 @@ def _run_operation(item: KeywordBatchItem, job_id: str) -> bool | None:
         pattern_card_id = pipeline_result.pattern_card_id
         generated_content_id = pipeline_result.generated_content_id
         compliance_passed = pipeline_result.compliance_passed
+        compliance_violations = pipeline_result.compliance_violations
     else:  # pragma: no cover — Pydantic Literal 로 미리 차단
         raise ValueError(f"알 수 없는 operation: {item.operation}")
 
@@ -278,6 +281,7 @@ def _run_operation(item: KeywordBatchItem, job_id: str) -> bool | None:
             pattern_card_id=pattern_card_id,
             generated_content_id=generated_content_id,
             compliance_passed=compliance_passed,
+            compliance_violations=compliance_violations,
         )
 
     # job_id 는 logger 식별용 (current_job_id() 와는 별개 — single-flow 의 job_context 영향 X)
@@ -299,12 +303,18 @@ def _record_item_result(
     pattern_card_id: str | None,
     generated_content_id: str | None,
     compliance_passed: bool | None,
+    compliance_violations: list[str] | None = None,
 ) -> None:
     """결과 메타 graceful update. 모든 인자 None 이면 호출 자체 스킵.
 
     Supabase 미설정/실패 시 logger.warning + 무시 — succeeded 마킹은 차단되지 않음.
     """
-    if pattern_card_id is None and generated_content_id is None and compliance_passed is None:
+    if (
+        pattern_card_id is None
+        and generated_content_id is None
+        and compliance_passed is None
+        and not compliance_violations
+    ):
         return
     try:
         storage.update_item_result(
@@ -312,6 +322,7 @@ def _record_item_result(
             pattern_card_id=pattern_card_id,
             generated_content_id=generated_content_id,
             compliance_passed=compliance_passed,
+            compliance_violations=compliance_violations,
         )
     except Exception as exc:
         logger.warning(

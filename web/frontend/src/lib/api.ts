@@ -585,6 +585,8 @@ export interface BatchItem {
   generated_content_id: string | null;
   quality_score: number | null;
   compliance_passed: boolean | null;
+  // Phase B14 — 위반된 의료법 카테고리 리스트 (검수 큐 tooltip).
+  compliance_violations: string[];
   review_status: string;
   publication_id: string | null;
   started_at: string | null;
