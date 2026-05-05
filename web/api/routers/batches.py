@@ -317,6 +317,8 @@ _REVIEW_ACTION_MAP: dict[str, dict[str, Any]] = {
     "approve": {"review_status": "approved", "status": "ready_to_publish"},
     "needs_fix": {"review_status": "needs_fix", "status": None},
     "reject": {"review_status": "rejected", "status": None},
+    # Phase B9 fix — Undo: 검수 액션 후 5초 내 실행 취소. 검수 큐로 복귀.
+    "revert": {"review_status": "pending", "status": "needs_review"},
 }
 
 
@@ -333,7 +335,10 @@ def review_item(batch_id: str, item_id: str, body: ReviewActionRequest) -> dict[
     if spec is None:
         raise HTTPException(
             status_code=400,
-            detail=f"invalid action: {body.action!r} (allowed: approve / needs_fix / reject)",
+            detail=(
+                f"invalid action: {body.action!r} "
+                "(allowed: approve / needs_fix / reject / revert)"
+            ),
         )
     try:
         item = storage.get_item(item_id)

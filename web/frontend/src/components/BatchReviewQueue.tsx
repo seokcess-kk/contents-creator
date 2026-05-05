@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  getBatch,
   listReviewQueue,
   reviewItem,
   type BatchItem,
+  type BatchSummary,
   type ReviewAction,
 } from "@/lib/api";
 
@@ -14,17 +16,44 @@ interface Props {
 }
 
 const POLL_INTERVAL_MS = 5000;
+const REVIEWER_STORAGE_KEY = "review_reviewer";
+const TOAST_TTL_MS = 5000;
+
+interface LastAction {
+  itemIds: string[];
+  action: ReviewAction;
+  message: string;
+}
 
 export default function BatchReviewQueue({ batchId }: Props) {
   const [items, setItems] = useState<BatchItem[]>([]);
+  const [batch, setBatch] = useState<BatchSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reviewer, setReviewer] = useState<string>("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [lastAction, setLastAction] = useState<LastAction | null>(null);
+
+  // 검수자 이름 localStorage 복원/저장.
+  useEffect(() => {
+    const saved = typeof window !== "undefined" ? window.localStorage.getItem(REVIEWER_STORAGE_KEY) : null;
+    if (saved) setReviewer(saved);
+  }, []);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (reviewer.trim()) {
+      window.localStorage.setItem(REVIEWER_STORAGE_KEY, reviewer.trim());
+    }
+  }, [reviewer]);
 
   const reload = useCallback(async () => {
     try {
-      const res = await listReviewQueue(batchId);
-      setItems(res.items);
+      const [queueRes, batchRes] = await Promise.all([
+        listReviewQueue(batchId),
+        getBatch(batchId).catch(() => null),
+      ]);
+      setItems(queueRes.items);
+      if (batchRes) setBatch(batchRes);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -39,35 +68,157 @@ export default function BatchReviewQueue({ batchId }: Props) {
     return () => clearInterval(id);
   }, [reload]);
 
+  // toast 자동 fade (5초).
+  useEffect(() => {
+    if (!lastAction) return;
+    const timer = setTimeout(() => setLastAction(null), TOAST_TTL_MS);
+    return () => clearTimeout(timer);
+  }, [lastAction]);
+
+  // selectedIds 정합성 — 새로 fetch 한 items 에 없는 id 자동 제거.
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      const valid = new Set(items.map((it) => it.id));
+      const next = new Set([...prev].filter((id) => valid.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [items]);
+
+  const allSelected = items.length > 0 && selectedIds.size === items.length;
+  const someSelected = selectedIds.size > 0 && selectedIds.size < items.length;
+
+  function toggleAll() {
+    if (allSelected || someSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(items.map((it) => it.id)));
+    }
+  }
+  function toggleOne(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   async function handleAction(itemId: string, action: ReviewAction) {
     try {
       await reviewItem(batchId, itemId, action, reviewer.trim() || undefined);
+      setLastAction({
+        itemIds: [itemId],
+        action,
+        message: `1건 ${actionLabel(action)} 완료`,
+      });
       reload();
     } catch (err) {
       alert(err instanceof Error ? err.message : String(err));
     }
   }
 
+  async function handleBulkApprove() {
+    if (selectedIds.size === 0) return;
+    const ids = Array.from(selectedIds);
+    if (!confirm(`선택한 ${ids.length}건을 일괄 승인하시겠습니까?`)) return;
+
+    let success = 0;
+    let failed = 0;
+    for (const id of ids) {
+      try {
+        await reviewItem(batchId, id, "approve", reviewer.trim() || undefined);
+        success += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    setSelectedIds(new Set());
+    setLastAction({
+      itemIds: ids.slice(0, success),
+      action: "approve",
+      message: failed > 0 ? `${success}건 승인 / ${failed}건 실패` : `${success}건 일괄 승인 완료`,
+    });
+    reload();
+  }
+
+  async function handleUndo() {
+    if (!lastAction) return;
+    const ids = lastAction.itemIds;
+    for (const id of ids) {
+      try {
+        await reviewItem(batchId, id, "revert", reviewer.trim() || undefined);
+      } catch {
+        // 개별 실패 무시 — 일부라도 복원되면 reload 시 반영
+      }
+    }
+    setLastAction(null);
+    reload();
+  }
+
+  const readyCount = batch?.ready_to_publish_count ?? 0;
+  const headerColumnCount = useMemo(() => 8, []); // 체크박스 + 7
+
   if (loading) return <div className="text-sm text-gray-600 py-6">로딩 중...</div>;
   if (error) return <div className="text-sm text-red-600 py-6">{error}</div>;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 relative">
+      {/* Toast */}
+      {lastAction && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-gray-900 text-white text-xs rounded-full shadow-lg px-4 py-2 flex items-center gap-3">
+          <span>{lastAction.message}</span>
+          <button
+            onClick={handleUndo}
+            className="text-amber-300 hover:text-amber-200 font-semibold"
+          >
+            실행 취소
+          </button>
+          <button
+            onClick={() => setLastAction(null)}
+            className="text-gray-400 hover:text-white"
+            aria-label="close"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       <div className="bg-white rounded-lg shadow-sm ring-1 ring-gray-200 p-3">
         <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
           <h3 className="text-sm font-semibold text-gray-800">
             검수 큐 ({items.length})
+            {readyCount > 0 && (
+              <span className="ml-3 text-xs font-normal text-gray-500">
+                ·{" "}
+                <Link
+                  href={`/batches/${batchId}`}
+                  className="text-green-700 hover:underline"
+                >
+                  발행 준비 ({readyCount})
+                </Link>
+              </span>
+            )}
           </h3>
-          <input
-            type="text"
-            value={reviewer}
-            onChange={(e) => setReviewer(e.target.value)}
-            placeholder="검수자 (선택)"
-            className="px-2 py-1 text-xs border border-gray-300 rounded w-40"
-          />
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={reviewer}
+              onChange={(e) => setReviewer(e.target.value)}
+              placeholder="검수자 (선택)"
+              className="px-2 py-1 text-xs border border-gray-300 rounded w-32"
+            />
+            <button
+              onClick={handleBulkApprove}
+              disabled={selectedIds.size === 0}
+              className="text-xs px-3 py-1 bg-emerald-600 text-white rounded font-semibold hover:bg-emerald-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+            >
+              선택 일괄 승인 ({selectedIds.size})
+            </button>
+          </div>
         </div>
         <p className="text-[11px] text-gray-500">
           핵심 액션은 <strong>승인</strong> / <strong>수정 필요</strong>. 거부는 예외 상태이므로 더보기 메뉴에서 선택할 수 있습니다.
+          승인 후 5초 내 토스트의 "실행 취소" 로 되돌릴 수 있습니다.
         </p>
       </div>
 
@@ -76,6 +227,18 @@ export default function BatchReviewQueue({ batchId }: Props) {
           <table className="w-full text-sm">
             <thead className="text-xs text-gray-600 border-b border-gray-200 sticky top-0 bg-white">
               <tr>
+                <th className="text-left py-1 w-8">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = someSelected;
+                    }}
+                    onChange={toggleAll}
+                    aria-label="전체 선택"
+                    disabled={items.length === 0}
+                  />
+                </th>
                 <th className="text-left py-1">키워드</th>
                 <th className="text-left py-1">operation</th>
                 <th className="text-left py-1">검색량</th>
@@ -87,7 +250,15 @@ export default function BatchReviewQueue({ batchId }: Props) {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {items.map((it) => (
-                <tr key={it.id}>
+                <tr key={it.id} className={selectedIds.has(it.id) ? "bg-emerald-50" : ""}>
+                  <td className="py-1">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(it.id)}
+                      onChange={() => toggleOne(it.id)}
+                      aria-label={`${it.keyword} 선택`}
+                    />
+                  </td>
                   <td className="py-1 font-medium text-gray-800">{it.keyword}</td>
                   <td className="py-1 text-gray-700">{it.operation}</td>
                   <td className="py-1 text-gray-700">
@@ -113,8 +284,18 @@ export default function BatchReviewQueue({ batchId }: Props) {
               ))}
               {items.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="text-center text-gray-500 py-6">
-                    검수 대기 항목 없음
+                  <td colSpan={headerColumnCount} className="text-center text-gray-500 py-6">
+                    <div className="space-y-2">
+                      <div>검수 대기 항목 없음 — 모두 처리됨</div>
+                      {readyCount > 0 && (
+                        <Link
+                          href={`/batches/${batchId}`}
+                          className="text-sm text-green-700 hover:underline font-semibold"
+                        >
+                          → 발행 준비 ({readyCount}) 보러가기
+                        </Link>
+                      )}
+                    </div>
                   </td>
                 </tr>
               )}
@@ -124,6 +305,19 @@ export default function BatchReviewQueue({ batchId }: Props) {
       </div>
     </div>
   );
+}
+
+function actionLabel(action: ReviewAction): string {
+  switch (action) {
+    case "approve":
+      return "승인";
+    case "needs_fix":
+      return "수정 필요";
+    case "reject":
+      return "거부";
+    case "revert":
+      return "복원";
+  }
 }
 
 function ResultLink({ item }: { item: BatchItem }) {

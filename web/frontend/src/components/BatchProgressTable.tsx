@@ -203,6 +203,23 @@ function ResultLinks({ item }: { item: BatchItem }) {
     ? "FK 회수 실패 — Supabase 저장 미동작 가능"
     : undefined;
 
+  // status 별 강조 라벨 — 운영자가 다음 행동을 즉시 인식하도록.
+  // ready_to_publish: 발행 준비 (URL 등록이 다음 단계, 강조 색)
+  // needs_review: 검수 필요 (의료법 위반 / compliance 미실행, 보조 색)
+  // 그 외 terminal: 결과 보기 (중립 색)
+  const resultLabel =
+    item.status === "ready_to_publish"
+      ? "→ 발행 준비"
+      : item.status === "needs_review"
+      ? "→ 검수"
+      : "→ 결과";
+  const resultClass =
+    item.status === "ready_to_publish"
+      ? "text-green-700 hover:underline font-semibold"
+      : item.status === "needs_review"
+      ? "text-amber-700 hover:underline"
+      : "text-blue-700 hover:underline";
+
   if (showPattern) {
     if (item.pattern_card_id) {
       links.push(
@@ -229,9 +246,9 @@ function ResultLinks({ item }: { item: BatchItem }) {
         <Link
           key="result"
           href={`/results/${encodeURIComponent(item.keyword_slug)}`}
-          className="text-blue-700 hover:underline"
+          className={resultClass}
         >
-          → 결과
+          {resultLabel}
         </Link>,
       );
     } else {

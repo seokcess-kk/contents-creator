@@ -658,7 +658,8 @@ export function retryBatchItem(
 
 // ── 검수 큐 (Phase B9 PR3) ──
 
-export type ReviewAction = "approve" | "needs_fix" | "reject";
+// "revert" 는 검수 액션 후 Undo (review_status=pending + status=needs_review 복귀).
+export type ReviewAction = "approve" | "needs_fix" | "reject" | "revert";
 
 export function listReviewQueue(
   batchId: string,

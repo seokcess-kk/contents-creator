@@ -89,8 +89,22 @@ export default function BatchesPage() {
                       <BatchStatusBadge status={b.status} />
                     </td>
                     <td className="py-1.5 text-right text-gray-800">{b.total_count}</td>
-                    <td className="py-1.5 text-right text-green-700">{b.ready_to_publish_count ?? 0}</td>
-                    <td className="py-1.5 text-right text-amber-700">{b.needs_review_count}</td>
+                    <td className="py-1.5 text-right text-green-700 font-semibold">
+                      {b.ready_to_publish_count ?? 0}
+                    </td>
+                    <td className="py-1.5 text-right">
+                      {b.needs_review_count > 0 ? (
+                        <Link
+                          href={`/batches/${b.id}/review`}
+                          className="text-amber-700 hover:underline font-semibold"
+                          title="검수 큐로 이동"
+                        >
+                          {b.needs_review_count}
+                        </Link>
+                      ) : (
+                        <span className="text-gray-400">0</span>
+                      )}
+                    </td>
                     <td className="py-1.5 text-right text-emerald-600">{b.succeeded_count}</td>
                     <td className="py-1.5 text-right text-red-700">{b.failed_count}</td>
                     <td className="py-1.5 text-right text-gray-500">{b.skipped_count}</td>
