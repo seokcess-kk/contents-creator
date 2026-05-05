@@ -67,6 +67,7 @@ def enqueue_from_csv(
     min_search_volume: int | None = None,
     max_difficulty: str | None = None,
     cluster_dedupe: bool = False,
+    auto_publish_enabled: bool = False,
 ) -> BatchEnqueueResult:
     """CSV 텍스트 → batch + items insert. 검증 + 중복 분류.
 
@@ -106,6 +107,7 @@ def enqueue_from_csv(
         min_search_volume=min_search_volume,
         max_difficulty=max_difficulty,
         cluster_dedupe=cluster_dedupe,
+        auto_publish_enabled=auto_publish_enabled,
     )
     inserted_batch = storage.insert_batch(batch)
     if inserted_batch.id is None:
@@ -941,6 +943,17 @@ def recompute_batch_status(batch_id: str) -> KeywordBatch | None:
                 notifier.send_batch_completed(refreshed, counters)
         except Exception:
             logger.warning("batch.notify.completed_failed batch_id=%s", batch_id, exc_info=True)
+
+        # Phase 4 PR3 — 검수 큐 누적 임계 알림 (settings 토글, default 0=비활성).
+        threshold = settings.slack_review_queue_threshold
+        needs_review = counters.get("needs_review_count", 0)
+        if threshold > 0 and needs_review >= threshold:
+            try:
+                notifier.send_review_queue_threshold(refreshed, needs_review, threshold)
+            except Exception:
+                logger.warning(
+                    "batch.notify.review_threshold_failed batch_id=%s", batch_id, exc_info=True
+                )
 
     # Phase 4 PR2 — completed 첫 진입 + auto_publish_enabled=True 시 자동 발행 등록.
     # 멱등 — 이미 publication_id 채워진 item 은 auto_publisher 가 자체 skip.

@@ -168,6 +168,32 @@ def test_send_overnight_dispatched_includes_counts() -> None:
     assert "items=17" in text
 
 
+def test_send_review_queue_threshold_skips_when_zero() -> None:
+    """needs_review_count == 0 또는 threshold <= 0 → noop."""
+    with (
+        patch("application.notifier.settings") as st,
+        patch("application.notifier.requests") as req,
+    ):
+        st.slack_webhook_url = "https://hooks.slack.com/services/xxx"
+        notifier.send_review_queue_threshold(_batch(), 0, 5)
+        notifier.send_review_queue_threshold(_batch(), 7, 0)
+    req.post.assert_not_called()
+
+
+def test_send_review_queue_threshold_includes_counts() -> None:
+    with (
+        patch("application.notifier.settings") as st,
+        patch("application.notifier.requests") as req,
+    ):
+        st.slack_webhook_url = "https://hooks.slack.com/services/xxx"
+        req.post.return_value = MagicMock(status_code=200)
+        notifier.send_review_queue_threshold(_batch(), 12, 10)
+    text = req.post.call_args.kwargs["json"]["text"]
+    assert "검수 큐 누적 임계" in text
+    assert "12" in text
+    assert "10" in text
+
+
 # ── all sentinel coverage ──
 
 
@@ -179,6 +205,7 @@ def test_module_exports_complete() -> None:
         "send_batch_failed",
         "send_compliance_violation",
         "send_overnight_dispatched",
+        "send_review_queue_threshold",
     }
     assert set(notifier.__all__) == expected
 

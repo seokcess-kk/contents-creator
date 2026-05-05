@@ -17,6 +17,8 @@ export default function BatchUploadForm({ onCreated }: Props) {
   const [minSearchVolume, setMinSearchVolume] = useState<string>("");
   const [maxDifficulty, setMaxDifficulty] = useState<string>("");
   const [clusterDedupe, setClusterDedupe] = useState(false);
+  // Phase 4 PR3 — opt-in publication 자동 등록 (target_url + ready_to_publish 만)
+  const [autoPublishEnabled, setAutoPublishEnabled] = useState(false);
 
   // Phase 3 (2026-05-05) — overnight + auto 모두 활성. auto = priority 라우팅
   // (priority<=3 즉시 실행, priority>=4 overnight 큐 보류). Anthropic Batch API 는
@@ -42,6 +44,7 @@ export default function BatchUploadForm({ onCreated }: Props) {
         min_search_volume: sv ? Number(sv) : undefined,
         max_difficulty: md || undefined,
         cluster_dedupe: clusterDedupe,
+        auto_publish_enabled: autoPublishEnabled,
       });
       setResult({
         created: res.created,
@@ -181,6 +184,22 @@ export default function BatchUploadForm({ onCreated }: Props) {
               클러스터 재사용 (default OFF)
               <span className="block font-normal text-[11px] text-gray-500 mt-0.5">
                 cluster_id 의 primary 가 만든 PatternCard 를 member 가 재사용. 검색 의도가 사실상 같은 long-tail 변형 묶음에만 사용 — 지역·브랜드가 다른 키워드는 묶지 마세요 (본문 유사도로 1페이지 노출 어려워질 수 있음).
+              </span>
+            </span>
+          </label>
+        </div>
+        <div className="col-span-12">
+          <label className="inline-flex items-start gap-2 text-xs font-semibold text-gray-700">
+            <input
+              type="checkbox"
+              checked={autoPublishEnabled}
+              onChange={(e) => setAutoPublishEnabled(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span className="flex-1">
+              자동 발행 등록 (default OFF — opt-in)
+              <span className="block font-normal text-[11px] text-gray-500 mt-0.5">
+                배치 완료 시 <code>target_url</code> 채워진 <strong>ready_to_publish</strong> item 을 publications 자동 등록 → /rankings 추적 진입. 운영 철학상 실제 발행은 운영자가 직접 — 운영자가 미리 URL 을 정하고 자동 추적까지 일괄 처리할 때만 ON.
               </span>
             </span>
           </label>

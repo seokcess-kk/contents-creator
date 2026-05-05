@@ -121,6 +121,50 @@ class TestCreateBatch:
         assert captured["cluster_dedupe"] is False
         assert captured["min_search_volume"] is None
         assert captured["max_difficulty"] is None
+        # Phase 4 PR3 — auto_publish_enabled default False
+        assert captured["auto_publish_enabled"] is False
+
+    def test_json_passes_auto_publish_enabled(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Phase 4 PR3 — JSON 본문의 auto_publish_enabled 가 전달."""
+        captured: dict[str, Any] = {}
+
+        def _capture(csv_text: str, **kwargs: Any) -> BatchEnqueueResult:
+            captured.update(kwargs)
+            return BatchEnqueueResult(batch_id="b-ap", total=1, created=1, skipped=[], failed=[])
+
+        monkeypatch.setattr(batch_orchestrator, "enqueue_from_csv", _capture)
+        resp = client.post(
+            "/api/batches",
+            json={
+                "csv_text": "keyword\nkw1\n",
+                "mode": "now",
+                "auto_publish_enabled": True,
+            },
+        )
+        assert resp.status_code == 202
+        assert captured["auto_publish_enabled"] is True
+
+    def test_multipart_passes_auto_publish_enabled(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """multipart form 의 auto_publish_enabled 도 전달."""
+        captured: dict[str, Any] = {}
+
+        def _capture(csv_text: str, **kwargs: Any) -> BatchEnqueueResult:
+            captured.update(kwargs)
+            return BatchEnqueueResult(batch_id="b-ap", total=1, created=1, skipped=[], failed=[])
+
+        monkeypatch.setattr(batch_orchestrator, "enqueue_from_csv", _capture)
+        files = {"csv_file": ("kw.csv", b"keyword\nkw1\n", "text/csv")}
+        resp = client.post(
+            "/api/batches",
+            files=files,
+            data={"mode": "now", "auto_publish_enabled": "true"},
+        )
+        assert resp.status_code == 202
+        assert captured["auto_publish_enabled"] is True
 
     def test_multipart_passes_prefilter_options(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch

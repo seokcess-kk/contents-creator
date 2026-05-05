@@ -75,6 +75,8 @@ class BatchCreateJsonRequest(BaseModel):
     min_search_volume: int | None = None
     max_difficulty: str | None = None  # "LOW"/"MEDIUM"/"HIGH"/"MISSING"
     cluster_dedupe: bool = False
+    # Phase 4 PR3 — opt-in publication 자동 등록. default False (운영 철학 §0).
+    auto_publish_enabled: bool = False
 
 
 @router.post("", status_code=202)
@@ -99,6 +101,7 @@ async def create_batch(request: Request) -> dict[str, Any]:
             min_search_volume=opts["min_search_volume"],
             max_difficulty=opts["max_difficulty"],
             cluster_dedupe=opts["cluster_dedupe"],
+            auto_publish_enabled=opts["auto_publish_enabled"],
         )
     except NotSupportedYetError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -132,6 +135,7 @@ async def _extract_csv_input(request: Request) -> tuple[str, dict[str, Any]]:
             "min_search_volume": _form_int(form.get("min_search_volume")),
             "max_difficulty": _form_str(form.get("max_difficulty")),
             "cluster_dedupe": _form_bool(form.get("cluster_dedupe")),
+            "auto_publish_enabled": _form_bool(form.get("auto_publish_enabled")),
         }
         return csv_text, opts
 
@@ -150,6 +154,7 @@ async def _extract_csv_input(request: Request) -> tuple[str, dict[str, Any]]:
             "min_search_volume": parsed.min_search_volume,
             "max_difficulty": parsed.max_difficulty,
             "cluster_dedupe": parsed.cluster_dedupe,
+            "auto_publish_enabled": parsed.auto_publish_enabled,
         }
         return parsed.csv_text, opts
 

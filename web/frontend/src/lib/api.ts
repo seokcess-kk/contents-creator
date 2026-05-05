@@ -613,6 +613,7 @@ export function createBatch(params: {
   min_search_volume?: number;
   max_difficulty?: string;  // "LOW" | "MEDIUM" | "HIGH" | "MISSING"
   cluster_dedupe?: boolean;
+  auto_publish_enabled?: boolean;
 }): Promise<BatchEnqueueResult> {
   return fetchJson("/batches", {
     method: "POST",
@@ -628,6 +629,7 @@ export async function createBatchFile(params: {
   min_search_volume?: number;
   max_difficulty?: string;
   cluster_dedupe?: boolean;
+  auto_publish_enabled?: boolean;
 }): Promise<BatchEnqueueResult> {
   const form = new FormData();
   form.append("csv_file", params.file);
@@ -639,6 +641,9 @@ export async function createBatchFile(params: {
   if (params.max_difficulty) form.append("max_difficulty", params.max_difficulty);
   if (params.cluster_dedupe !== undefined) {
     form.append("cluster_dedupe", params.cluster_dedupe ? "true" : "false");
+  }
+  if (params.auto_publish_enabled !== undefined) {
+    form.append("auto_publish_enabled", params.auto_publish_enabled ? "true" : "false");
   }
   // multipart: Content-Type 은 브라우저가 boundary 포함해 자동 설정
   const res = await fetch(`${API_BASE}/batches`, { method: "POST", body: form });

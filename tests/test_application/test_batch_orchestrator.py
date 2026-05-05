@@ -126,6 +126,28 @@ class TestEnqueueFromCsv:
         batch_orchestrator.enqueue_from_csv("keyword\nkw\n", mode="now", auto_dispatch=False)
         manager_mock.get_default_manager.return_value.submit.assert_not_called()
 
+    def test_auto_publish_enabled_propagates_to_batch(
+        self, storage_mock: Any, manager_mock: Any
+    ) -> None:
+        """Phase 4 PR3 — enqueue_from_csv 의 auto_publish_enabled 가 KeywordBatch insert 에 전파."""
+        storage_mock.insert_batch.return_value = _batch(id="b-ap", auto_publish_enabled=True)
+        storage_mock.insert_items.return_value = [_item(id="i-1", batch_id="b-ap")]
+        batch_orchestrator.enqueue_from_csv(
+            "keyword\nkw\n",
+            mode="now",
+            auto_publish_enabled=True,
+        )
+        inserted = storage_mock.insert_batch.call_args.args[0]
+        assert inserted.auto_publish_enabled is True
+
+    def test_auto_publish_enabled_default_false(self, storage_mock: Any, manager_mock: Any) -> None:
+        """auto_publish_enabled 미지정 시 default False (운영 철학)."""
+        storage_mock.insert_batch.return_value = _batch(id="b-x")
+        storage_mock.insert_items.return_value = [_item(id="i-1", batch_id="b-x")]
+        batch_orchestrator.enqueue_from_csv("keyword\nkw\n", mode="now")
+        inserted = storage_mock.insert_batch.call_args.args[0]
+        assert inserted.auto_publish_enabled is False
+
     def test_separates_skipped_and_failed(self, storage_mock: Any, manager_mock: Any) -> None:
         storage_mock.insert_batch.return_value = _batch(id="b-x")
         storage_mock.insert_items.return_value = [_item(id="i-1", batch_id="b-x")]
@@ -653,6 +675,74 @@ class TestRecomputeBatchStatus:
         with patch("application.auto_publisher.auto_publish_ready_items") as auto_pub:
             batch_orchestrator.recompute_batch_status("b-1")
         auto_pub.assert_not_called()
+
+    # ── Phase 4 PR3 — 검수 큐 누적 임계 알림 ──
+
+    def test_review_threshold_triggers_notification(self, storage_mock: Any) -> None:
+        """needs_review_count >= threshold → notifier.send_review_queue_threshold 호출."""
+        storage_mock.get_batch.side_effect = [
+            _batch(id="b-1", total_count=10, status="running"),
+            _batch(id="b-1", total_count=10, status="completed"),
+        ]
+        storage_mock.count_items_by_status.return_value = {
+            "succeeded_count": 0,
+            "failed_count": 0,
+            "skipped_count": 0,
+            "needs_review_count": 7,
+            "ready_to_publish_count": 3,
+        }
+        with (
+            patch("application.batch_orchestrator.notifier") as notif,
+            patch("application.batch_orchestrator.settings") as st,
+        ):
+            st.slack_review_queue_threshold = 5
+            batch_orchestrator.recompute_batch_status("b-1")
+        notif.send_review_queue_threshold.assert_called_once()
+        args = notif.send_review_queue_threshold.call_args.args
+        assert args[1] == 7  # needs_review_count
+        assert args[2] == 5  # threshold
+
+    def test_review_threshold_disabled_when_zero(self, storage_mock: Any) -> None:
+        """settings.slack_review_queue_threshold == 0 (default) → 호출 0."""
+        storage_mock.get_batch.side_effect = [
+            _batch(id="b-1", total_count=10, status="running"),
+            _batch(id="b-1", total_count=10, status="completed"),
+        ]
+        storage_mock.count_items_by_status.return_value = {
+            "succeeded_count": 0,
+            "failed_count": 0,
+            "skipped_count": 0,
+            "needs_review_count": 7,
+            "ready_to_publish_count": 3,
+        }
+        with (
+            patch("application.batch_orchestrator.notifier") as notif,
+            patch("application.batch_orchestrator.settings") as st,
+        ):
+            st.slack_review_queue_threshold = 0
+            batch_orchestrator.recompute_batch_status("b-1")
+        notif.send_review_queue_threshold.assert_not_called()
+
+    def test_review_threshold_skipped_below(self, storage_mock: Any) -> None:
+        """needs_review_count < threshold → 호출 0."""
+        storage_mock.get_batch.side_effect = [
+            _batch(id="b-1", total_count=10, status="running"),
+            _batch(id="b-1", total_count=10, status="completed"),
+        ]
+        storage_mock.count_items_by_status.return_value = {
+            "succeeded_count": 0,
+            "failed_count": 0,
+            "skipped_count": 0,
+            "needs_review_count": 3,
+            "ready_to_publish_count": 7,
+        }
+        with (
+            patch("application.batch_orchestrator.notifier") as notif,
+            patch("application.batch_orchestrator.settings") as st,
+        ):
+            st.slack_review_queue_threshold = 5
+            batch_orchestrator.recompute_batch_status("b-1")
+        notif.send_review_queue_threshold.assert_not_called()
 
 
 class TestDispatchOvernightBatches:

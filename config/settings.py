@@ -183,6 +183,10 @@ class Settings(BaseSettings):
         default=False,
         description="개별 의료법 위반 알림 ON/OFF (검수 큐 외 추가 알림이 필요할 때만 true)",
     )
+    slack_review_queue_threshold: int = Field(
+        default=0,
+        description="검수 큐 누적 임계 (0 = 비활성). batch 의 needs_review 가 이 값 이상이면 1회 알림",
+    )
 
     # SPEC-BATCH Phase 3 PR2 — overnight cron 시간대 게이트.
     # `scripts/run_batch.py --dispatch-overnight` 가 외부 cron (GitHub Actions /

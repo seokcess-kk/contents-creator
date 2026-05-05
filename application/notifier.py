@@ -101,10 +101,34 @@ def send_overnight_dispatched(dispatched_batches: int, dispatched_items: int) ->
     )
 
 
+def send_review_queue_threshold(
+    batch: KeywordBatch, needs_review_count: int, threshold: int
+) -> None:
+    """검수 큐 누적 임계 알림 — 단일 배치의 needs_review 가 threshold 이상.
+
+    `slack_review_queue_threshold=0` (default) 이면 caller 가 호출 자체 skip.
+    needs_review_count == 0 → noop (방어). webhook 미설정 → noop.
+
+    SPEC-BATCH §3 Phase 4 — 검수 큐가 1차 운영 도구이므로, 누적이 임계 이상일 때만
+    운영자에게 푸시. 매번 보내면 노이즈, 임계 미달은 검수 큐 페이지 polling 으로 충분.
+    """
+    if not settings.slack_webhook_url:
+        return
+    if needs_review_count <= 0 or threshold <= 0:
+        return
+    name = batch.name or f"batch-{batch.id}"
+    send_text(
+        f":mag: *검수 큐 누적 임계* — {name}\n"
+        f"  needs_review : {needs_review_count} (>= {threshold})\n"
+        f"  검수 큐에서 approve / needs_fix 처리해주세요."
+    )
+
+
 __all__ = [
     "send_text",
     "send_batch_completed",
     "send_batch_failed",
     "send_compliance_violation",
     "send_overnight_dispatched",
+    "send_review_queue_threshold",
 ]

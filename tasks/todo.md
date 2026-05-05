@@ -1236,9 +1236,9 @@
 - [x] `tests/test_application/test_batch_orchestrator.py` — `storage_mock` fixture 가 claim_item_for_dispatch default 를 get_item.return_value 로 설정 + `test_claim_failed_skips_dispatch` (claim None → run_* 0). 기존 `test_analyze_operation_calls_run_analyze_only` 의 'running' status assertion 을 atomic claim 의미에 맞게 정정 (claim_item_for_dispatch.assert_called_once())
 - [x] `tests/test_scripts/test_run_batch_overnight_gate.py` — 4 케이스: batch_id bypass / force bypass / window match / window miss
 
-### B15.5 검증 + commit
-- [ ] `bash .claude/hooks/build-check.sh` 그린
-- [ ] commit `feat(batch): Phase 3 PR2 — atomic claim + cron overnight 시간대 게이트`
+### B15.5 검증 + commit ✅
+- [x] `bash .claude/hooks/build-check.sh` 그린 (1210 passed, 75.31% coverage)
+- [x] commit `feat(batch): Phase 3 PR2 — atomic claim + cron overnight 시간대 게이트` (`474162d`)
 
 ---
 
@@ -1263,9 +1263,9 @@
 - [x] `tests/test_application/test_notifier.py` — 10 케이스 (webhook 미설정 noop / 호출 시 payload / 예외 graceful / 4xx 흡수 / batch_completed counters / batch_failed reason / compliance toggle off / categories / overnight zero items / overnight counts)
 - [x] `tests/test_application/test_batch_orchestrator.py` 추가 — recompute 4 (completed first / 이미 completed 중복 방지 / 전체 실패 / notifier 실패 graceful) + _dispatch_item 4 (violation triggers / passed=True 0 / None 0 / analyze 0) + overnight 1
 
-### B16.5 검증 + commit
-- [ ] `bash .claude/hooks/build-check.sh` 그린
-- [ ] commit `feat(batch): Phase 4 PR1 — 알림 인프라 (Slack webhook)`
+### B16.5 검증 + commit ✅
+- [x] `bash .claude/hooks/build-check.sh` 그린 (1231 passed, 75.46% coverage)
+- [x] commit `feat(batch): Phase 4 PR1 — 알림 인프라 (Slack webhook)` (`be91f0a`)
 
 ---
 
@@ -1287,6 +1287,33 @@
 - [x] `tests/test_application/test_batch_orchestrator.py` 추가 — 4 케이스 (auto_publish triggered on completion / disabled 시 미호출 / 실패 graceful / 이미 completed 중복 방지)
 - [x] `tests/test_web/test_batches_api.py` 추가 — 3 케이스 (registered counts / disabled skipped_reason / missing 404)
 
-### B17.4 검증 + commit
+### B17.4 검증 + commit ✅
+- [x] `bash .claude/hooks/build-check.sh` 그린 (1246 passed, 75.60% coverage)
+- [x] commit `feat(batch): Phase 4 PR2 — publication 자동 등록 (opt-in)` (`caf8b7f`)
+
+---
+
+## 🛡️ Phase B18 — Phase 4 보강 (검수 큐 임계 알림 + auto_publish UI 토글, 2026-05-05)
+
+> SPEC-BATCH §3 Phase 4 의 누락된 트리거 + UX 보완. PR1 의 알림 트리거 5종 중 "검수 큐 누적 임계" 만 미구현이었고, PR2 의 `auto_publish_enabled` 가 UI 에서 토글 불가했다. 두 갈래 합쳐 Phase 4 의 운영 화면 폐쇄.
+
+### B18.1 notifier — 임계 알림 ✅
+- [x] `application/notifier.send_review_queue_threshold(batch, needs_review_count, threshold)` 신규 — needs_review_count == 0 또는 threshold <= 0 시 noop
+- [x] `config/settings.slack_review_queue_threshold` (default 0 = 비활성)
+- [x] `recompute_batch_status` completed 첫 진입 hook 에서 threshold > 0 + needs_review >= threshold 시 호출 (graceful)
+
+### B18.2 auto_publish_enabled UI 전파 ✅
+- [x] `application.batch_orchestrator.enqueue_from_csv` — `auto_publish_enabled: bool = False` 인자 추가, KeywordBatch insert 에 전파
+- [x] `web/api/routers/batches.BatchCreateJsonRequest` — `auto_publish_enabled: bool = False` 필드 추가
+- [x] `_extract_csv_input` — JSON / multipart 양쪽에서 `auto_publish_enabled` 파싱
+- [x] `web/frontend/src/lib/api.ts` — `createBatch` / `createBatchFile` 의 옵션 객체에 `auto_publish_enabled?: boolean` 추가, multipart form 에 전송
+- [x] `BatchUploadForm.tsx` — `autoPublishEnabled` state + 체크박스 (default unchecked) + tooltip 설명 ("자동 발행 등록 — opt-in")
+
+### B18.3 테스트 ✅ — +9건
+- [x] `tests/test_application/test_notifier.py` 추가 — 3 (threshold 0 noop / counts == 0 noop / counts 포함 + __all__ 정합)
+- [x] `tests/test_application/test_batch_orchestrator.py` 추가 — 5 (review threshold triggered / disabled when 0 / skipped below / enqueue auto_publish_enabled propagation True / default False)
+- [x] `tests/test_web/test_batches_api.py` 추가 — 2 (JSON auto_publish_enabled / multipart auto_publish_enabled) + 기존 default False assertion 보강
+
+### B18.4 검증 + commit
 - [ ] `bash .claude/hooks/build-check.sh` 그린
-- [ ] commit `feat(batch): Phase 4 PR2 — publication 자동 등록 (opt-in)`
+- [ ] commit `feat(batch): Phase 4 PR3 — 검수 큐 임계 알림 + auto_publish UI 토글`
