@@ -45,6 +45,18 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="backfill_fk",
         help="배치 ID — fire-and-forget 회수 실패한 pattern_card_id/generated_content_id 사후 백필",
     )
+    group.add_argument(
+        "--dispatch-overnight",
+        action="store_true",
+        dest="dispatch_overnight",
+        help="Phase 3 PR1 — overnight 모드 batch 일괄 dispatch (야간 cron 또는 운영자 트리거)",
+    )
+    parser.add_argument(
+        "--overnight-batch-id",
+        type=str,
+        default=None,
+        help="--dispatch-overnight 와 함께 — 특정 batch 만 처리 (없으면 전체 overnight queued)",
+    )
     parser.add_argument(
         "--mode",
         choices=["now", "overnight", "auto"],
@@ -95,6 +107,8 @@ def main() -> int:
         return _cancel(args.cancel)
     if args.backfill_fk is not None:
         return _backfill(args.backfill_fk)
+    if args.dispatch_overnight:
+        return _dispatch_overnight(args.overnight_batch_id)
     return 1  # pragma: no cover — mutually_exclusive_group required=True 가 차단
 
 
@@ -182,6 +196,22 @@ def _cancel(batch_id: str) -> int:
         logger.error("배치 미존재: %s", exc)
         return 1
     print(f"batch {batch_id} cancelled={cancelled}")  # noqa: T201
+    return 0
+
+
+def _dispatch_overnight(batch_id: str | None) -> int:
+    """Phase 3 PR1 — overnight batch 일괄 dispatch."""
+    try:
+        result = batch_orchestrator.dispatch_overnight_batches(batch_id=batch_id)
+    except Exception as exc:
+        logger.error("overnight dispatch 실패: %s", exc)
+        return 1
+    print(  # noqa: T201
+        f"\novernight dispatch 완료\n"
+        f"  dispatched_batches : {result['dispatched_batches']}\n"
+        f"  dispatched_items   : {result['dispatched_items']}\n"
+        f"  skipped_batches    : {result['skipped_batches']}\n"
+    )
     return 0
 
 

@@ -18,8 +18,8 @@ export default function BatchUploadForm({ onCreated }: Props) {
   const [maxDifficulty, setMaxDifficulty] = useState<string>("");
   const [clusterDedupe, setClusterDedupe] = useState(false);
 
-  // mode: now 만 활성. overnight/auto 는 Phase 3 예정 (disabled + tooltip).
-  const mode = "now" as const;
+  // Phase 3 PR1 — overnight 모드 활성화. auto 는 Phase 3 PR2 (priority 라우팅) 후.
+  const [mode, setMode] = useState<"now" | "overnight">("now");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -83,13 +83,26 @@ export default function BatchUploadForm({ onCreated }: Props) {
         </div>
         <div className="col-span-5 lg:col-span-2">
           <label className="block text-xs font-semibold text-gray-700 mb-1">처리 모드</label>
-          <div className="flex items-center gap-2 text-sm">
-            <label className="inline-flex items-center gap-1">
-              <input type="radio" checked readOnly /> 즉시
+          <div className="flex items-center gap-3 text-sm">
+            <label className="inline-flex items-center gap-1 cursor-pointer">
+              <input
+                type="radio"
+                checked={mode === "now"}
+                onChange={() => setMode("now")}
+              />{" "}
+              즉시
             </label>
-            <span title="Phase 3 예정" className="text-gray-400 cursor-not-allowed">
-              야간 (예정)
-            </span>
+            <label
+              className="inline-flex items-center gap-1 cursor-pointer"
+              title="DB 저장만 — 야간 cron 또는 운영자가 'overnight dispatch' 트리거 시 일괄 처리"
+            >
+              <input
+                type="radio"
+                checked={mode === "overnight"}
+                onChange={() => setMode("overnight")}
+              />{" "}
+              야간
+            </label>
           </div>
         </div>
         <div className="col-span-12 lg:col-span-2 flex justify-end">

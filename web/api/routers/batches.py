@@ -458,6 +458,22 @@ def retry_item(batch_id: str, item_id: str) -> dict[str, Any]:
     return {"batch_id": batch_id, "item_id": item_id, "status": "queued"}
 
 
+@router.post("/dispatch-overnight", status_code=200)
+def dispatch_overnight(batch_id: str | None = Query(default=None)) -> dict[str, Any]:
+    """Phase 3 PR1 — 야간 cron / 운영자가 호출해 overnight batch 일괄 dispatch.
+
+    batch_id 없으면 모든 mode='overnight' AND status='queued' batch 처리.
+    batch_id 지정 시 그 batch 만 (운영자 명시 트리거).
+    """
+    if not _supabase_configured():
+        raise HTTPException(status_code=503, detail="Supabase 미설정")
+    try:
+        result = batch_orchestrator.dispatch_overnight_batches(batch_id=batch_id)
+    except Exception as exc:
+        raise _supabase_error_response(exc, "dispatch_overnight") from exc
+    return result
+
+
 @router.post("/{batch_id}/backfill-fk", status_code=200)
 def backfill_fk(batch_id: str) -> dict[str, Any]:
     """SPEC-BATCH §3 Phase 2 PR4 — fire-and-forget FK 회수 실패 사후 백필.

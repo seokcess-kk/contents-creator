@@ -70,21 +70,29 @@ def enqueue_from_csv(
 ) -> BatchEnqueueResult:
     """CSV 텍스트 → batch + items insert. 검증 + 중복 분류.
 
-    auto_dispatch=True 면 즉시 worker pool 에 dispatch (Phase 1 mode='now' 한정).
+    auto_dispatch=True 면 즉시 worker pool 에 dispatch (mode='now' 만 즉시 처리).
 
     Phase 2 PR2 추가:
         min_search_volume / max_difficulty: 사전 필터 임계값. None 이면 필터 안 함.
         cluster_dedupe: 같은 cluster_id 의 primary→member PatternCard 재사용 활성.
             **default False** (본문 유사도로 인한 1페이지 노출 리스크 방지).
 
+    Phase 3 PR1 — mode 'overnight' 활성화:
+        - mode='now': 즉시 dispatch (auto_dispatch=True 시)
+        - mode='overnight': DB 저장만, dispatch 보류. 운영자/cron 이
+          `dispatch_overnight_batches()` 호출 시 일괄 처리.
+        - mode='auto': overnight 와 동일 (Phase 3 PR2 의 priority 라우팅 후 활성화)
+
     Raises:
-        NotSupportedYetError: mode 가 'overnight'/'auto'.
+        NotSupportedYetError: mode 가 'auto' 일 때 (Phase 3 PR2 후 활성).
         ValueError: CSV 형식 오류 (헤더 누락 등) — API 가 400 으로 변환.
     """
-    if mode != "now":
+    if mode == "auto":
         raise NotSupportedYetError(
-            f"Phase 1 은 mode='now' 만 지원합니다. 'overnight'/'auto' 는 Phase 3 예정. (요청: {mode!r})"
+            f"mode='auto' 는 Phase 3 PR2 (priority 기반 라우팅) 후 활성. (요청: {mode!r})"
         )
+    if mode not in ("now", "overnight"):
+        raise NotSupportedYetError(f"지원되지 않는 mode: {mode!r} (allowed: now / overnight)")
 
     parsed_items, skipped, failed = csv_parser.parse_csv(
         csv_text, batch_id="pending", default_mode=mode
@@ -108,7 +116,9 @@ def enqueue_from_csv(
 
     inserted_items = storage.insert_items(parsed_items)
 
-    if auto_dispatch and inserted_items:
+    # Phase 3 PR1 — overnight 모드는 즉시 dispatch 안 함. 야간 cron 또는 운영자
+    # 명시 호출 (`dispatch_overnight_batches`) 시 일괄 처리.
+    if auto_dispatch and inserted_items and mode == "now":
         manager = batch_job_manager.get_default_manager()
         for it in inserted_items:
             if it.id is not None:
@@ -679,6 +689,81 @@ def cancel_batch(batch_id: str) -> int:
 
     logger.info("batch.cancelled batch_id=%s cancelled_items=%d", batch_id, cancelled)
     return cancelled
+
+
+def dispatch_overnight_batches(*, batch_id: str | None = None) -> dict[str, int]:
+    """Phase 3 PR1 — 야간 cron / 운영자 트리거로 overnight batch 일괄 dispatch.
+
+    `batch_id` None: 모든 mode='overnight' AND status='queued' batch 처리.
+    `batch_id` 지정: 그 batch 만 처리 (운영자가 명시 트리거 시).
+
+    각 batch 의 status='queued' item 만 worker pool 에 submit. 이미 진행 중/종결된
+    item 은 skip. 반환: {dispatched_batches, dispatched_items, skipped_batches}.
+    """
+    overnight_batches = _list_overnight_queued_batches(batch_id=batch_id)
+    if not overnight_batches:
+        return {"dispatched_batches": 0, "dispatched_items": 0, "skipped_batches": 0}
+
+    manager = batch_job_manager.get_default_manager()
+    dispatched_batches = 0
+    dispatched_items = 0
+    skipped_batches = 0
+
+    for b in overnight_batches:
+        if b.id is None:
+            skipped_batches += 1
+            continue
+        # 해당 batch 의 queued item 만 일괄 submit. running/succeeded/failed 등은 idempotent skip.
+        try:
+            queued_items = storage.list_items(b.id, status="queued", limit=10_000)
+        except Exception:
+            logger.warning("dispatch_overnight.list_items_failed batch_id=%s", b.id, exc_info=True)
+            skipped_batches += 1
+            continue
+        if not queued_items:
+            skipped_batches += 1
+            continue
+        try:
+            storage.update_batch_status(
+                b.id,
+                "running",
+                started_at=datetime.now(UTC),
+            )
+        except Exception:
+            logger.warning(
+                "dispatch_overnight.batch_status_update_failed batch_id=%s",
+                b.id,
+                exc_info=True,
+            )
+        for it in queued_items:
+            if it.id is not None:
+                manager.submit(_dispatch_item_safely, it.id)
+                dispatched_items += 1
+        dispatched_batches += 1
+
+    logger.info(
+        "dispatch_overnight.done dispatched_batches=%d dispatched_items=%d skipped=%d",
+        dispatched_batches,
+        dispatched_items,
+        skipped_batches,
+    )
+    return {
+        "dispatched_batches": dispatched_batches,
+        "dispatched_items": dispatched_items,
+        "skipped_batches": skipped_batches,
+    }
+
+
+def _list_overnight_queued_batches(*, batch_id: str | None = None) -> list[KeywordBatch]:
+    """overnight + queued batch 목록. batch_id 지정 시 단건만."""
+    if batch_id is not None:
+        b = storage.get_batch(batch_id)
+        if b is None or b.mode != "overnight" or b.status != "queued":
+            return []
+        return [b]
+    # 전체 — list_batches 후 필터.
+    all_batches = storage.list_batches(limit=200)
+    return [b for b in all_batches if b.mode == "overnight" and b.status == "queued"]
 
 
 def backfill_unlinked_items(batch_id: str) -> dict[str, int]:

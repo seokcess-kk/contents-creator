@@ -676,6 +676,16 @@ export function retryBatchItem(
   return fetchJson(`/batches/${batchId}/items/${itemId}/retry`, { method: "POST" });
 }
 
+// Phase 3 PR1 — overnight 모드 일괄 dispatch (야간 cron / 운영자 트리거)
+export function dispatchOvernight(batchId?: string): Promise<{
+  dispatched_batches: number;
+  dispatched_items: number;
+  skipped_batches: number;
+}> {
+  const qs = batchId ? `?batch_id=${encodeURIComponent(batchId)}` : "";
+  return fetchJson(`/batches/dispatch-overnight${qs}`, { method: "POST" });
+}
+
 // ── 검수 큐 (Phase B9 PR3) ──
 
 // "revert" 는 검수 액션 후 Undo (review_status=pending + status=needs_review 복귀).

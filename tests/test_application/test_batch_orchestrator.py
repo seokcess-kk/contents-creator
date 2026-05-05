@@ -63,10 +63,19 @@ def manager_mock() -> Any:
 
 
 class TestEnqueueFromCsv:
-    def test_overnight_mode_raises_not_supported(self, storage_mock: Any) -> None:
-        with pytest.raises(NotSupportedYetError, match="now"):
-            batch_orchestrator.enqueue_from_csv("keyword\nkw\n", mode="overnight")
-        storage_mock.insert_batch.assert_not_called()
+    def test_overnight_mode_persists_without_dispatch(
+        self, storage_mock: Any, manager_mock: Any
+    ) -> None:
+        """Phase 3 PR1 — overnight 모드는 DB 저장만, 즉시 dispatch X."""
+        storage_mock.insert_batch.return_value = _batch(id="b-overnight")
+        storage_mock.insert_items.return_value = [_item(id="i-1", batch_id="b-overnight")]
+        result = batch_orchestrator.enqueue_from_csv("keyword\nkw\n", mode="overnight")
+        assert result.batch_id == "b-overnight"
+        # auto_dispatch=True 라도 mode='overnight' 이면 worker 에 submit 안 함
+        manager_mock.get_default_manager.return_value.submit.assert_not_called()
+        # batch insert 시 mode='overnight' 으로 저장됐는지
+        inserted = storage_mock.insert_batch.call_args.args[0]
+        assert inserted.mode == "overnight"
 
     def test_auto_mode_raises_not_supported(self, storage_mock: Any) -> None:
         with pytest.raises(NotSupportedYetError):
@@ -388,6 +397,52 @@ class TestRecomputeBatchStatus:
         }
         batch_orchestrator.recompute_batch_status("b-1")
         assert storage_mock.update_batch_status.call_args.args[1] == "completed"
+
+
+class TestDispatchOvernightBatches:
+    """Phase 3 PR1 — overnight batch 일괄 dispatch."""
+
+    def test_no_overnight_queued_returns_zero(self, storage_mock: Any) -> None:
+        storage_mock.list_batches.return_value = [_batch(id="b-1", mode="now", status="queued")]
+        result = batch_orchestrator.dispatch_overnight_batches()
+        assert result == {
+            "dispatched_batches": 0,
+            "dispatched_items": 0,
+            "skipped_batches": 0,
+        }
+
+    def test_overnight_queued_dispatched(self, storage_mock: Any, manager_mock: Any) -> None:
+        storage_mock.list_batches.return_value = [
+            _batch(id="b-on", mode="overnight", status="queued"),
+        ]
+        storage_mock.list_items.return_value = [
+            _item(id="i-1", batch_id="b-on"),
+            _item(id="i-2", batch_id="b-on"),
+        ]
+        result = batch_orchestrator.dispatch_overnight_batches()
+        assert result["dispatched_batches"] == 1
+        assert result["dispatched_items"] == 2
+        # batch.status='running' 갱신
+        storage_mock.update_batch_status.assert_called_once()
+        assert storage_mock.update_batch_status.call_args.args[1] == "running"
+        # 2 item dispatch
+        assert manager_mock.get_default_manager.return_value.submit.call_count == 2
+
+    def test_specific_batch_id_filters(self, storage_mock: Any, manager_mock: Any) -> None:
+        """batch_id 지정 시 해당 batch 만 처리."""
+        storage_mock.get_batch.return_value = _batch(id="b-on", mode="overnight", status="queued")
+        storage_mock.list_items.return_value = [_item(id="i-1", batch_id="b-on")]
+        result = batch_orchestrator.dispatch_overnight_batches(batch_id="b-on")
+        assert result["dispatched_batches"] == 1
+        assert result["dispatched_items"] == 1
+        # list_batches 는 호출 안 됨 (단건 path)
+        storage_mock.list_batches.assert_not_called()
+
+    def test_specific_batch_not_overnight_skips(self, storage_mock: Any) -> None:
+        """batch_id 가 overnight 가 아니면 skip."""
+        storage_mock.get_batch.return_value = _batch(id="b-now", mode="now", status="queued")
+        result = batch_orchestrator.dispatch_overnight_batches(batch_id="b-now")
+        assert result["dispatched_batches"] == 0
 
 
 class TestBackfillUnlinkedItems:

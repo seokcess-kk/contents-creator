@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import BatchUploadForm from "@/components/BatchUploadForm";
-import { listBatches, type BatchSummary } from "@/lib/api";
+import { dispatchOvernight, listBatches, type BatchSummary } from "@/lib/api";
 
 export default function BatchesPage() {
   const [batches, setBatches] = useState<BatchSummary[]>([]);
@@ -30,6 +30,30 @@ export default function BatchesPage() {
     reload();
   }
 
+  const overnightQueued = useMemo(
+    () => batches.filter((b) => b.mode === "overnight" && b.status === "queued"),
+    [batches],
+  );
+
+  async function handleDispatchOvernight() {
+    if (overnightQueued.length === 0) return;
+    if (
+      !confirm(
+        `overnight queued ${overnightQueued.length}개 batch 의 모든 키워드를 즉시 일괄 dispatch 하시겠습니까?`,
+      )
+    )
+      return;
+    try {
+      const res = await dispatchOvernight();
+      alert(
+        `완료: batches=${res.dispatched_batches} / items=${res.dispatched_items} / skipped=${res.skipped_batches}`,
+      );
+      reload();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div>
@@ -40,6 +64,21 @@ export default function BatchesPage() {
       </div>
 
       <BatchUploadForm onCreated={handleCreated} />
+
+      {overnightQueued.length > 0 && (
+        <div className="bg-indigo-50 ring-1 ring-indigo-200 rounded-lg px-3 py-2 flex items-center justify-between gap-3 flex-wrap">
+          <div className="text-xs text-indigo-900">
+            <strong>야간 대기:</strong> overnight queued {overnightQueued.length}개 batch.
+            야간 cron 또는 즉시 dispatch 가능.
+          </div>
+          <button
+            onClick={handleDispatchOvernight}
+            className="text-xs px-3 py-1 bg-indigo-600 text-white rounded font-semibold hover:bg-indigo-700"
+          >
+            지금 일괄 dispatch ({overnightQueued.length})
+          </button>
+        </div>
+      )}
 
       <div className="bg-white rounded-lg shadow-sm ring-1 ring-gray-200 p-4">
         <h2 className="text-sm font-semibold text-gray-700 mb-2">최근 배치 (최대 50)</h2>
