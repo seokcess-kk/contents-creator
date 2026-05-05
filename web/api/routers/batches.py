@@ -290,6 +290,32 @@ _REVIEW_TAB_FILTER: dict[str, dict[str, str | None]] = {
 }
 
 
+@router.get("/{batch_id}/publish")
+def list_publish_queue(batch_id: str) -> dict[str, Any]:
+    """발행 준비 큐 — `status='ready_to_publish'` 만.
+
+    Phase B9 fix #2 — 운영자가 ready_to_publish 항목을 별도 page 에서 일괄 확인 +
+    URL 등록 다음 단계 동선 제공. /batches/[id]/publish 페이지의 데이터 소스.
+    target_url 부재 / publication_id 부재 인 row 가 핵심 운영 대상.
+    """
+    if not _supabase_configured():
+        raise HTTPException(status_code=503, detail="Supabase 미설정")
+    try:
+        batch = storage.get_batch(batch_id)
+        if batch is None:
+            raise HTTPException(status_code=404, detail="batch 미존재")
+        items = storage.list_items(batch_id, status="ready_to_publish", limit=500)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _supabase_error_response(exc, "list_publish_queue") from exc
+    return {
+        "batch_id": batch_id,
+        "count": len(items),
+        "items": [_item_with_slug(it) for it in items],
+    }
+
+
 @router.get("/{batch_id}/review")
 def list_review_queue(
     batch_id: str,

@@ -84,6 +84,14 @@ export default function BatchProgressTable({ batchId }: Props) {
             </span>
           </div>
           <div className="flex items-center gap-3">
+            {(batch.ready_to_publish_count ?? 0) > 0 && (
+              <Link
+                href={`/batches/${batchId}/publish`}
+                className="text-xs text-green-700 hover:underline font-semibold"
+              >
+                → 발행 준비 ({batch.ready_to_publish_count})
+              </Link>
+            )}
             {batch.needs_review_count > 0 && (
               <Link
                 href={`/batches/${batchId}/review`}

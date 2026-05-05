@@ -568,6 +568,11 @@ export interface BatchItem {
   priority: number;
   cluster_id: string | null;
   cluster_role: "primary" | "member";
+  intent: string | null;
+  region: string | null;
+  brand_id: string | null;
+  target_url: string | null;
+  memo: string | null;
   status: string;
   retry_count: number;
   max_retries: number;
@@ -681,6 +686,13 @@ export function listReviewQueue(
   tab: ReviewTab = "pending",
 ): Promise<{ batch_id: string; tab: string; count: number; items: BatchItem[] }> {
   return fetchJson(`/batches/${batchId}/review?tab=${tab}`);
+}
+
+// 발행 준비 큐 (Phase B9 fix #2) — status=ready_to_publish 만
+export function listPublishQueue(
+  batchId: string,
+): Promise<{ batch_id: string; count: number; items: BatchItem[] }> {
+  return fetchJson(`/batches/${batchId}/publish`);
 }
 
 export function reviewItem(
