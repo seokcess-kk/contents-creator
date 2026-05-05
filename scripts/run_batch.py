@@ -21,11 +21,15 @@ import argparse
 import json
 import logging
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from application import batch_orchestrator
+from config.settings import settings
 from domain.batch import storage
 from domain.batch.model import NotSupportedYetError
+
+_KST = timezone(timedelta(hours=9))
 
 logger = logging.getLogger(__name__)
 
@@ -200,7 +204,22 @@ def _cancel(batch_id: str) -> int:
 
 
 def _dispatch_overnight(batch_id: str | None) -> int:
-    """Phase 3 PR1 — overnight batch 일괄 dispatch."""
+    """Phase 3 PR1 — overnight batch 일괄 dispatch.
+
+    Phase 3 PR2 추가 — cron 친화 시간대 게이트:
+      - `batch_id` 명시 시: 운영자 의도 트리거 → 게이트 우회
+      - `BATCH_OVERNIGHT_FORCE=true` env: 시간대 게이트 우회 (수동 즉시 dispatch)
+      - 그 외: 현재 KST 시각이 `BATCH_OVERNIGHT_HOUR_KST` (default 22) 일 때만 실행,
+        아니면 noop (exit 0). 외부 cron 이 매시간 호출해도 1회만 실행되도록.
+    """
+    if not _is_overnight_window(batch_id=batch_id):
+        current = datetime.now(_KST).hour
+        logger.info(
+            "overnight 시간대 아님 (현재: %d시 KST, 활성: %d시). force=False — noop",
+            current,
+            settings.batch_overnight_hour_kst,
+        )
+        return 0
     try:
         result = batch_orchestrator.dispatch_overnight_batches(batch_id=batch_id)
     except Exception as exc:
@@ -213,6 +232,22 @@ def _dispatch_overnight(batch_id: str | None) -> int:
         f"  skipped_batches    : {result['skipped_batches']}\n"
     )
     return 0
+
+
+def _is_overnight_window(*, batch_id: str | None) -> bool:
+    """현재 KST 시각이 overnight dispatch 활성 시간대인지 판정.
+
+    우선순위:
+      1. batch_id 명시: 운영자 명시 트리거 → True
+      2. settings.batch_overnight_force: env 즉시 트리거 → True
+      3. 현재 KST 시각 == settings.batch_overnight_hour_kst → True
+      4. 그 외 → False (noop)
+    """
+    if batch_id is not None:
+        return True
+    if settings.batch_overnight_force:
+        return True
+    return datetime.now(_KST).hour == settings.batch_overnight_hour_kst
 
 
 def _backfill(batch_id: str) -> int:

@@ -348,3 +348,37 @@ def test_find_generated_content_by_triple_all_missing(mock_client: MagicMock) ->
     with patch("domain.batch.storage.get_client", return_value=mock_client):
         result = storage.find_generated_content_by_triple("job-1", "slug-1", "kw-1")
     assert result is None
+
+
+# ── Phase 3 PR2 — atomic claim ──
+
+
+def test_claim_item_for_dispatch_success(mock_client: MagicMock) -> None:
+    """status='queued' 인 row 1건 → KeywordBatchItem 반환 + payload 검증."""
+    mock_client.table.return_value.update.return_value.eq.return_value.eq.return_value.execute.return_value.data = [
+        {
+            "id": "i-1",
+            "batch_id": "b-1",
+            "keyword": "kw",
+            "status": "running",
+            "job_id": "batch-i-1-abc123",
+        }
+    ]
+    with patch("domain.batch.storage.get_client", return_value=mock_client):
+        claimed = storage.claim_item_for_dispatch("i-1", job_id="batch-i-1-abc123")
+    assert claimed is not None
+    assert claimed.id == "i-1"
+    assert claimed.job_id == "batch-i-1-abc123"
+    # payload 검증 — status/started_at/job_id 모두 set
+    payload = mock_client.table.return_value.update.call_args.args[0]
+    assert payload["status"] == "running"
+    assert payload["job_id"] == "batch-i-1-abc123"
+    assert "started_at" in payload
+
+
+def test_claim_item_for_dispatch_already_taken(mock_client: MagicMock) -> None:
+    """다른 worker 가 먼저 잡아서 status≠queued — eq filter 가 0 row 반환 → None."""
+    mock_client.table.return_value.update.return_value.eq.return_value.eq.return_value.execute.return_value.data = []
+    with patch("domain.batch.storage.get_client", return_value=mock_client):
+        claimed = storage.claim_item_for_dispatch("i-1", job_id="batch-i-1-xyz")
+    assert claimed is None

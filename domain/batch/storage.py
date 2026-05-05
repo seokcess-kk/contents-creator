@@ -477,6 +477,39 @@ def claim_next_queued_item(batch_id: str) -> KeywordBatchItem | None:
     return get_item(item.id)
 
 
+def claim_item_for_dispatch(item_id: str, *, job_id: str) -> KeywordBatchItem | None:
+    """status='queued' 인 item 을 atomic 하게 'running' 으로 claim (Phase 3 PR2).
+
+    PostgREST 의 `.eq("status", "queued")` 필터가 update 의 WHERE 절에 합성되어
+    "status=queued AND id=?" 한 row 만 atomic update. 두 worker 가 동시에 호출해도
+    한쪽만 1 row 반환받고 다른 쪽은 0 row → None 반환.
+
+    멀티 워커 진입 (`scripts/run_batch.py --dispatch-overnight` 외부 cron + web
+    process) 시 동일 item 중복 실행 차단. SPEC-BATCH §3 Phase 3 PR2.
+
+    반환:
+        KeywordBatchItem: claim 성공 (이 worker 만 처리할 권한 획득)
+        None: 이미 다른 worker 가 잡았거나 status≠queued 또는 row 부재
+    """
+    payload: dict[str, Any] = {
+        "status": "running",
+        "started_at": datetime.now(UTC).isoformat(),
+        "job_id": job_id,
+    }
+    result = (
+        get_client()
+        .table(_ITEM_TABLE)
+        .update(payload)
+        .eq("id", item_id)
+        .eq("status", "queued")
+        .execute()
+    )
+    rows = result.data or []
+    if not rows:
+        return None
+    return _row_to_item(cast("dict[str, Any]", rows[0]))
+
+
 # ── payload / row 변환 ──
 
 

@@ -49,9 +49,14 @@ def storage_mock() -> Any:
 
     Phase B8 — `_dispatch_item` 이 batch fetch 후 사전 필터/cluster 분기를 결정하므로
     각 테스트에서 명시 override 안 하면 임계값 None / cluster_dedupe False default 사용.
+
+    Phase 3 PR2 — atomic claim 도입. claim_item_for_dispatch default 는 get_item 의
+    return_value 를 그대로 반환 (single-worker 환경 가정). race-condition 검증
+    테스트는 명시적으로 `claim_item_for_dispatch.return_value = None` override.
     """
     with patch("application.batch_orchestrator.storage") as m:
         m.get_batch.return_value = _batch()
+        m.claim_item_for_dispatch.side_effect = lambda item_id, *, job_id: m.get_item.return_value
         yield m
 
 
@@ -140,6 +145,22 @@ class TestDispatchItem:
         # mock 의 update 가 호출되면 안 됨
         batch_orchestrator._dispatch_item("i-1")
         storage_mock.update_item_status.assert_not_called()
+        # Phase 3 PR2 — terminal status 는 claim 호출 전에 차단되어야 함
+        storage_mock.claim_item_for_dispatch.assert_not_called()
+
+    def test_claim_failed_skips_dispatch(self, storage_mock: Any) -> None:
+        """Phase 3 PR2 — atomic claim 실패 (다른 worker 가 먼저 잡음) → run_* 호출 0."""
+        storage_mock.get_item.return_value = _item(operation="analyze")
+        storage_mock.claim_item_for_dispatch.side_effect = None
+        storage_mock.claim_item_for_dispatch.return_value = None
+        with patch("application.batch_orchestrator.orchestrator") as orch_mock:
+            batch_orchestrator._dispatch_item("i-1")
+            orch_mock.run_analyze_only.assert_not_called()
+            orch_mock.run_pipeline.assert_not_called()
+            orch_mock.run_generate_only.assert_not_called()
+        # 후속 status update 도 호출 안 됨
+        storage_mock.update_item_status.assert_not_called()
+        storage_mock.update_item_result.assert_not_called()
 
     def test_skips_ready_to_publish_terminal(self, storage_mock: Any) -> None:
         """Phase B9 fix — ready_to_publish 도 terminal 로 처리 (재진입 시 중복 실행 방지)."""
@@ -165,9 +186,10 @@ class TestDispatchItem:
             batch_orchestrator._dispatch_item("i-1")
             orch_mock.run_analyze_only.assert_called_once_with("kw")
             orch_mock.run_pipeline.assert_not_called()
-        # running → succeeded
+        # Phase 3 PR2 — running 마킹은 claim_item_for_dispatch 가 atomic 하게 처리.
+        # update_item_status 는 최종 status 만 호출.
+        storage_mock.claim_item_for_dispatch.assert_called_once()
         statuses = [c.args[1] for c in storage_mock.update_item_status.call_args_list]
-        assert "running" in statuses
         assert "succeeded" in statuses
         # Phase B7 — pattern_card_id 가 update_item_result 로 전파
         storage_mock.update_item_result.assert_called_once()

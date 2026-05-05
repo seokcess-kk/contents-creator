@@ -172,6 +172,18 @@ class Settings(BaseSettings):
         default=1.0, description="cluster member 의 primary 상태 polling 주기 (초)"
     )
 
+    # SPEC-BATCH Phase 3 PR2 — overnight cron 시간대 게이트.
+    # `scripts/run_batch.py --dispatch-overnight` 가 외부 cron (GitHub Actions /
+    # Render cron) 에서 호출되며, 게이트 시간대가 아니면 noop (exit 0). 운영자가
+    # `--overnight-batch-id` 로 명시 호출 시 게이트 우회.
+    batch_overnight_hour_kst: int = Field(
+        default=22, description="overnight dispatch 가 활성화되는 KST 시각 (0~23)"
+    )
+    batch_overnight_force: bool = Field(
+        default=False,
+        description="overnight 시간대 게이트 무시 (env 즉시 트리거 / 테스트용)",
+    )
+
 
 settings = Settings()
 

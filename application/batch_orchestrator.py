@@ -196,13 +196,16 @@ def _dispatch_item(item_id: str) -> None:
         )
         return
 
+    # Phase 3 PR2 — atomic claim. 멀티 워커 (web process + 외부 cron) 진입 시
+    # 동일 item 의 동시 dispatch 방지. claim 실패 = 이미 다른 worker 가 처리 중.
     job_id = f"batch-{item_id[:8]}-{uuid.uuid4().hex[:6]}"
-    storage.update_item_status(
-        item_id,
-        "running",
-        job_id=job_id,
-        started_at=datetime.now(UTC),
-    )
+    claimed = storage.claim_item_for_dispatch(item_id, job_id=job_id)
+    if claimed is None:
+        logger.info(
+            "batch.dispatch.claim_failed item_id=%s — already taken by another worker", item_id
+        )
+        return
+    item = claimed
 
     # Phase 2 PR2 — 사전 필터 (임계값 설정된 batch 만).
     if _has_prefilter(batch) and not _apply_prefilter(item, batch):

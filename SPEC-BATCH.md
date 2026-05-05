@@ -177,7 +177,7 @@ needs_review + review action reject                  → review_status=rejected 
 
 ---
 
-### Phase 3 — overnight 모드 골격 + 운영자 시간대 일괄 dispatch (PR1 ✅) + worker process 분리 (PR2~ 후속)
+### Phase 3 — overnight 모드 골격 + 운영자 시간대 일괄 dispatch (PR1 ✅) + atomic claim + cron 시간대 게이트 (PR2 ✅)
 
 **Phase 3 결정 (2026-05-05)** — **Anthropic Batch API adapter 는 운영 데이터 누적 후 별도 PR**. 명시 폐기는 아니지만, 초기 버전의 우선순위는 운영 안정성·검수/발행 동선·사후 분석 구조이며, 비용 최적화는 운영 데이터로 trade-off 판단 후 도입.
 
@@ -200,9 +200,11 @@ needs_review + review action reject                  → review_status=rejected 
 - outline → body → compliance/fix 순차 의존
 - 스트리밍이 필요한 인터랙티브 호출
 
-**Worker process 분리** (Phase 3 PR2~):
+**Worker process 분리** (Phase 3 PR2 ✅):
 - Phase 1~2 의 `BatchJobManager` 는 web process in-memory MVP
-- 별도 worker process 또는 Render cron command 로 분리
+- 별도 worker process 또는 Render cron command 로 분리 — `scripts/run_batch.py --dispatch-overnight` 가 외부 cron 진입점
+- **시간대 게이트 (PR2)**: `BATCH_OVERNIGHT_HOUR_KST` (default 22). cron 이 매시간 호출해도 활성 시간대만 dispatch (그 외 exit 0). `--overnight-batch-id` 명시 또는 `BATCH_OVERNIGHT_FORCE=true` 면 우회
+- **Atomic claim (PR2)**: `claim_item_for_dispatch(item_id, *, job_id)` 가 PostgREST `eq("status","queued")` 필터로 race-safe queued→running. web process 의 즉시 dispatch 와 외부 cron 이 동일 item 을 두 번 처리하지 않음
 - 야간 시작 시간 (default 22:00 KST) 에 mode IN (overnight, auto AND priority>=4) + status=queued 일괄 처리
 
 **멀티 워커 진입 시 자원 보호** (Phase 3 PR3~):
@@ -653,3 +655,4 @@ python scripts/run_batch.py --csv keywords.csv --auto-publish    # Phase 4
 - `2026-05-05`: SPEC-BATCH **v2 정합화** — 운영 철학 §0 신설, Phase 2 상태 머신·검수 큐·UI/UX 반영, §4 schema 의 cluster_dedupe default false + compliance_violations + ready_to_publish 명시, §5 Pydantic 모델 갱신, §7 환경변수 + Phase 2 누락 항목 추가, §9 risk register 4 항목 추가 (B9~B12), §11 운영 화면 표 신설.
 - `2026-05-05`: Phase 3 PR1 — **overnight 모드 골격 + 운영자 시간대 일괄 dispatch**. mode=overnight 활성화 (NotSupportedYetError 제거). DB 저장만 + `dispatch_overnight_batches()` 트리거 진입점 (CLI `--dispatch-overnight` + API `POST /batches/dispatch-overnight`). BatchUploadForm radio 활성화 + /batches 목록 banner 일괄 dispatch 버튼. (commit `d112e0b`)
 - `2026-05-05`: Phase 3 결정 정정 — **Anthropic Batch API adapter 보류**. 운영 안정성·검수/발행 동선·사후 분석 구조가 비용 최적화보다 우선. mode=overnight 의미를 "Batch API" 가 아니라 "운영자 시간대 일괄 dispatch (일반 API 그대로)" 로 재정의. mode=auto 는 priority 라우팅. Batch API 도입은 운영 데이터 누적 + 비용/SLA 데이터 분석 후 Phase 5+ 별도 PR.
+- `2026-05-05`: Phase 3 PR2 — **Worker process 분리: atomic claim + cron 시간대 게이트**. (1) `domain/batch/storage.claim_item_for_dispatch(item_id, *, job_id)` 신규 — PostgREST `eq("status","queued")` 필터로 race-safe queued→running 전환. 멀티 워커 (web process + 외부 cron) 진입 시 동일 item 중복 dispatch 차단. `_dispatch_item` 의 status check + update_item_status('running') 패턴을 atomic claim 으로 교체. (2) `scripts/run_batch.py --dispatch-overnight` 에 KST 시간대 게이트 추가 — `BATCH_OVERNIGHT_HOUR_KST` (default 22) + `BATCH_OVERNIGHT_FORCE` env. `--overnight-batch-id` 명시 또는 force 시 게이트 우회. 외부 cron 이 매시간 호출해도 활성 시간대 외에는 noop (exit 0). 테스트 +8 (claim 성공/실패 / dispatch claim_failed no-op / overnight gate 4 케이스).

@@ -1214,3 +1214,28 @@
 ### B10.4 검증 + commit
 - [ ] `bash .claude/hooks/build-check.sh` 그린
 - [ ] commit `feat(batch): add triple-link FK backfill tool` (Phase 2 PR4)
+
+---
+
+## ⚙️ Phase B15 — Worker process 분리 (Phase 3 PR2, 2026-05-05 착수)
+
+> SPEC-BATCH §3 Phase 3 PR2. PR1 의 `dispatch_overnight_batches()` 골격 위에 (1) 멀티 워커 race-safe atomic claim, (2) 외부 cron 친화 시간대 게이트를 더해 web process + 외부 cron 동시 운영을 가능하게 한다. Anthropic Batch API 는 Phase 5+ 별도 PR (운영 데이터 누적 후 trade-off 판단).
+
+### B15.1 도메인 — atomic claim ✅
+- [x] `domain/batch/storage.claim_item_for_dispatch(item_id, *, job_id)` 신규 — PostgREST `eq("status","queued")` 필터로 race-safe queued→running. 두 worker 동시 호출 시 한쪽만 1 row 받고 다른 쪽은 0 row → None 반환
+
+### B15.2 application — atomic claim 적용 ✅
+- [x] `application/batch_orchestrator._dispatch_item` — 기존 `update_item_status("running", job_id, started_at)` 패턴을 `claim_item_for_dispatch` 호출로 교체. claim 실패 시 즉시 return (run_* 호출 0)
+
+### B15.3 settings + CLI 시간대 게이트 ✅
+- [x] `config/settings.py` — `batch_overnight_hour_kst` (default 22) + `batch_overnight_force` (default False) Field 추가
+- [x] `scripts/run_batch.py` — `_is_overnight_window(*, batch_id)` 신규 + `_dispatch_overnight` 가 게이트 미통과 시 noop (exit 0). batch_id 명시 또는 force=true 시 우회
+
+### B15.4 테스트 ✅
+- [x] `tests/test_batch/test_storage.py` — claim 성공 (KeywordBatchItem 반환 + payload 검증) / 이미 잡힘 (None)
+- [x] `tests/test_application/test_batch_orchestrator.py` — `storage_mock` fixture 가 claim_item_for_dispatch default 를 get_item.return_value 로 설정 + `test_claim_failed_skips_dispatch` (claim None → run_* 0). 기존 `test_analyze_operation_calls_run_analyze_only` 의 'running' status assertion 을 atomic claim 의미에 맞게 정정 (claim_item_for_dispatch.assert_called_once())
+- [x] `tests/test_scripts/test_run_batch_overnight_gate.py` — 4 케이스: batch_id bypass / force bypass / window match / window miss
+
+### B15.5 검증 + commit
+- [ ] `bash .claude/hooks/build-check.sh` 그린
+- [ ] commit `feat(batch): Phase 3 PR2 — atomic claim + cron overnight 시간대 게이트`
