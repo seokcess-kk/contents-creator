@@ -172,6 +172,19 @@ class Settings(BaseSettings):
         default=1.0, description="cluster member 의 primary 상태 polling 주기 (초)"
     )
 
+    # SPEC-BATCH §12 Phase 5+ PR1 — cluster member 본문 차별화 검증.
+    # cluster_dedupe ON 정책의 1페이지 노출 리스크 mitigation. member 가 primary 의
+    # PatternCard 재사용해 본문 생성 후 단어 3-gram Jaccard 측정. 임계값 초과 시
+    # 자동 needs_review (검수 큐에서 운영자가 차별화 보강).
+    cluster_body_similarity_enabled: bool = Field(
+        default=True,
+        description="cluster member 본문 차별화 검증 ON/OFF. cluster_dedupe ON 일 때만 의미",
+    )
+    cluster_body_similarity_threshold: float = Field(
+        default=0.7,
+        description="단어 3-gram Jaccard 임계값. 이 이상이면 needs_review 강제 마킹",
+    )
+
     # SPEC-BATCH Phase 4 PR1 — Slack 알림 (선택). webhook 미설정 시 모든 알림 noop.
     # 검수 큐가 1차 운영 도구이므로 개별 의료법 위반 알림은 별도 toggle 로 제어
     # (운영 노이즈 회피). 대량 처리 중 false 가 default.

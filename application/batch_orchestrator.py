@@ -230,23 +230,49 @@ def _dispatch_item(item_id: str) -> None:
         _handle_item_failure(item, exc)
         return
 
+    # Phase 5 PR1 — cluster member 본문 차별화 검증 (cluster_dedupe ON 1페이지 노출 mitigation).
+    # primary != None + generate/pipeline 인 경우만. 임계값 초과 시 needs_review 강제.
+    body_too_similar = False
+    if (
+        primary is not None
+        and item.operation in ("generate", "pipeline")
+        and settings.cluster_body_similarity_enabled
+    ):
+        # claim 후 갱신된 item 의 generated_content_id 가 _record_item_result 로 채워졌으므로
+        # storage 에서 다시 조회해 최신 FK 회수.
+        refreshed_item = storage.get_item(item_id) or item
+        if _check_member_body_too_similar(refreshed_item, primary):
+            body_too_similar = True
+            compliance_violations = [*compliance_violations, "본문_차별화_부족"]
+
     # Phase B9 — operation 별 final status 분기 (사용자 운영 철학 반영).
     # analyze 는 발행할 본문 없음 → succeeded 유지.
     # generate/pipeline: compliance_passed=True → ready_to_publish, False/None → needs_review.
+    # Phase 5 PR1: 본문 차별화 부족도 needs_review 로 강제 (의료법과는 별도 reason).
     new_status: ItemStatus
     if item.operation == "analyze":
         new_status = "succeeded"
-    elif compliance_passed is True:
+    elif compliance_passed is True and not body_too_similar:
         new_status = "ready_to_publish"
     else:
-        # False (의료법 위반 잔존) / None (결과 모델 누락 / 중간 실패) 둘 다 검수 필요.
-        # 데이터 누락 방지 — 발행 준비 큐에서 빠지지 않도록 needs_review 안전망.
+        # False (의료법 위반 잔존) / None (결과 모델 누락 / 중간 실패) / 본문_차별화_부족
+        # 모두 검수 필요. 데이터 누락 방지 — 발행 준비 큐에서 빠지지 않도록 needs_review 안전망.
         new_status = "needs_review"
     storage.update_item_status(
         item_id,
         new_status,
         completed_at=datetime.now(UTC),
     )
+    # 본문_차별화_부족 카테고리는 compliance_violations 에 추가됐으므로 update_item_result 에도 반영.
+    if body_too_similar and item.id is not None:
+        try:
+            storage.update_item_result(item.id, compliance_violations=compliance_violations)
+        except Exception:
+            logger.warning(
+                "batch.cluster.similarity_violation_persist_failed item_id=%s",
+                item_id,
+                exc_info=True,
+            )
     logger.info(
         "batch.item_done item_id=%s keyword=%s operation=%s status=%s cp=%s",
         item_id,
@@ -575,6 +601,47 @@ def _run_member_with_primary(
         return pipe_result.compliance_passed, pipe_result.compliance_violations
     # pragma: no cover — Pydantic Literal 로 미리 차단
     raise ValueError(f"알 수 없는 operation: {item.operation}")
+
+
+def _check_member_body_too_similar(member: KeywordBatchItem, primary: KeywordBatchItem) -> bool:
+    """SPEC §12 Phase 5+ PR1 — cluster member 본문이 primary 와 너무 유사한지 검사.
+
+    `settings.cluster_body_similarity_threshold` 이상 → True (needs_review 마킹 대상).
+    member / primary 의 generated_content_id 둘 다 있고 본문 fetch 모두 성공해야 검증.
+    한쪽이라도 부재 시 graceful False (logger.info — 검증 스킵).
+    """
+    from application.text_similarity import fetch_content_md, jaccard_similarity
+
+    if member.generated_content_id is None or primary.generated_content_id is None:
+        logger.info(
+            "batch.cluster.similarity.skip member_id=%s primary_id=%s — gen_id 부재",
+            member.id,
+            primary.id,
+        )
+        return False
+
+    member_text = fetch_content_md(member.generated_content_id)
+    primary_text = fetch_content_md(primary.generated_content_id)
+    if member_text is None or primary_text is None:
+        logger.info(
+            "batch.cluster.similarity.skip member_id=%s primary_id=%s — content_md fetch 실패",
+            member.id,
+            primary.id,
+        )
+        return False
+
+    score = jaccard_similarity(member_text, primary_text, ngram=3)
+    threshold = settings.cluster_body_similarity_threshold
+    too_similar = score >= threshold
+    logger.info(
+        "batch.cluster.similarity member_id=%s primary_id=%s score=%.3f threshold=%.2f too_similar=%s",
+        member.id,
+        primary.id,
+        score,
+        threshold,
+        too_similar,
+    )
+    return too_similar
 
 
 def _resolve_primary_card_path(primary: KeywordBatchItem) -> Path | None:

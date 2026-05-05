@@ -1314,6 +1314,30 @@
 - [x] `tests/test_application/test_batch_orchestrator.py` 추가 — 5 (review threshold triggered / disabled when 0 / skipped below / enqueue auto_publish_enabled propagation True / default False)
 - [x] `tests/test_web/test_batches_api.py` 추가 — 2 (JSON auto_publish_enabled / multipart auto_publish_enabled) + 기존 default False assertion 보강
 
-### B18.4 검증 + commit
+### B18.4 검증 + commit ✅
+- [x] `bash .claude/hooks/build-check.sh` 그린 (1255 passed, 75.61% coverage)
+- [x] commit `feat(batch): Phase 4 PR3 — 검수 큐 임계 알림 + auto_publish UI 토글` (`d4bc72a`)
+
+---
+
+## 🔬 Phase B19 — 본문 차별화 검증 (Phase 5 PR1, 2026-05-05 착수)
+
+> SPEC-BATCH §12 Phase 5+ 의 첫 항목. cluster_dedupe ON 정책의 1페이지 노출 리스크 mitigation. cluster member 가 primary PatternCard 재사용해 본문 생성 후, primary 본문과 단어 3-gram Jaccard 측정 → 임계값 초과 시 자동 needs_review. outline negative example 주입은 Phase 5 PR2 후속 (생성 단계 prompt 변경, 운영 데이터 누적 후 재검토).
+
+### B19.1 application — Jaccard + fetch helper ✅
+- [x] `application/text_similarity.py` 신규. `jaccard_similarity(a, b, *, ngram=3) -> float` — 단어 n-gram set Jaccard. 둘 다 빈 토큰 → 1.0 (폴백), 한쪽 빈 토큰 → 0.0, n-gram 길이보다 짧으면 unigram fallback. `fetch_content_md(generated_content_id)` — Supabase 미설정/실패/부재 모두 graceful None
+- [x] settings — `cluster_body_similarity_enabled` (default True), `cluster_body_similarity_threshold` (default 0.7). 단어 3-gram + 0.7 은 1페이지 노출 합리적 차단점
+
+### B19.2 _dispatch_item hook ✅
+- [x] `_check_member_body_too_similar(member, primary)` 신규 helper — gen_id 부재 / fetch 실패 시 graceful False (검증 스킵). score >= threshold → True
+- [x] `_dispatch_item` cluster reuse + generate/pipeline + enabled toggle 시점에 호출. claim 후 갱신된 item 의 generated_content_id 가 _record_item_result 로 채워졌으므로 storage.get_item 으로 refresh
+- [x] too_similar=True → `compliance_violations` 에 `본문_차별화_부족` 추가, final status 강제 needs_review (compliance_passed=True 라도 차단). update_item_result 로 violations DB 반영 (graceful)
+
+### B19.3 테스트 ✅ — 20건
+- [x] `tests/test_application/test_text_similarity.py` 13 케이스 (jaccard identical/different/partial/both empty/one empty/short fallback/default ngram/range + fetch 5)
+- [x] `tests/test_application/test_batch_cluster.py` 추가 — 4 케이스 (`TestCheckMemberBodyTooSimilar`: gen_id 부재 → False / fetch 실패 → False / 임계 미만 → False / 임계 이상 → True)
+- [x] `tests/test_application/test_batch_orchestrator.py` 추가 — 3 케이스 (cluster reuse + body too_similar → needs_review + 본문_차별화_부족 violation / below threshold → ready_to_publish 유지 / disabled toggle → check 호출 0)
+
+### B19.4 검증 + commit
 - [ ] `bash .claude/hooks/build-check.sh` 그린
-- [ ] commit `feat(batch): Phase 4 PR3 — 검수 큐 임계 알림 + auto_publish UI 토글`
+- [ ] commit `feat(batch): Phase 5 PR1 — 본문 차별화 검증 (Jaccard)`

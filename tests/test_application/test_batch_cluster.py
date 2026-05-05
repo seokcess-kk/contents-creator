@@ -242,3 +242,86 @@ def test_run_member_generate_path_missing_raises(storage_mock: Any) -> None:
         pytest.raises(RuntimeError, match="PatternCard 파일 부재"),
     ):
         batch_orchestrator._run_member_with_primary(item, primary)
+
+
+# ── Phase 5 PR1 — 본문 차별화 검증 (Jaccard) ──
+
+
+class TestCheckMemberBodyTooSimilar:
+    """`_check_member_body_too_similar` 유닛 테스트 — fetch / score / 임계값 비교."""
+
+    def test_member_or_primary_gen_id_missing_returns_false(self) -> None:
+        """둘 중 하나라도 generated_content_id 부재 → 검증 스킵 False."""
+        m = _item(operation="generate", generated_content_id=None)
+        p = _primary_succeeded()
+        assert batch_orchestrator._check_member_body_too_similar(m, p) is False
+
+        m2 = _item(operation="generate", generated_content_id="gen-m")
+        p2 = KeywordBatchItem(
+            id="i-primary",
+            batch_id="b-1",
+            keyword="x",
+            cluster_id="c-1",
+            cluster_role="primary",
+            status="succeeded",
+            generated_content_id=None,
+        )
+        assert batch_orchestrator._check_member_body_too_similar(m2, p2) is False
+
+    def test_fetch_failure_returns_false(self) -> None:
+        """fetch_content_md 가 None 반환 (Supabase 실패) → 검증 스킵 False."""
+        m = _item(operation="generate", generated_content_id="gen-m")
+        p = KeywordBatchItem(
+            id="i-primary",
+            batch_id="b-1",
+            keyword="x",
+            cluster_id="c-1",
+            cluster_role="primary",
+            status="succeeded",
+            generated_content_id="gen-p",
+        )
+        with patch("application.text_similarity.fetch_content_md", return_value=None):
+            assert batch_orchestrator._check_member_body_too_similar(m, p) is False
+
+    def test_below_threshold_returns_false(self) -> None:
+        """유사도 < threshold → False (정상 차별화 — ready_to_publish 후보)."""
+        m = _item(operation="generate", generated_content_id="gen-m")
+        p = KeywordBatchItem(
+            id="i-primary",
+            batch_id="b-1",
+            keyword="x",
+            cluster_id="c-1",
+            cluster_role="primary",
+            status="succeeded",
+            generated_content_id="gen-p",
+        )
+        with (
+            patch(
+                "application.text_similarity.fetch_content_md",
+                side_effect=[
+                    "다이어트 한의원 천안 추천 후기 효과 좋은 곳 정리해드립니다",
+                    "비염 치료 강남 진료 상담 정리 알려드립니다",
+                ],
+            ),
+        ):
+            assert batch_orchestrator._check_member_body_too_similar(m, p) is False
+
+    def test_above_threshold_returns_true(self) -> None:
+        """유사도 >= threshold → True (needs_review 마킹 대상)."""
+        m = _item(operation="generate", generated_content_id="gen-m")
+        p = KeywordBatchItem(
+            id="i-primary",
+            batch_id="b-1",
+            keyword="x",
+            cluster_id="c-1",
+            cluster_role="primary",
+            status="succeeded",
+            generated_content_id="gen-p",
+        )
+        text = "다이어트 한의원 천안 추천 후기 효과 좋은 곳 정리해드립니다 운영자 의견 포함"
+        # 같은 텍스트 → score 1.0 >= 0.7 → too_similar
+        with patch(
+            "application.text_similarity.fetch_content_md",
+            side_effect=[text, text],
+        ):
+            assert batch_orchestrator._check_member_body_too_similar(m, p) is True

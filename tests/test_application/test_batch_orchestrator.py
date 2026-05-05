@@ -368,6 +368,140 @@ class TestDispatchItem:
             batch_orchestrator._dispatch_item("i-1")
         notif.send_compliance_violation.assert_not_called()
 
+    # ── Phase 5 PR1 — cluster member 본문 차별화 검증 ──
+
+    def test_cluster_body_too_similar_marks_needs_review(self, storage_mock: Any) -> None:
+        """cluster reuse + 본문 유사도 임계값 초과 → needs_review 강제, ready_to_publish 차단."""
+        member_item = _item(
+            operation="pipeline",
+            cluster_id="c-1",
+            cluster_role="member",
+        )
+        # _dispatch_item 의 batch.cluster_dedupe=True 분기 트리거
+        storage_mock.get_batch.return_value = _batch(id="b-1", cluster_dedupe=True)
+        storage_mock.get_item.return_value = member_item
+        # _resolve_cluster_primary 가 primary 반환
+        primary = KeywordBatchItem(
+            id="i-primary",
+            batch_id="b-1",
+            keyword="primary-kw",
+            cluster_id="c-1",
+            cluster_role="primary",
+            status="succeeded",
+            pattern_card_id="pc-1",
+            generated_content_id="gen-p",
+        )
+        with (
+            patch.object(batch_orchestrator, "_resolve_cluster_primary", return_value=primary),
+            patch.object(batch_orchestrator, "_resolve_primary_card_path") as pc_path_mock,
+            patch.object(batch_orchestrator, "_check_member_body_too_similar", return_value=True),
+            patch("application.batch_orchestrator.orchestrator") as orch_mock,
+        ):
+            from pathlib import Path
+
+            pc_path_mock.return_value = Path("/tmp/pc.json")
+            orch_mock.run_pipeline.return_value = PipelineResult(
+                status=StageStatus.SUCCEEDED,
+                keyword="kw",
+                slug="kw",
+                pattern_card_id="pc-1",
+                generated_content_id="gen-m",
+                compliance_passed=True,  # 의료법은 통과지만 본문 유사도로 needs_review 강제
+            )
+            batch_orchestrator._dispatch_item("i-1")
+        statuses = [c.args[1] for c in storage_mock.update_item_status.call_args_list]
+        assert "needs_review" in statuses
+        assert "ready_to_publish" not in statuses
+        # compliance_violations 에 본문_차별화_부족 카테고리 추가됐는지 update_item_result 검증
+        violation_calls = [
+            c
+            for c in storage_mock.update_item_result.call_args_list
+            if c.kwargs.get("compliance_violations") is not None
+        ]
+        assert violation_calls
+        last_violations = violation_calls[-1].kwargs["compliance_violations"]
+        assert "본문_차별화_부족" in last_violations
+
+    def test_cluster_body_below_threshold_keeps_ready_to_publish(self, storage_mock: Any) -> None:
+        """cluster reuse + 본문 차별화 OK + compliance_passed=True → ready_to_publish."""
+        storage_mock.get_batch.return_value = _batch(id="b-1", cluster_dedupe=True)
+        storage_mock.get_item.return_value = _item(
+            operation="pipeline",
+            cluster_id="c-1",
+            cluster_role="member",
+        )
+        primary = KeywordBatchItem(
+            id="i-primary",
+            batch_id="b-1",
+            keyword="primary-kw",
+            cluster_id="c-1",
+            cluster_role="primary",
+            status="succeeded",
+            pattern_card_id="pc-1",
+            generated_content_id="gen-p",
+        )
+        with (
+            patch.object(batch_orchestrator, "_resolve_cluster_primary", return_value=primary),
+            patch.object(batch_orchestrator, "_resolve_primary_card_path") as pc_path_mock,
+            patch.object(batch_orchestrator, "_check_member_body_too_similar", return_value=False),
+            patch("application.batch_orchestrator.orchestrator") as orch_mock,
+        ):
+            from pathlib import Path
+
+            pc_path_mock.return_value = Path("/tmp/pc.json")
+            orch_mock.run_pipeline.return_value = PipelineResult(
+                status=StageStatus.SUCCEEDED,
+                keyword="kw",
+                slug="kw",
+                pattern_card_id="pc-1",
+                generated_content_id="gen-m",
+                compliance_passed=True,
+            )
+            batch_orchestrator._dispatch_item("i-1")
+        statuses = [c.args[1] for c in storage_mock.update_item_status.call_args_list]
+        assert "ready_to_publish" in statuses
+        assert "needs_review" not in statuses
+
+    def test_cluster_similarity_disabled_skips_check(self, storage_mock: Any) -> None:
+        """settings.cluster_body_similarity_enabled=False → _check_member_body_too_similar 호출 0."""
+        storage_mock.get_batch.return_value = _batch(id="b-1", cluster_dedupe=True)
+        storage_mock.get_item.return_value = _item(
+            operation="pipeline",
+            cluster_id="c-1",
+            cluster_role="member",
+        )
+        primary = KeywordBatchItem(
+            id="i-primary",
+            batch_id="b-1",
+            keyword="primary-kw",
+            cluster_id="c-1",
+            cluster_role="primary",
+            status="succeeded",
+            pattern_card_id="pc-1",
+            generated_content_id="gen-p",
+        )
+        with (
+            patch.object(batch_orchestrator, "_resolve_cluster_primary", return_value=primary),
+            patch.object(batch_orchestrator, "_resolve_primary_card_path") as pc_path_mock,
+            patch.object(batch_orchestrator, "_check_member_body_too_similar") as chk,
+            patch("application.batch_orchestrator.orchestrator") as orch_mock,
+            patch("application.batch_orchestrator.settings") as st,
+        ):
+            from pathlib import Path
+
+            pc_path_mock.return_value = Path("/tmp/pc.json")
+            st.cluster_body_similarity_enabled = False
+            orch_mock.run_pipeline.return_value = PipelineResult(
+                status=StageStatus.SUCCEEDED,
+                keyword="kw",
+                slug="kw",
+                pattern_card_id="pc-1",
+                generated_content_id="gen-m",
+                compliance_passed=True,
+            )
+            batch_orchestrator._dispatch_item("i-1")
+        chk.assert_not_called()
+
     def test_generate_compliance_none_marks_needs_review(self, storage_mock: Any) -> None:
         """Phase B9 — generate + compliance_passed=None → needs_review (데이터 누락 안전망)."""
         storage_mock.get_item.return_value = _item(operation="generate")
