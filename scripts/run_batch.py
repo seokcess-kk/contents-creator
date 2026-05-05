@@ -55,6 +55,12 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="dispatch_overnight",
         help="Phase 3 PR1 — overnight 모드 batch 일괄 dispatch (야간 cron 또는 운영자 트리거)",
     )
+    group.add_argument(
+        "--auto-publish",
+        type=str,
+        dest="auto_publish",
+        help="Phase 4 PR2 — 배치 ID. auto_publish_enabled=True 인 batch 의 ready_to_publish + target_url item 을 publications 자동 등록",
+    )
     parser.add_argument(
         "--overnight-batch-id",
         type=str,
@@ -113,6 +119,8 @@ def main() -> int:
         return _backfill(args.backfill_fk)
     if args.dispatch_overnight:
         return _dispatch_overnight(args.overnight_batch_id)
+    if args.auto_publish is not None:
+        return _auto_publish(args.auto_publish)
     return 1  # pragma: no cover — mutually_exclusive_group required=True 가 차단
 
 
@@ -262,6 +270,36 @@ def _backfill(batch_id: str) -> int:
         f"  matched_pattern_cards   : {result['matched_pattern_cards']}\n"
         f"  matched_generated       : {result['matched_generated_contents']}\n"
         f"  still_unlinked          : {result['still_unlinked']}\n"
+    )
+    return 0
+
+
+def _auto_publish(batch_id: str) -> int:
+    """SPEC-BATCH §3 Phase 4 PR2 — publication 자동 등록 (opt-in).
+
+    `auto_publish_enabled=False` 면 noop (skipped_reason 출력 후 exit 0).
+    """
+    from application import auto_publisher
+
+    try:
+        result = auto_publisher.auto_publish_ready_items(batch_id)
+    except ValueError as exc:
+        logger.error("배치 미존재: %s", exc)
+        return 1
+    except Exception as exc:
+        logger.error("auto-publish 실패: %s", exc)
+        return 1
+    if result.get("skipped_reason") == "auto_publish_disabled":
+        print(  # noqa: T201
+            f"\n배치 {batch_id} — auto_publish_enabled=False (자동 발행 비활성).\n"
+            f"  운영자가 검수 큐 / publish 페이지에서 수동 URL 등록 필요.\n"
+        )
+        return 0
+    print(  # noqa: T201
+        f"\n배치 {batch_id} 자동 발행 완료\n"
+        f"  registered : {result['registered']}\n"
+        f"  skipped    : {result['skipped']}\n"
+        f"  failed     : {result['failed']}\n"
     )
     return 0
 

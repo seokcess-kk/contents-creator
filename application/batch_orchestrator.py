@@ -942,6 +942,24 @@ def recompute_batch_status(batch_id: str) -> KeywordBatch | None:
         except Exception:
             logger.warning("batch.notify.completed_failed batch_id=%s", batch_id, exc_info=True)
 
+    # Phase 4 PR2 — completed 첫 진입 + auto_publish_enabled=True 시 자동 발행 등록.
+    # 멱등 — 이미 publication_id 채워진 item 은 auto_publisher 가 자체 skip.
+    # 실패해도 batch status 자체는 영향 없음 (graceful).
+    if (
+        refreshed is not None
+        and new_status == "completed"
+        and not previously_completed
+        and refreshed.auto_publish_enabled
+    ):
+        try:
+            from application import auto_publisher
+
+            auto_publisher.auto_publish_ready_items(batch_id)
+        except Exception:
+            logger.warning(
+                "batch.auto_publish.failed batch_id=%s — graceful", batch_id, exc_info=True
+            )
+
     return refreshed
 
 

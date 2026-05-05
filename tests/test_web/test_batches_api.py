@@ -458,6 +458,67 @@ class TestBackfillFk:
         assert body["still_unlinked"] == 1
 
 
+class TestAutoPublish:
+    """Phase 4 PR2 — POST /auto-publish 동기 응답 검증."""
+
+    def test_returns_registered_counts(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from application import auto_publisher
+
+        monkeypatch.setattr(
+            auto_publisher,
+            "auto_publish_ready_items",
+            lambda _id: {
+                "registered": 3,
+                "skipped": 1,
+                "skipped_reason": None,
+                "failed": 0,
+                "items": [],
+            },
+        )
+        resp = client.post("/api/batches/b-1/auto-publish")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["batch_id"] == "b-1"
+        assert body["registered"] == 3
+        assert body["skipped"] == 1
+        assert body["failed"] == 0
+
+    def test_disabled_returns_skipped_reason(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """auto_publish_enabled=False 면 200 + skipped_reason='auto_publish_disabled'."""
+        from application import auto_publisher
+
+        monkeypatch.setattr(
+            auto_publisher,
+            "auto_publish_ready_items",
+            lambda _id: {
+                "registered": 0,
+                "skipped": 0,
+                "skipped_reason": "auto_publish_disabled",
+                "failed": 0,
+                "items": [],
+            },
+        )
+        resp = client.post("/api/batches/b-1/auto-publish")
+        assert resp.status_code == 200
+        assert resp.json()["skipped_reason"] == "auto_publish_disabled"
+
+    def test_missing_batch_returns_404(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from application import auto_publisher
+
+        def _raise(_id: str) -> dict[str, Any]:
+            raise ValueError(f"batch 미존재: {_id}")
+
+        monkeypatch.setattr(auto_publisher, "auto_publish_ready_items", _raise)
+        resp = client.post("/api/batches/missing/auto-publish")
+        assert resp.status_code == 404
+
+
 class TestGetBatchReadyToPublishCount:
     """Phase B9 PR3 — GET /batches/{id} 응답에 ready_to_publish_count 항상 포함."""
 

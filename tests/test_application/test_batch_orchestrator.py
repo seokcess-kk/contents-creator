@@ -583,6 +583,77 @@ class TestRecomputeBatchStatus:
             # 예외 raise 안 하고 정상 반환
             batch_orchestrator.recompute_batch_status("b-1")
 
+    # ── Phase 4 PR2 — auto-publish auto-trigger ──
+
+    def test_auto_publish_triggered_on_completion(self, storage_mock: Any) -> None:
+        """completed 첫 진입 + auto_publish_enabled=True → auto_publisher 호출."""
+        storage_mock.get_batch.side_effect = [
+            _batch(id="b-1", total_count=2, status="running", auto_publish_enabled=True),
+            _batch(id="b-1", total_count=2, status="completed", auto_publish_enabled=True),
+        ]
+        storage_mock.count_items_by_status.return_value = {
+            "succeeded_count": 0,
+            "failed_count": 0,
+            "skipped_count": 0,
+            "needs_review_count": 0,
+            "ready_to_publish_count": 2,
+        }
+        with patch("application.auto_publisher.auto_publish_ready_items") as auto_pub:
+            batch_orchestrator.recompute_batch_status("b-1")
+        auto_pub.assert_called_once_with("b-1")
+
+    def test_auto_publish_skipped_when_disabled(self, storage_mock: Any) -> None:
+        """auto_publish_enabled=False 면 자동 호출 안 함."""
+        storage_mock.get_batch.side_effect = [
+            _batch(id="b-1", total_count=2, status="running", auto_publish_enabled=False),
+            _batch(id="b-1", total_count=2, status="completed", auto_publish_enabled=False),
+        ]
+        storage_mock.count_items_by_status.return_value = {
+            "succeeded_count": 0,
+            "failed_count": 0,
+            "skipped_count": 0,
+            "needs_review_count": 0,
+            "ready_to_publish_count": 2,
+        }
+        with patch("application.auto_publisher.auto_publish_ready_items") as auto_pub:
+            batch_orchestrator.recompute_batch_status("b-1")
+        auto_pub.assert_not_called()
+
+    def test_auto_publish_failure_graceful(self, storage_mock: Any) -> None:
+        """auto_publisher 가 raise 해도 recompute 는 정상 반환."""
+        storage_mock.get_batch.side_effect = [
+            _batch(id="b-1", total_count=2, status="running", auto_publish_enabled=True),
+            _batch(id="b-1", total_count=2, status="completed", auto_publish_enabled=True),
+        ]
+        storage_mock.count_items_by_status.return_value = {
+            "succeeded_count": 2,
+            "failed_count": 0,
+            "skipped_count": 0,
+            "needs_review_count": 0,
+            "ready_to_publish_count": 0,
+        }
+        with patch("application.auto_publisher.auto_publish_ready_items") as auto_pub:
+            auto_pub.side_effect = RuntimeError("ranking storage down")
+            # raise 없이 통과
+            batch_orchestrator.recompute_batch_status("b-1")
+
+    def test_auto_publish_not_triggered_on_already_completed(self, storage_mock: Any) -> None:
+        """이미 completed 상태에서 재호출 — auto_publish 도 스킵 (중복 방지)."""
+        storage_mock.get_batch.side_effect = [
+            _batch(id="b-1", total_count=2, status="completed", auto_publish_enabled=True),
+            _batch(id="b-1", total_count=2, status="completed", auto_publish_enabled=True),
+        ]
+        storage_mock.count_items_by_status.return_value = {
+            "succeeded_count": 2,
+            "failed_count": 0,
+            "skipped_count": 0,
+            "needs_review_count": 0,
+            "ready_to_publish_count": 0,
+        }
+        with patch("application.auto_publisher.auto_publish_ready_items") as auto_pub:
+            batch_orchestrator.recompute_batch_status("b-1")
+        auto_pub.assert_not_called()
+
 
 class TestDispatchOvernightBatches:
     """Phase 3 PR1 — overnight batch 일괄 dispatch."""

@@ -488,6 +488,26 @@ def backfill_fk(batch_id: str) -> dict[str, Any]:
     return {"batch_id": batch_id, **result}
 
 
+@router.post("/{batch_id}/auto-publish", status_code=200)
+def auto_publish(batch_id: str) -> dict[str, Any]:
+    """SPEC-BATCH §3 Phase 4 PR2 — publication 자동 등록 (opt-in).
+
+    `keyword_batches.auto_publish_enabled=True` 인 batch 의 ready_to_publish +
+    target_url 채워진 item 을 publications 자동 등록 → /rankings 추적 진입.
+    멱등 — 이미 publication_id 채워진 item 은 자동 skip.
+    `auto_publish_enabled=False` 면 200 + skipped_reason='auto_publish_disabled'.
+    """
+    from application import auto_publisher
+
+    try:
+        result = auto_publisher.auto_publish_ready_items(batch_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise _supabase_error_response(exc, "auto_publish") from exc
+    return {"batch_id": batch_id, **result}
+
+
 @router.post("/{batch_id}/recompute-status", status_code=200)
 def recompute_status(batch_id: str) -> dict[str, Any]:
     """모든 item 처리 후 batch.status + counters 재계산 (운영 도구).

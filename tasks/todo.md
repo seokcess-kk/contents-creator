@@ -1266,3 +1266,27 @@
 ### B16.5 검증 + commit
 - [ ] `bash .claude/hooks/build-check.sh` 그린
 - [ ] commit `feat(batch): Phase 4 PR1 — 알림 인프라 (Slack webhook)`
+
+---
+
+## 📤 Phase B17 — publication 자동 등록 (Phase 4 PR2, 2026-05-05 착수)
+
+> SPEC-BATCH §3 Phase 4 PR2. 운영 철학 §0 — 후보 키워드 모두 발행 대상이지만 **실제 발행은 운영자가 네이버 블로그 직접 수행**. publications 등록도 명시적 opt-in (`KeywordBatch.auto_publish_enabled` default False).
+
+### B17.1 application — auto_publisher use case ✅
+- [x] `application/auto_publisher.py` 신규. `auto_publish_ready_items(batch_id)` — `auto_publish_enabled=False` 즉시 noop (`skipped_reason="auto_publish_disabled"`). ready_to_publish + target_url 채워진 item 을 `ranking_orchestrator.register_publication` 호출 (멱등 + `_attach_batch_item` 가 publication_id 자동 백필). target_url 부재 → skipped("no_target_url"), 이미 publication_id 있음 → skipped("already_linked"), URL 형식 오류 → failed
+
+### B17.2 자동 트리거 + CLI/API ✅
+- [x] `recompute_batch_status` — completed 첫 진입 + `batch.auto_publish_enabled=True` 시 `auto_publisher.auto_publish_ready_items` 자동 호출 (graceful, 실패해도 batch status 영향 X)
+- [x] CLI: `scripts/run_batch.py --auto-publish <batch_id>` (`_auto_publish` 헬퍼). disabled 케이스는 친화 메시지 + exit 0
+- [x] Web API: `POST /batches/{id}/auto-publish` — 응답에 batch_id + 카운트 + items 상세
+- [x] frontend `web/frontend/src/lib/api.ts` — `autoPublishBatch(batchId)` 함수 + `AutoPublishItemResult` 타입
+
+### B17.3 테스트 ✅ — 8 + 4 + 3 = 15건
+- [x] `tests/test_application/test_auto_publisher.py` — 8 케이스 (disabled / missing batch / no_target_url / already_linked / register 호출 / ValueError fail / unexpected exception 흡수 / mixed mix 집계)
+- [x] `tests/test_application/test_batch_orchestrator.py` 추가 — 4 케이스 (auto_publish triggered on completion / disabled 시 미호출 / 실패 graceful / 이미 completed 중복 방지)
+- [x] `tests/test_web/test_batches_api.py` 추가 — 3 케이스 (registered counts / disabled skipped_reason / missing 404)
+
+### B17.4 검증 + commit
+- [ ] `bash .claude/hooks/build-check.sh` 그린
+- [ ] commit `feat(batch): Phase 4 PR2 — publication 자동 등록 (opt-in)`

@@ -686,6 +686,29 @@ export function dispatchOvernight(batchId?: string): Promise<{
   return fetchJson(`/batches/dispatch-overnight${qs}`, { method: "POST" });
 }
 
+// Phase 4 PR2 — publication 자동 등록 (opt-in, auto_publish_enabled=True 인 batch만)
+export type AutoPublishItemResult = {
+  item_id: string;
+  keyword: string;
+  result: "registered" | "skipped" | "failed";
+  reason?: string;
+  publication_id?: string;
+  url?: string;
+};
+
+export function autoPublishBatch(batchId: string): Promise<{
+  batch_id: string;
+  registered: number;
+  skipped: number;
+  skipped_reason: string | null;
+  failed: number;
+  items: AutoPublishItemResult[];
+}> {
+  return fetchJson(`/batches/${encodeURIComponent(batchId)}/auto-publish`, {
+    method: "POST",
+  });
+}
+
 // ── 검수 큐 (Phase B9 PR3) ──
 
 // "revert" 는 검수 액션 후 Undo (review_status=pending + status=needs_review 복귀).
