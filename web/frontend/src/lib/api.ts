@@ -722,6 +722,31 @@ export function listPipelineItems(
   return fetchJson(`/pipeline/items?status=${encodeURIComponent(status)}&limit=${limit}`);
 }
 
+// ── Performance Dashboard (Phase B12) ──
+
+export interface PerformanceItem {
+  publication_id: string | null;
+  keyword: string;
+  slug: string | null;
+  url: string | null;
+  published_at: string | null;
+  dN_position: Record<string, number | null>;
+  best_position: number | null;
+  current_position: number | null;
+  top10_days: number;
+  snapshot_count: number;
+}
+
+export function listPerformance(
+  limit = 50,
+): Promise<{ count: number; items: PerformanceItem[] }> {
+  return fetchJson(`/performance/publications?limit=${limit}`);
+}
+
+export function getTrajectory(publicationId: string): Promise<PerformanceItem> {
+  return fetchJson(`/performance/publications/${encodeURIComponent(publicationId)}/trajectory`);
+}
+
 export function reviewItem(
   batchId: string,
   itemId: string,

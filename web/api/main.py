@@ -21,6 +21,7 @@ from web.api.routers import (
     jobs,
     keyword_difficulty,
     pattern_cards,
+    performance,
     pipeline,
     rankings,
     results,
@@ -118,6 +119,7 @@ app.include_router(keyword_difficulty.router, prefix="/api")
 app.include_router(batches.router, prefix="/api")
 app.include_router(pattern_cards.router, prefix="/api")
 app.include_router(pipeline.router, prefix="/api")
+app.include_router(performance.router, prefix="/api")
 
 # /output 정적 마운트는 인증 우회 통로가 되어 제거. 결과물은 인증된 /api/results/* 로만 접근.
 
