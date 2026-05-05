@@ -348,6 +348,94 @@ def count_items_by_status(batch_id: str) -> dict[str, int]:
     return counters
 
 
+def aggregate_pipeline_counts(batch_limit: int = 100) -> dict[str, int]:
+    """모든 최근 batch 의 status 별 합산 카운트.
+
+    Phase B11 (Keyword Pipeline 통합 대시보드) — 사용자 운영 철학 §9 의 첫 화면.
+    candidate→generated→ready_to_publish→published 단계별 가시성 제공.
+
+    `batch_limit`: 가장 최근 N batch 만 집계 (성능 보호, default 100).
+    """
+    batches = list_batches(limit=batch_limit)
+    aggregated: dict[str, int] = {
+        "queued": 0,
+        "running": 0,
+        "succeeded": 0,
+        "failed": 0,
+        "skipped": 0,
+        "needs_review": 0,
+        "ready_to_publish": 0,
+        "published": 0,
+        "total": 0,
+    }
+    for b in batches:
+        if b.id is None:
+            continue
+        try:
+            counters = count_items_by_status(b.id)
+        except Exception:
+            logger.warning("aggregate_pipeline.batch_failed batch_id=%s", b.id, exc_info=True)
+            continue
+        aggregated["succeeded"] += counters.get("succeeded_count", 0)
+        aggregated["failed"] += counters.get("failed_count", 0)
+        aggregated["skipped"] += counters.get("skipped_count", 0)
+        aggregated["needs_review"] += counters.get("needs_review_count", 0)
+        aggregated["ready_to_publish"] += counters.get("ready_to_publish_count", 0)
+        aggregated["total"] += b.total_count
+    # published 카운트는 별도 — keyword_batch_items.publication_id 가 채워진 row.
+    aggregated["published"] = _count_published_items()
+    # queued / running 은 batch.status='running' 인 batch 의 item 만 카운트하면 정확하지만,
+    # 단순 집계로 total - 종결합으로 추정.
+    terminal = (
+        aggregated["succeeded"]
+        + aggregated["failed"]
+        + aggregated["skipped"]
+        + aggregated["needs_review"]
+        + aggregated["ready_to_publish"]
+    )
+    aggregated["queued"] = max(0, aggregated["total"] - terminal)
+    return aggregated
+
+
+def _count_published_items() -> int:
+    """publication_id 가 채워진 keyword_batch_items 카운트.
+
+    SPEC-BATCH 의 운영 흐름 §9 — published → tracking 단계 가시화.
+    Supabase 부재/실패 시 0.
+    """
+    try:
+        result = (
+            get_client()
+            .table(_ITEM_TABLE)
+            .select("id", count="exact")
+            .not_.is_("publication_id", "null")
+            .limit(1)
+            .execute()
+        )
+        return int(getattr(result, "count", 0) or 0)
+    except Exception:
+        logger.warning("aggregate_pipeline.published_count_failed", exc_info=True)
+        return 0
+
+
+def list_items_by_global_status(status: str, limit: int = 50) -> list[KeywordBatchItem]:
+    """모든 batch 통합 status 별 item 목록 (created_at desc).
+
+    Pipeline 페이지의 status 별 keyword 목록 표시용. batch_id 무관.
+    """
+    result = (
+        get_client()
+        .table(_ITEM_TABLE)
+        .select("*")
+        .eq("status", status)
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    rows = result.data or []
+    return [_row_to_item(cast("dict[str, Any]", r)) for r in rows]
+
+
 def claim_next_queued_item(batch_id: str) -> KeywordBatchItem | None:
     """queued 상태 item 한 건을 가져와 running 으로 마킹.
 

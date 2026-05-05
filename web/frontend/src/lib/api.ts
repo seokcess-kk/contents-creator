@@ -695,6 +695,33 @@ export function listPublishQueue(
   return fetchJson(`/batches/${batchId}/publish`);
 }
 
+// ── Keyword Pipeline 통합 대시보드 (Phase B11) ──
+
+export interface PipelineCounts {
+  total: number;
+  queued: number;
+  running: number;
+  succeeded: number;
+  failed: number;
+  skipped: number;
+  needs_review: number;
+  ready_to_publish: number;
+  published: number;
+}
+
+export function getPipelineSummary(
+  batchLimit = 100,
+): Promise<{ counts: PipelineCounts; batch_limit?: number; warning?: string }> {
+  return fetchJson(`/pipeline/summary?batch_limit=${batchLimit}`);
+}
+
+export function listPipelineItems(
+  status: string,
+  limit = 50,
+): Promise<{ status: string; count: number; items: BatchItem[] }> {
+  return fetchJson(`/pipeline/items?status=${encodeURIComponent(status)}&limit=${limit}`);
+}
+
 export function reviewItem(
   batchId: string,
   itemId: string,
