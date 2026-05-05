@@ -39,6 +39,7 @@ export default function RootLayout({
             <Link href="/" className="text-gray-700 hover:text-blue-700">대시보드</Link>
             <Link href="/pipeline" className="text-gray-700 hover:text-blue-700 font-semibold">키워드 파이프라인</Link>
             <Link href="/performance" className="text-gray-700 hover:text-blue-700">발행 성과</Link>
+            <Link href="/insights" className="text-gray-700 hover:text-blue-700">인사이트</Link>
             <Link href="/rankings" className="text-gray-700 hover:text-blue-700">순위 추적</Link>
             <Link href="/keywords" className="text-gray-700 hover:text-blue-700">키워드 난이도</Link>
             <Link href="/batches" className="text-gray-700 hover:text-blue-700">배치 운영</Link>

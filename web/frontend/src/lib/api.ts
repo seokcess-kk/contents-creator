@@ -747,6 +747,28 @@ export function getTrajectory(publicationId: string): Promise<PerformanceItem> {
   return fetchJson(`/performance/publications/${encodeURIComponent(publicationId)}/trajectory`);
 }
 
+// ── Insights (Phase B13) ──
+
+export interface DifficultyBucket {
+  total: number;
+  top10: number;
+  ratio: number;
+}
+export interface VolumeBucket extends DifficultyBucket {
+  avg_best: number | null;
+}
+export interface InsightsSummary {
+  sample_size: number;
+  difficulty_top10: Record<string, DifficultyBucket>;
+  volume_top10: Record<string, VolumeBucket>;
+  dN_top10_ratio: Record<string, number>;
+  compliance_avg_best: Record<string, unknown>;
+}
+
+export function getInsightsSummary(): Promise<InsightsSummary> {
+  return fetchJson(`/insights/summary`);
+}
+
 export function reviewItem(
   batchId: string,
   itemId: string,
