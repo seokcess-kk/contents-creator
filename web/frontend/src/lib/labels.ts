@@ -35,6 +35,20 @@ export function getVisibilityLabel(status: string): string {
   return VISIBILITY_LABELS[status] ?? status;
 }
 
+// ── batch summary status (batch 전체 상태) ──────────────────────────────────
+
+const BATCH_SUMMARY_LABELS: Record<string, string> = {
+  queued: "대기",
+  running: "진행 중",
+  completed: "완료",
+  failed: "실패",
+  cancelled: "취소됨",
+};
+
+export function getBatchSummaryLabel(status: string): string {
+  return BATCH_SUMMARY_LABELS[status] ?? status;
+}
+
 // ── batch item status ────────────────────────────────────────────────────────
 
 const BATCH_ITEM_LABELS: Record<string, string> = {
@@ -80,8 +94,16 @@ export function getComplianceLabel(status: string): string {
 }
 
 // ── difficulty grade ─────────────────────────────────────────────────────────
-
+// 두 grade 표기 동시 지원:
+// - PublicationActionRow 의 keyword_difficulty.grade (high/medium/low/missing)
+// - keyword 분석 결과 (S/A/B/C/D)
 const DIFFICULTY_LABELS: Record<string, string> = {
+  // grade enum (백엔드 반환)
+  missing: "노출 불가",
+  high: "난이도 상",
+  medium: "난이도 중",
+  low: "난이도 하",
+  // S/A/B/C/D 등급 (별도 분류)
   S: "S등급 (최상)",
   A: "A등급 (상)",
   B: "B등급 (중)",

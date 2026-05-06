@@ -103,7 +103,7 @@ function QueuePageInner() {
     <div className="space-y-4">
       <PageHeader
         title="검수·발행 큐"
-        subtitle={`전체 ${counts.total} (배치 ${counts.batch} · 단일 ${counts.single}) — 검수, URL 등록, 본문 미리보기`}
+        subtitle={`전체 ${counts.total} · 배치 ${counts.batch} · 단일 ${counts.single}`}
         actions={
           <Link
             href="/create?tab=batch"

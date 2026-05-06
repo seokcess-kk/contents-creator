@@ -39,10 +39,7 @@ export default function CreateTabs({ onSingleSubmit }: CreateTabsProps) {
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="새로 만들기"
-        subtitle="키워드 1개 또는 CSV 배치를 시작하세요."
-      />
+      <PageHeader title="새로 만들기" />
 
       <div className="flex border-b border-gray-200">
         {TABS.map((t) => {

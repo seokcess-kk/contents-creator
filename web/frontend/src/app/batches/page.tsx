@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { dispatchOvernight, listBatches, type BatchSummary } from "@/lib/api";
 import { Button } from "@/components/ui";
+import { getBatchSummaryLabel } from "@/lib/labels";
 
 export default function BatchesPage() {
   const [batches, setBatches] = useState<BatchSummary[]>([]);
@@ -56,12 +57,7 @@ export default function BatchesPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">배치 운영</h1>
-          <p className="text-xs text-gray-600 mt-0.5">
-            CSV 업로드로 100건 이상 키워드를 자동 처리. 단일 흐름에 영향 0 (격리 워커 풀).
-          </p>
-        </div>
+        <h1 className="text-xl font-bold text-gray-900">배치 운영</h1>
         <Link href="/create?tab=batch">
           <Button variant="primary">
             <Plus size={14} />
@@ -116,11 +112,11 @@ export default function BatchesPage() {
                   <th className="text-left py-2">mode</th>
                   <th className="text-left py-2">status</th>
                   <th className="text-right py-2">total</th>
-                  <th className="text-right py-2">발행 준비</th>
-                  <th className="text-right py-2">검수 필요</th>
-                  <th className="text-right py-2">분석 완료</th>
+                  <th className="text-right py-2">발행 대기</th>
+                  <th className="text-right py-2">검수 대기</th>
+                  <th className="text-right py-2">생성 완료</th>
                   <th className="text-right py-2">실패</th>
-                  <th className="text-right py-2">스킵</th>
+                  <th className="text-right py-2">건너뜀</th>
                   <th className="text-left py-2">생성</th>
                 </tr>
               </thead>
@@ -172,6 +168,7 @@ export default function BatchesPage() {
 }
 
 function BatchStatusBadge({ status }: { status: string }) {
+  // P6: 라벨은 labels.ts (getBatchSummaryLabel) 에서 단일 출처. 색상은 자체.
   const palette: Record<string, string> = {
     queued: "bg-gray-100 text-gray-700",
     running: "bg-blue-100 text-blue-700",
@@ -180,5 +177,9 @@ function BatchStatusBadge({ status }: { status: string }) {
     cancelled: "bg-gray-100 text-gray-500",
   };
   const cls = palette[status] || "bg-gray-100 text-gray-700";
-  return <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold ${cls}`}>{status}</span>;
+  return (
+    <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold ${cls}`}>
+      {getBatchSummaryLabel(status)}
+    </span>
+  );
 }

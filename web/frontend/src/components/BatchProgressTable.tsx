@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { getBatch, getBatchItems, retryBatchItem, cancelBatch, type BatchItem, type BatchSummary } from "@/lib/api";
+import { StatusBadge } from "@/components/ui";
 
 interface Props {
   batchId: string;
@@ -45,13 +46,14 @@ export default function BatchProgressTable({ batchId }: Props) {
 
   // Phase B9 — counters 라벨 정정. succeeded → "분석 완료" (analyze 만), ready_to_publish 신규.
   const counters = [
+    // P6: labels.ts 매핑 사용 — 라벨 단일 출처
     { key: "queued", label: "대기", color: "text-gray-700" },
-    { key: "running", label: "진행", color: "text-blue-700" },
-    { key: "ready_to_publish", label: "발행 준비", value: batch.ready_to_publish_count, color: "text-green-700" },
-    { key: "needs_review", label: "검수 필요", value: batch.needs_review_count, color: "text-amber-700" },
-    { key: "succeeded", label: "분석 완료", value: batch.succeeded_count, color: "text-emerald-600" },
+    { key: "running", label: "진행 중", color: "text-blue-700" },
+    { key: "ready_to_publish", label: "발행 대기", value: batch.ready_to_publish_count, color: "text-green-700" },
+    { key: "needs_review", label: "검수 대기", value: batch.needs_review_count, color: "text-amber-700" },
+    { key: "succeeded", label: "생성 완료", value: batch.succeeded_count, color: "text-emerald-600" },
     { key: "failed", label: "실패", value: batch.failed_count, color: "text-red-700" },
-    { key: "skipped", label: "스킵", value: batch.skipped_count, color: "text-gray-500" },
+    { key: "skipped", label: "건너뜀", value: batch.skipped_count, color: "text-gray-500" },
   ];
 
   async function handleRetry(itemId: string) {
@@ -206,7 +208,7 @@ export default function BatchProgressTable({ batchId }: Props) {
                   <td className="py-1 font-medium text-gray-800">{it.keyword}</td>
                   <td className="py-1 text-gray-700">{it.operation}</td>
                   <td className="py-1">
-                    <StatusBadge status={it.status} />
+                    <StatusBadge kind="batch" status={it.status} />
                   </td>
                   <td className="py-1 text-gray-500">{it.retry_count}/{it.max_retries}</td>
                   <td className="py-1 text-xs truncate max-w-[280px]">
@@ -332,17 +334,5 @@ function ResultLinks({ item }: { item: BatchItem }) {
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const palette: Record<string, string> = {
-    queued: "bg-gray-100 text-gray-700",
-    running: "bg-blue-100 text-blue-700",
-    succeeded: "bg-emerald-100 text-emerald-700",
-    failed: "bg-red-100 text-red-700",
-    skipped: "bg-gray-100 text-gray-500",
-    needs_review: "bg-amber-100 text-amber-700",
-    // Phase B9 — 발행 준비 상태 (succeeded 의미 분리).
-    ready_to_publish: "bg-green-100 text-green-700",
-  };
-  const cls = palette[status] || "bg-gray-100 text-gray-700";
-  return <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold ${cls}`}>{status}</span>;
-}
+// P6: 자체 StatusBadge 제거 → ui/StatusBadge + labels.ts 위임.
+// 호출자 (line 209) 는 ui/StatusBadge 직접 사용으로 sweep.

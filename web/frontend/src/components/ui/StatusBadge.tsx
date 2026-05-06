@@ -1,8 +1,16 @@
 "use client";
 
-// P2: 공통 StatusBadge — 6 kind 의 status 별 색상/라벨 자동 매핑.
-// kind: workflow | visibility | difficulty | compliance | diagnosis | batch
-// P6 의 lib/labels.ts 가 추가되면 라벨은 그곳으로 이전. 본 파일은 색상 매핑만 유지.
+// P2 → P6 갱신: 색상 매핑은 자체 보유, 라벨은 lib/labels.ts 위임.
+// 호출자가 label 명시하면 우선 사용 (StatusBadge가 강제 표시 X).
+
+import {
+  getBatchItemLabel,
+  getComplianceLabel,
+  getDiagnosisLabel,
+  getDifficultyLabel,
+  getVisibilityLabel,
+  getWorkflowLabel,
+} from "@/lib/labels";
 
 export type StatusKind =
   | "workflow"
@@ -70,13 +78,23 @@ const COLOR_MAP: Record<StatusKind, Record<string, string>> = {
 
 const FALLBACK_COLOR = "bg-gray-100 text-gray-700 border-gray-300";
 
+const LABEL_RESOLVERS: Record<StatusKind, (s: string) => string> = {
+  workflow: getWorkflowLabel,
+  visibility: getVisibilityLabel,
+  difficulty: getDifficultyLabel,
+  compliance: getComplianceLabel,
+  diagnosis: getDiagnosisLabel,
+  batch: getBatchItemLabel,
+};
+
 export default function StatusBadge({ kind, status, label }: StatusBadgeProps) {
   const color = COLOR_MAP[kind][status] ?? FALLBACK_COLOR;
+  const resolved = label ?? LABEL_RESOLVERS[kind](status);
   return (
     <span
       className={`inline-flex items-center px-2 py-0.5 text-xs rounded border ${color}`}
     >
-      {label ?? status}
+      {resolved}
     </span>
   );
 }
