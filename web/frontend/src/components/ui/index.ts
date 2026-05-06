@@ -14,3 +14,4 @@ export { default as ActionBar } from "./ActionBar";
 export { default as Skeleton } from "./Skeleton";
 export { default as ErrorBanner } from "./ErrorBanner";
 export { default as DesktopOnlyBanner } from "./DesktopOnlyBanner";
+export { default as HelpTooltip } from "./HelpTooltip";

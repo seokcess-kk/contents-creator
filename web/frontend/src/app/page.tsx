@@ -11,7 +11,10 @@ import BulkCheckDialog from "@/components/BulkCheckDialog";
 import BulkRegisterDialog from "@/components/BulkRegisterDialog";
 import PublicationForm from "@/components/PublicationForm";
 import PublicationActionRow from "@/components/PublicationActionRow";
-import { Button } from "@/components/ui";
+import WelcomeModal from "@/components/onboarding/WelcomeModal";
+import { Button, HelpTooltip } from "@/components/ui";
+import { isOnboarded } from "@/lib/onboarding";
+import { helpMessages } from "@/lib/helpMessages";
 import {
   getOperationsQueue,
   getOperationsSummary,
@@ -85,6 +88,12 @@ export default function OperationsHomePage() {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkCheckOpen, setBulkCheckOpen] = useState(false);
   const [sortBy, setSortBy] = useState<SortKey>("diagnosis_recent");
+  const [welcomeOpen, setWelcomeOpen] = useState(false);
+
+  // 첫 방문 시 1회 WelcomeModal 표시 (hydration 후 효과)
+  useEffect(() => {
+    if (!isOnboarded()) setWelcomeOpen(true);
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -122,8 +131,13 @@ export default function OperationsHomePage() {
 
   return (
     <div className="space-y-4">
+      <WelcomeModal open={welcomeOpen} onClose={() => setWelcomeOpen(false)} />
+
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-bold text-gray-900">운영 홈</h1>
+        <h1 className="text-lg font-bold text-gray-900 flex items-center">
+          운영 홈
+          <HelpTooltip content={helpMessages.home} />
+        </h1>
         <div className="flex items-center gap-3">
           <button
             type="button"

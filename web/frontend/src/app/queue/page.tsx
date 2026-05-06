@@ -10,7 +10,8 @@ import { Search } from "lucide-react";
 import PublicationForm from "@/components/PublicationForm";
 import QueueTable from "@/components/QueueTable";
 import QueueItemDrawer from "@/components/QueueItemDrawer";
-import { ErrorBanner, PageHeader } from "@/components/ui";
+import { ErrorBanner, HelpTooltip, PageHeader } from "@/components/ui";
+import { helpMessages } from "@/lib/helpMessages";
 import { reviewItem, type ReviewAction } from "@/lib/api";
 import {
   getUnifiedQueue,
@@ -102,7 +103,12 @@ function QueuePageInner() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="검수·발행 큐"
+        title={
+          <>
+            검수·발행 큐
+            <HelpTooltip content={helpMessages.queue} />
+          </>
+        }
         subtitle={`전체 ${counts.total} · 배치 ${counts.batch} · 단일 ${counts.single}`}
         actions={
           <Link

@@ -6,8 +6,9 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { dispatchOvernight, listBatches, type BatchSummary } from "@/lib/api";
-import { Button } from "@/components/ui";
+import { Button, HelpTooltip } from "@/components/ui";
 import { getBatchSummaryLabel } from "@/lib/labels";
+import { helpMessages } from "@/lib/helpMessages";
 
 export default function BatchesPage() {
   const [batches, setBatches] = useState<BatchSummary[]>([]);
@@ -57,7 +58,10 @@ export default function BatchesPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-xl font-bold text-gray-900">배치 운영</h1>
+        <h1 className="text-xl font-bold text-gray-900 flex items-center">
+          배치 운영
+          <HelpTooltip content={helpMessages.batches} />
+        </h1>
         <Link href="/create?tab=batch">
           <Button variant="primary">
             <Plus size={14} />

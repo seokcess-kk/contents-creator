@@ -4,7 +4,8 @@
 
 import { lazy, Suspense, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { PageHeader } from "@/components/ui";
+import { HelpTooltip, PageHeader } from "@/components/ui";
+import { helpMessages } from "@/lib/helpMessages";
 
 // 코드 스플릿 — 두 form 모두 클라이언트 컴포넌트, lazy import
 const NewJobForm = lazy(() => import("@/components/NewJobForm"));
@@ -39,7 +40,14 @@ export default function CreateTabs({ onSingleSubmit }: CreateTabsProps) {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="새로 만들기" />
+      <PageHeader
+        title={
+          <>
+            새로 만들기
+            <HelpTooltip content={helpMessages.create} />
+          </>
+        }
+      />
 
       <div className="flex border-b border-gray-200">
         {TABS.map((t) => {
