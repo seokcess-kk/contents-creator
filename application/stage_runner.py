@@ -48,9 +48,29 @@ class ComposeStageResult(NamedTuple):
     pattern_card_id: str | None
 
 
+def _ascii_safe_slug(name: str) -> str:
+    """비-ASCII 문자 (한글 등) 포함 시 SHA1 short hash 로 변환.
+
+    Supabase Storage 의 key 가 ASCII-safe 여야 하므로 (InvalidKey 에러 회피),
+    한글 키워드를 그대로 path 에 넣을 수 없다. 영문/숫자/하이픈/밑줄/점만으로
+    구성된 이름은 그대로 보존, 그 외는 `kw-{hash12}` 형식으로 변환.
+    """
+    import hashlib
+    import re
+
+    if re.fullmatch(r"[a-zA-Z0-9_.\-]+", name):
+        return name
+    h = hashlib.sha1(name.encode("utf-8")).hexdigest()[:12]
+    return f"kw-{h}"
+
+
 def _storage_prefix(output_dir: Path) -> str:
-    """output/{slug}/{ts}/ 경로에서 Storage key prefix(`{slug}/{ts}`) 추출."""
-    return f"{output_dir.parent.name}/{output_dir.name}"
+    """output/{slug}/{ts}/ 경로에서 Storage key prefix(`{slug}/{ts}`) 추출.
+
+    Supabase Storage ASCII-safe 강제 — 한글 키워드는 SHA1 short hash 로 변환.
+    timestamp 부분은 항상 ASCII 라 그대로 사용.
+    """
+    return f"{_ascii_safe_slug(output_dir.parent.name)}/{output_dir.name}"
 
 
 def _upload_images_to_storage(result: ImageGenerationResult, output_dir: Path) -> None:

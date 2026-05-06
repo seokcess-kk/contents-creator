@@ -837,3 +837,43 @@ curl: (22) The requested URL returned error: 409
 - **DOM 위치 기반 매칭** (`querySelector("th")`, `getAllByText()[0]`) 가 vitest 의 `getByText` 보다 모호성 적음. 단 selector specificity 유지 필요
 - **jsdom 의 viewport 한계**: `md:hidden` 같은 Tailwind 분기는 className 으로 hidden 표현 — DOM 에는 모두 존재. matchMedia mock 으로도 className 기반 hidden 은 우회 안 됨
 
+---
+
+## 실측 e2e 발견 — Supabase Storage 한글 key (2026-05-06)
+
+**배경**: UX Refactor + Polish Pack 후 정적 e2e (코드 path 검증) 통과. 그러나 실측 e2e (`python scripts/run_pipeline.py --keyword "다이어트한의원"`) 에서 발견:
+
+```
+StorageApiError: Invalid key: 다이어트한의원/20260506-143336/images/image_10.jpg
+```
+
+**원인**: `application/stage_runner._storage_prefix()` 가 `output_dir.parent.name` (한글 키워드 그대로) 를 Storage key 에 사용. Supabase Storage 는 ASCII-safe key 만 허용 (percent-encoded URL 도 InvalidKey reject).
+
+**해결**: `_ascii_safe_slug(name)` helper 신규. 영문/숫자/하이픈/밑줄/점만 보존, 그 외 (한글 등) 는 SHA1 short hash 12자 → `kw-{hash}` 형식.
+
+**일반화 규칙**:
+- **외부 시스템 (Storage / 외부 API URL) 의 key 는 ASCII-safe 강제** — 한글 등 비-ASCII 는 hash 또는 transliteration 으로 변환
+- **percent-encoding 만으로 안 통과** — Supabase Storage 는 raw key 검증
+- **deterministic hash** (SHA1[:12]) — 같은 키워드는 같은 prefix, 운영 도구 reverse lookup 가능
+- **로컬 path (`output/{keyword}/`) 는 그대로 유지** — 사용자 가독성 우선, Storage upload 시점에만 변환
+
+---
+
+## 실측 e2e 발견 — schema migration 적용 필수 (2026-05-06)
+
+**배경**: 같은 e2e 실행에서:
+
+```
+APIError: Could not find the 'job_id' column of 'generated_contents'
+```
+
+**원인**: `config/schema.sql` 에 `generated_contents.job_id` 컬럼 + index + alter 정의 (line 34/49/215~218) 되어 있으나, 운영 Supabase 에 SQL 미적용.
+
+**해결**: 사용자 manual 적용 — `config/schema.sql` 의 alter 블록 (line 215~221) 을 Supabase SQL Editor 에서 실행.
+
+**일반화 규칙**:
+- **schema.sql 변경 후 Supabase Editor 적용은 manual** — 자동화 안 됨. 변경 commit 시 README/release note 에 명시
+- **APIError 의 `Could not find the 'X' column'` 패턴**: 100% schema 미적용 신호. 코드 변경 X, SQL 적용만 필요
+- **graceful fallback 유무**: `_save_generated_to_supabase` 가 `try/except` 로 감싸 fail 시 logger.warning 만 (파이프라인 중단 X) — 정상 동작. UI 가 Supabase 데이터 의존하면 외부 진입 불가하지만 결과 자체는 로컬 보존됨
+- **e2e 검증의 가치**: 정적 코드 검증으로 못 잡는 **운영 환경 의존성** (Storage key 제약, schema 적용 여부) 을 1회 키워드로 자연 발견 가능
+

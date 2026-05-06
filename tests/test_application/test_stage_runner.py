@@ -416,3 +416,45 @@ class TestMarkComplianceViolations:
 
         assert "[patient_testimonial]" in marked
         assert "**⚠️" not in marked.split("---")[1]
+
+
+# ── e2e 발견 이슈 #1: Storage key 한글 → ASCII slug ────────────────────────
+
+
+class TestAsciiSafeSlug:
+    """Supabase Storage 의 InvalidKey 회피 — 비-ASCII 키워드를 hash slug 로 변환."""
+
+    def test_ascii_only_name_preserved(self):
+        from application.stage_runner import _ascii_safe_slug
+
+        assert _ascii_safe_slug("hair-care") == "hair-care"
+        assert _ascii_safe_slug("test_123") == "test_123"
+        assert _ascii_safe_slug("seo.text") == "seo.text"
+
+    def test_korean_keyword_hashed(self):
+        from application.stage_runner import _ascii_safe_slug
+
+        result = _ascii_safe_slug("다이어트한의원")
+        assert result.startswith("kw-")
+        assert len(result) == 15  # "kw-" + 12 hex
+        assert result.replace("kw-", "").isalnum()
+
+    def test_korean_keyword_deterministic(self):
+        from application.stage_runner import _ascii_safe_slug
+
+        # 같은 입력 → 같은 hash
+        a = _ascii_safe_slug("다이어트한의원")
+        b = _ascii_safe_slug("다이어트한의원")
+        assert a == b
+
+    def test_storage_prefix_korean(self, tmp_path):
+        from application.stage_runner import _storage_prefix
+
+        # output/{한글 slug}/{ts}/ 경로
+        output_dir = tmp_path / "다이어트한의원" / "20260506-143336"
+        output_dir.mkdir(parents=True)
+        prefix = _storage_prefix(output_dir)
+        # ASCII-safe 가 보장되어야 함
+        assert prefix.startswith("kw-")
+        assert "/20260506-143336" in prefix
+        assert prefix.isascii()
