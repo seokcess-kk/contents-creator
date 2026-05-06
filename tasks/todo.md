@@ -2063,4 +2063,451 @@
 - **(P6 R1) 향후 enum 추가 (`archived` 등)**: fallback 동작 vitest 1건 강제 (Step 6.1 에 명시됨). 별도 사용자 결정 X
 - **(공통) 데모 환경**: 실 운영 publication 240여건 그대로 사용 (default). 테스트 fixture 분리 OUT-OF-SCOPE
 
+---
+
+# UX Refactor 후속 — Polish Pack (4 Phase, 13.5~18.5일)
+
+> 2026-05-06 착수. UX Refactor 6 Phase (8774267 commit, P1~P6 완료) 의 OUT-OF-SCOPE 4 항목 진행.
+> 사용자 확정 결정: 디자인 토큰 + 모바일 반응형 (운영자=데스크톱 / 외부 공유=모바일) + 온보딩 + 부분 매치 키워드. **kiwipiepy 도입** (KoNLPy 폐기, JVM 의존 제거).
+> Polish 의 의미 = "UX Refactor 의 시각·체감 품질을 영구화 + 신규 사용자 진입로 + backend 정확도 보강". 신규 기능 X, 기존 흐름 보강.
+>
+> **2026-05-06 갱신 이력**:
+> - Phase 2 모바일 우선순위 사용자 확정 (A 채택: HIGH/MEDIUM/LOW 매트릭스)
+> - Phase 4 의존 KoNLPy → kiwipiepy 일괄 치환 (JVM 의존 제거, cold start 0.1초)
+> - plan-reviewer 보강 8건 반영 (P1 contract 명시 + sweep 사전 list, P2 jsdom matchMedia, P3 localStorage grep + 카피 표, P4 환경 검증 + 임계 분모 + env 토글)
+> - P4 ETA 2~3일 → 1.5~2.5일 단축 (kiwipiepy 채택)
+
+## 🔴 핵심 보호 원칙 (모든 Phase 공통)
+
+1. **단일 흐름 시그니처 무변경** — `run_pipeline / run_analyze_only / run_generate_only` 인자·반환 타입 유지
+2. **운영 OS 백엔드 무변경** — `application/operations_home.py`, `web/api/routers/operations_home.py` 그대로
+3. **DB enum 무변경** — `workflow_status`, `visibility_state`, `batch_item_status` 등 모든 enum freeze
+4. **UX Refactor 6 Phase 결과 회귀 0** — 1296 pytest + 112 vitest 모두 그린 유지 (각 Phase 종료 시 측정)
+5. **Tailwind 4 의 정확한 token 시스템 API 는 추측 X** — `node_modules/tailwindcss/dist/docs/` (없으면 `dist/lib.d.mts` + `default-theme.d.mts` + `@import "tailwindcss"` 동작 방식) 1회 확인 후 결정
+6. **각 Phase 별 commit + push + 데모** — UX Refactor 와 동일 패턴 (Step N.X 종료 시 build-check 그린 + 사용자에게 화면 보여주기)
+7. **Phase 간 의존**: P1 → P2 → P3 (frontend 수직). P4 는 backend 독립, 어느 시점에서나 병행 가능 (default: P3 끝나고 P4)
+
+## Phase 1 — 디자인 토큰 (4~5일, frontend 시스템)
+
+### 목표
+
+UX Refactor P1~P6 에서 산발적으로 적용한 색상/spacing/typography 변종을 토큰 시스템으로 영구화. StatusBadge 의 6 kind × N status 색상 매트릭스 (Tailwind 클래스 직접) → 의미 토큰 참조로 sweep.
+
+### 변경 대상 파일
+
+- `web/frontend/src/app/globals.css` — 기존 `@theme inline` 블록 확장 (현재 `--color-background`, `--color-foreground`, `--font-sans`, `--font-mono` 만)
+- `web/frontend/src/lib/tokens.ts` — **신규**. 의미 색상 → Tailwind 클래스 매핑 함수 + StatusKind/Status 매트릭스
+- `web/frontend/src/components/ui/StatusBadge.tsx` — `COLOR_MAP` 인라인 매트릭스 → `tokens.ts` 참조로 교체
+- `web/frontend/src/lib/__tests__/tokens.test.ts` — **신규**. 매핑 함수 + sweep 회귀
+
+### 의미 색상 매핑 (확정)
+
+| 의미 토큰 | Tailwind 매핑 | 사용처 |
+|---|---|---|
+| `--color-status-action-required` | `red-100/red-800/red-300` | workflow.action_required, batch.failed, compliance.failed |
+| `--color-status-active` | `emerald-100/emerald-800/emerald-300` | workflow.active, batch.succeeded |
+| `--color-status-attention` | `amber-100/amber-800/amber-300` | workflow.republishing, compliance.warning, batch.needs_review |
+| `--color-status-ready` | `green-100/green-800/green-300` | batch.ready_to_publish |
+| `--color-status-pending` | `blue-100/blue-800/blue-300` | batch.running, workflow.draft |
+| `--color-status-neutral` | `gray-100/gray-700/gray-300` | workflow.held, batch.queued, fallback |
+| `--color-status-dismissed` | `slate-100/slate-700/slate-300` | workflow.dismissed, visibility.persistent_off, diagnosis.no_publication |
+| `--color-state-error` | `red-50/red-800/red-200` | 에러 surface (border + bg + text) |
+| `--color-state-warning` | `amber-50/amber-700/amber-200` | warning surface |
+| `--color-state-success` | `emerald-50/emerald-700/emerald-200` | 약한 success surface (visibility.exposed, compliance.passed) |
+| `--color-state-info` | `blue-50/blue-700/blue-200` | info surface (visibility.recovered) |
+| `--color-state-danger-soft` | `rose-50/rose-700/rose-200` | 약한 danger (visibility.off_radar, diagnosis.never_indexed) |
+| `--color-surface-base` | 기존 `--background` 재사용 | 페이지 배경 |
+| `--color-surface-raised` | `white` | Card / Drawer 등 raised |
+| `--color-text-primary` | 기존 `--foreground` 재사용 | 본문 |
+| `--color-text-secondary` | `gray-600` | 보조 텍스트 |
+| `--color-text-muted` | `gray-500` | 메타 텍스트 (timestamp 등) |
+
+> spacing/typography 는 default Tailwind scale 활용. theme extension 만 (sm/md/lg 토큰 신규 정의 X).
+> difficulty (S/A/B/C/D) 는 색상 의미가 분리되어 있어 별도 grade 토큰 (`--color-grade-s` ~ `--color-grade-d`) 5개 신규.
+> diagnosis 의 `cannibalization` (fuchsia) 은 의미 충돌 가능성 — `--color-status-conflict` 1건 신규.
+
+### 구현 단계
+
+- [ ] **Step 1.0 — Tailwind 4 token API 확인** (0.5일)
+  - `node_modules/tailwindcss/dist/lib.d.mts`, `default-theme.d.mts` 읽기
+  - `@import "tailwindcss"` + `@theme inline` 블록 의 동작 검증 (현재 globals.css 에 이미 사용 중)
+  - 결정 사항: ① CSS 변수만으로 끝낼지 (런타임) vs ② JS 매핑 (`tokens.ts`) 병행
+  - **default**: ② 병행. 이유 = StatusBadge 같은 Tailwind 클래스 합성 코드는 변수만으론 부족 (Tailwind class scanner 가 동적 변수를 못 잡음)
+  - 검증: 결정 결과를 본 plan 의 Step 1.1 에 1줄 추가
+- [ ] **Step 1.0.5 — sweep 대상 사전 list (plan-reviewer 보강 D)** (0.5일)
+  - grep `bg-(red|amber|emerald|blue|green|gray|slate|rose|indigo|violet|purple|fuchsia)-(50|100|200|300|400|500|700|800|900)` 으로 N개 위치 list 작성
+  - 대상 컴포넌트 (사전 식별):
+    - **ui/** : `StatusBadge`, `ComplianceRiskBadge`, `Button`, `EmptyState`, `Dialog`, `Drawer`, `Card`, `MetricStrip`, `DataTableShell`, `Skeleton`, `Toast`
+    - **호출자**: `BrandRegisterDialog`, `RowDropdownMenu`, `PublicationActionRow`, `BatchProgressTable`, `ResultViewer`, `OperationsHomeBoard`
+    - **페이지 직접 사용**: `/queue`, `/batches`, `/rankings/[id]`, `/patterns/by-id/[id]`, `/insights`, `/_dev/ui`
+  - 결과를 plan 안에 표로 기록 (file path + 클래스 위치 line + 의미 토큰 매핑 후보)
+  - **우선순위 sweep 순서**: ui/* > 호출자 컴포넌트 > 페이지 직접 사용 (Step 1.3 → 1.4 → 1.4 후속)
+  - 검증: list 가 plan 안에 박혀 있어야 Step 1.3 진입 가능 (가시성 확보)
+- [ ] **Step 1.1 — globals.css 의 `@theme inline` 블록 확장** (0.5일)
+  - 위 매핑 표의 13개 의미 토큰을 CSS 변수로 정의 (`--color-status-*`, `--color-state-*`, `--color-surface-*`, `--color-text-*`)
+  - 단, Tailwind 4 가 변수만으로 임의 클래스 (`bg-status-active` 등) 를 인식하지 못하면 (Step 1.0 에서 결정) 변수는 reference 용으로만 두고 매핑은 `tokens.ts` 가 담당
+  - 검증: dev 서버 시각 회귀 0 (StatusBadge 가 아직 옛 매트릭스 사용 중이므로 화면 변화 X)
+- [ ] **Step 1.2 — `web/frontend/src/lib/tokens.ts` 신규 작성 + StatusBadge 회귀 contract (plan-reviewer 보강 A)** (1일)
+  - export `getStatusToken(kind, status): { bg: string; text: string; border: string }` 함수
+  - 내부 매트릭스: 현재 StatusBadge `COLOR_MAP` 의 모든 (kind, status) 를 의미 토큰 키로 매핑
+  - export `STATUS_TOKEN_LABELS: Record<SemanticToken, string>` (디버그용)
+  - 명시 fallback: 미매핑 → `status-neutral`
+  - 🔴 **회귀 contract 못박기**: 기존 `StatusBadge.test.tsx` 의 line 9, 15, 20, 25 가 `bg-red-100`, `bg-rose-50`, `bg-amber-100`, `bg-gray-100` 4 클래스를 직접 매칭 — 토큰 sweep 후에도 **동일 클래스 문자열 반환 = contract**
+  - vitest: `tokens.test.ts` 신규 첫 케이스로 "기존 4개 매칭 그대로 통과" 회귀 못박기
+    1. `getStatusToken('workflow', 'action_required').bg === 'bg-red-100'`
+    2. `getStatusToken('visibility', 'off_radar').bg === 'bg-rose-50'`
+    3. `getStatusToken('workflow', 'republishing').bg === 'bg-amber-100'`
+    4. `getStatusToken('workflow', 'held').bg === 'bg-gray-100'`
+  - vitest: 모든 (kind, status) 조합이 fallback 이 아닌 의미 토큰으로 매핑되는지 회귀 (P6 enum 추가 시 자동 검출)
+- [ ] **Step 1.3 — StatusBadge sweep + contract 검증** (0.5일)
+  - `COLOR_MAP` 인라인 매트릭스 삭제 → `getStatusToken(kind, status)` 호출
+  - `FALLBACK_COLOR` 도 `getStatusToken('workflow', '__unknown__')` 결과로 통일
+  - 🔴 `getStatusToken()` 또는 토큰 매핑이 동일 className 으로 resolve 되어야 함 (Step 1.2 contract)
+  - 검증: 18 vitest 그린 유지 + 기존 StatusBadge.test.tsx 4 클래스 매칭 회귀 0
+- [ ] **Step 1.4 — Tailwind 클래스 직접 사용 sweep** (1.5일)
+  - Step 1.0.5 의 사전 list 우선순위 따라 sweep
+  - 1단계: ui/* 컴포넌트 (Card, Drawer, Dialog 우선 — P2 와 충돌하지 않게 P2 시작 전 끝내기)
+  - 2단계: 호출자 컴포넌트 (BrandRegisterDialog, RowDropdownMenu, PublicationActionRow, BatchProgressTable)
+  - 3단계: 페이지 직접 사용 (`/queue`, `/batches` 등) — Step 1.5 에서 본 Phase 포함 여부 결정
+  - 검증: 각 단계 종료 후 vitest 그린 + `_dev/ui` 시각 회귀 0
+- [x] **Step 1.5 — 미적용 컴포넌트 plan 분리 결정** (자체 결정)
+  - **결과**: 287 위치 / 50+ 파일에 색상 클래스 산발 (grep 측정). StatusBadge 외 페이지/컴포넌트의 색상 의미가 다양 (브랜드 카드 / 차트 / 배너 / 툴팁 — enum 기반 매핑 어려움)
+  - **결정**: 나머지 sweep 은 별도 PR 로 분리. P1 핵심 가치 (StatusBadge 토큰화 + 의미 토큰 변수 정의) 달성 — 운영자 우선순위 낮음, 후속 PR 에서 일관성 폴리시 작업 시 진행
+- [ ] **Step 1.6 — 빌드 게이트 + commit + 데모** (0.5일)
+
+### 검증 게이트
+
+- `bash .claude/hooks/build-check.sh` 그린
+- vitest 112 → 113~120 (tokens.test 추가만큼) 그린
+- Storybook 또는 `_dev/ui` 페이지에서 StatusBadge 매트릭스 시각 회귀 0 (P6 데모 페이지 재사용)
+
+### 데모 시나리오
+
+1. `_dev/ui` 페이지에서 6 kind × N status 모든 StatusBadge 가 변경 전과 동일한 색상으로 보임
+2. `tokens.ts` 의 `getStatusToken('workflow', 'action_required')` 가 빨간 매핑 반환 (콘솔 검증)
+3. globals.css 의 `--color-status-action-required` 변수가 정의되어 있고 dev 도구 inspector 에서 확인 가능
+
+### 위험 요소
+
+- **R1**: Tailwind 4 의 `@theme inline` 변수만으로 임의 클래스 (`bg-status-action-required`) 를 인식하지 못할 가능성 → Step 1.0 에서 검증, 못 하면 `tokens.ts` 의 명시 매핑 방식으로 우회 (default)
+- **R2**: tokens.ts 변경이 시각 회귀를 일으킬 가능성 → vitest 매트릭스 회귀 + `_dev/ui` 시각 비교
+- **R3**: P6 의 ComplianceRiskBadge / BrandRegisterDialog 가 자체 색상 매트릭스를 가질 경우 → Step 1.4 sweep 에 포함, 누락 시 Step 1.5 에서 별도 PR 분리
+
+---
+
+## Phase 2 — 모바일 반응형 (5~7일, frontend sweep)
+
+### 목표
+
+운영자(데스크톱 only) + 외부 공유(모바일) 두 사용 패턴 분리. 외부 공유 가능한 페이지는 모바일 우선, 운영 화면은 데스크톱 우선 + 모바일 best-effort.
+
+### 사용자 확정 가정 (2026-05-06)
+
+> ✅ **운영자 = 데스크톱 only / 외부 공유 = 모바일** (Phase A 채택)
+> Phase 2 step 들이 아래 우선순위에 따라 작업 분량 조절.
+
+### 우선순위 (사용자 확정)
+
+| 우선순위 | 페이지 | 사유 |
+|---|---|---|
+| **HIGH** (반드시 모바일 대응) | `/queue?slug=...&drawer=preview`, `/rankings/[id]` | 외부 공유 / SEO 채널 인입 가능 (publication 상세) |
+| **MEDIUM** (sanity) | `/`, `/queue`, `/batches` | 운영자가 가끔 모바일 확인 시 깨지지 않을 정도 |
+| **LOW** (제외 권장) | `/create`, `/brand-studio`, `/insights`, `/usage`, `/_dev/ui` | 데스크톱 전용 — 모바일 sweep OUT-OF-SCOPE |
+
+> `/patterns/by-id/[id]` 는 운영자만 접근 (보관함). MEDIUM 으로 강등 — 외부 공유 X.
+
+### breakpoint 정책 (확정)
+
+- `sm: 640px` (Tailwind default) — phone landscape / small tablet 진입
+- `md: 768px` (Tailwind default) — tablet portrait
+- `lg: 1024px` — desktop 진입 (현재 plan 의 desktop 1440 가정 유지)
+- 1440 미만은 P2 가정 = 운영자 desktop 최소
+
+### 구현 단계
+
+- [ ] **Step 2.0 — vitest.setup.ts 의 matchMedia polyfill (plan-reviewer 보강 E)** (0.25일)
+  - jsdom 환경에서 `window.matchMedia` 미구현 — Tailwind breakpoint 분기 vitest 가 회귀 못함
+  - `web/frontend/vitest.setup.ts` 에 polyfill 추가 (mock function with addEventListener/removeEventListener)
+  - viewport mock helper: `mockViewport(width: number)` 유틸 함수 export
+  - 검증: 기존 vitest 그린 + 새 폴리필이 매트릭스 분기 테스트 작성 가능
+- [ ] **Step 2.1 — 공통 layout 의 nav drawer** (1일)
+  - `web/frontend/src/components/Nav.tsx` (또는 layout) — `md` 미만 width 에서 hamburger 메뉴 + drawer
+  - HTML `<dialog>` 또는 P2 (UX Refactor) 에서 도입한 Drawer 컴포넌트 재사용
+  - 검증: 6개 nav 항목 (P1 결정) 모두 drawer 안에서 접근 가능
+- [ ] **Step 2.2 — HIGH 페이지 sweep (외부 공유 우선)** (1.5일)
+  - `/queue?slug=...&drawer=preview` — `sm` 미만에서 full screen drawer (외부 공유 핵심 entry)
+  - `/rankings/[id]` — publication 상세 (외부 SEO 인입). 메타 카드 1열 + Chart 가로 스크롤
+  - 검증: 실 모바일 (또는 chrome devtools 375px) 에서 가독성 + 액션 버튼 tap 가능
+- [ ] **Step 2.3 — MEDIUM 페이지 sanity (운영자 모바일 best-effort)** (1일)
+  - `/` 운영 홈 — `md` 미만에서 1열 grid (4 트랙 stack)
+  - `/queue` 메인 — `md` 미만에서 PublicationActionRow 테이블 → 카드 리스트
+  - `/batches` — `md` 미만에서 BatchProgressTable → 카드 리스트
+  - `/patterns/by-id/[id]` — 보관함 카드형 (운영자만 접근, sanity)
+  - 검증: vitest 1~2 (matchMedia mock 활용 — Step 2.0 폴리필) + manual
+- [ ] **Step 2.4 — LOW 페이지 OUT-OF-SCOPE 처리** (0.25일)
+  - `/create`, `/brand-studio`, `/insights`, `/usage`, `/_dev/ui` — sweep 제외 (사용자 확정)
+  - 단, `lg` 이상에서만 정상 동작 안내 배너 (one-liner) 추가 — 모바일 진입 시 안내
+  - 검증: 모바일 진입 시 배너 1줄 노출
+- [ ] **Step 2.5 — Drawer / Dialog 모바일 full screen 전환** (0.5일)
+  - 현재 P2 UX Refactor 의 Drawer 는 desktop right-slide
+  - `sm` 미만에서 bottom-sheet 또는 full screen 으로 전환
+  - 검증: ESC + body scroll lock 유지
+- [ ] **Step 2.6 — 빌드 게이트 + commit + 데모** (0.5일)
+  - matchMedia mock 으로 mobile / tablet / desktop 3 viewport vitest 명시 1~2건 (sanity)
+
+### 검증 게이트
+
+- `bash .claude/hooks/build-check.sh` 그린
+- vitest 그린 + matchMedia mock 으로 mobile/tablet/desktop 3 viewport sanity 1~2건
+- 실 모바일 (iPhone Safari + Chrome Android) 또는 chrome devtools 375px / 768px 에서 HIGH 페이지 시각 검증
+
+### 데모 시나리오
+
+1. iPhone Safari (또는 devtools 375px) 로 `/queue?slug=test&drawer=preview` 접속 → 본문 가독 + 액션 버튼 tap
+2. 같은 환경에서 `/rankings/[id]` → 메타 + Chart 1열 스크롤
+3. `/queue` 데스크톱 → 모바일 전환 시 nav drawer 동작 + 테이블 → 카드 변환
+4. `/create` 모바일 진입 → "데스크톱 권장" 배너 노출 (LOW OUT-OF-SCOPE 검증)
+
+### 위험 요소
+
+- **R1**: Tailwind 의 `sm:`/`md:` prefix sweep 양이 많아 ETA 초과 위험 → LOW 는 sweep 제외 (사용자 확정), 안내 배너만
+- **R2**: jsdom 환경의 viewport 시뮬레이션 한계 → matchMedia polyfill (Step 2.0) 으로 회귀 1~2건 가능, manual 검증 병행
+- **R3**: HIGH 페이지의 외부 공유 사례 자체가 적을 수 있음 → 사용자 확정 매트릭스 신뢰, P3 종료 시 referrer 분포 1회 확인 가능
+
+---
+
+## Phase 3 — 온보딩 / 툴팁 (3~4일, frontend 신규)
+
+### 목표
+
+신규 사용자 (또는 1주 이상 미사용 운영자) 의 진입 학습 비용 감소. 첫 방문 modal + 페이지별 `?` tooltip.
+
+### 변경 대상 파일
+
+- `web/frontend/src/components/onboarding/WelcomeModal.tsx` — **신규**. 첫 방문 modal (3 카드)
+- `web/frontend/src/components/ui/HelpTooltip.tsx` — **신규**. `?` 아이콘 + tooltip
+- `web/frontend/src/lib/onboarding.ts` — **신규**. `localStorage` 기반 isOnboarded() / setOnboarded()
+- `web/frontend/src/app/page.tsx` (운영 홈) — WelcomeModal mount
+- `web/frontend/src/app/queue/page.tsx`, `/batches/page.tsx`, `/create/page.tsx` — HelpTooltip 삽입
+
+### 정책 (확정)
+
+- 첫 방문 = `localStorage.getItem("onboarded") === null`. dismiss 후 영구 미노출 (`localStorage.setItem("onboarded", "true")`)
+- modal 3 카드 (확정):
+  1. **"단일 키워드 만들기"** → CTA: `/create?tab=single` 이동
+  2. **"CSV 배치 운영"** → CTA: `/create?tab=batch` 이동
+  3. **"운영 OS 보기"** → 운영 홈 안내 (modal close, 배경 강조 X — 단순 안내)
+- nav 메뉴 "도움말" 항목 추가 X (사용자 결정 nav 6개 유지)
+- 페이지별 HelpTooltip 위치 (확정):
+  - 운영 홈 `/` — h1 옆 `?` (운영 OS 4 트랙 설명)
+  - `/queue` — h1 옆 `?` (work / monitor / archive 탭 설명)
+  - `/batches` — h1 옆 `?` (CSV → 배치 → 검수 큐 흐름)
+  - `/create` — h1 옆 `?` (single vs batch 차이)
+
+### 구현 단계
+
+- [ ] **Step 3.0 — `localStorage` 기반 onboarding 라이브러리 + 키 충돌 grep (plan-reviewer 보강 F)** (0.5일)
+  - 🔴 **사전 grep**: `grep -r "localStorage" web/frontend/src/` 1회 실행 + 결과 plan 안에 기록
+  - 충돌 발견 시 키 이름 namespace 화 (`cc:onboarded` 형태로 prefix)
+  - **default 키**: `cc:onboarded` (충돌 회피 + 향후 다른 키 추가 시 일관성)
+  - `web/frontend/src/lib/onboarding.ts` 신규
+  - `isOnboarded(): boolean`, `setOnboarded(): void`, `resetOnboarded(): void` (디버그)
+  - SSR 안전: typeof window === 'undefined' 가드
+  - vitest: 3건 (read / set / reset)
+- [ ] **Step 3.1 — WelcomeModal 컴포넌트** (1일)
+  - HTML `<dialog>` 사용 (P2 Drawer/Dialog 일관성)
+  - 3 카드 grid (`md` 이상 3열, 모바일 1열 — Phase 2 와 정합)
+  - 각 카드: 제목 + 1~2줄 설명 + CTA 버튼 + 옆에 작은 아이콘 (lucide-react 의 `FileText`, `Files`, `LayoutDashboard`)
+  - 이모지 사용 X (memory 의 feedback_no_emoji.md)
+  - dismiss 액션: ESC, "닫기" 버튼, 외부 click — 모두 `setOnboarded()` 호출
+  - vitest: 3건 (mount, dismiss 후 setOnboarded 호출 검증, CTA 클릭 후 navigate)
+- [ ] **Step 3.2 — 운영 홈에 WelcomeModal mount** (0.5일)
+  - `/` 진입 시 `useEffect` 로 `isOnboarded()` 체크 → `false` 면 modal open
+  - 검증: 첫 방문 modal 표시 → dismiss → reload 시 미표시
+- [ ] **Step 3.3 — HelpTooltip 컴포넌트** (0.5일)
+  - `?` 아이콘 (lucide-react `HelpCircle`) + hover/click tooltip
+  - tooltip 내용: prop 으로 주입 (`<HelpTooltip content="..." />`)
+  - 모바일은 click trigger (hover 없음)
+  - 접근성: aria-describedby + 키보드 focus 가능
+  - vitest: 3건 (render, hover 시 tooltip 표시, click trigger)
+- [ ] **Step 3.4 — 4개 페이지 HelpTooltip 삽입 + 카피 표 단일 출처 (plan-reviewer 보강 G)** (0.5일)
+  - 카피 단일 출처: `web/frontend/src/lib/helpMessages.ts` 신규 (labels.ts 와 같은 패턴)
+  - 4 카피 (planner 작성, 사용자 검토 대상):
+
+    | 페이지 | 카피 (1~2 문장) |
+    |---|---|
+    | 운영 홈 (`/`) | "오늘 처리할 작업이 4 큐 (액션 필요 / 재발행 중 / 보류 / 노출 중) 로 분류됩니다. 액션 필요 큐부터 처리하세요." |
+    | 큐 (`/queue`) | "단일 작업 결과와 배치 검수 항목을 한 곳에서 처리. 출처/상태 필터로 좁힌 뒤 row 클릭으로 본문 미리보기." |
+    | 배치 (`/batches`) | "CSV 업로드한 키워드 묶음의 진행 상태. 검수 큐로 들어가면 승인/수정/거부 처리." |
+    | 생성 (`/create`) | "단일 키워드는 즉시 결과, CSV 배치는 검수 큐로 흐릅니다. 단일은 분석/생성/파이프라인 모드 선택 가능." |
+
+  - 4개 페이지 h1 옆에 `<HelpTooltip content={helpMessages.home} />` 형태 삽입
+  - 검증: 모든 페이지에서 `?` 아이콘 hover 시 안내 표시 + helpMessages.ts 단일 출처
+- [ ] **Step 3.5 — 빌드 게이트 + commit + 데모** (0.5일)
+
+### 검증 게이트
+
+- `bash .claude/hooks/build-check.sh` 그린
+- vitest 112 + 6 (onboarding 3 + tooltip 3) = 118 그린
+- 첫 방문 (브라우저 incognito) → modal 표시 → dismiss → reload 시 미표시 (manual)
+
+### 데모 시나리오
+
+1. incognito 창에서 `/` 접속 → WelcomeModal 표시
+2. "단일 키워드 만들기" CTA 클릭 → `/create?tab=single` 이동
+3. reload `/` → modal 미표시
+4. 운영 홈 h1 옆 `?` hover → "운영 OS 4 트랙" 안내 tooltip
+5. `localStorage.removeItem("onboarded")` → reload `/` → modal 다시 표시 (디버그용)
+
+### 위험 요소
+
+- **R1**: `localStorage` 가 incognito 또는 운영자 브라우저 cleanup 으로 자주 reset 될 가능성 → 의도적 허용 (UX Refactor 6 Phase 와 동일하게 진입 후 반복 학습 가능)
+- **R2**: HelpTooltip 의 click vs hover 분기 — 모바일/데스크톱 분리 — Phase 2 의 모바일 정책과 정합 필요
+- **R3**: WelcomeModal 의 CTA 가 라우팅 시 `setOnboarded()` 호출 후 navigate 순서 race condition → useEffect 후 router.push, vitest 로 회귀
+
+---
+
+## Phase 4 — 부분 매치 키워드 검증 (1.5~2.5일, backend, kiwipiepy)
+
+### 목표
+
+`title_validator._check_keyword_repetition` 의 키워드 반복 검증을 형태소/공백 정규화 강화. "다이어트한의원" vs "다이어트 한의원" 동일 처리.
+
+> **2026-05-06 갱신**: KoNLPy → kiwipiepy 채택. 사유 = JVM 의존 제거 (Render 컨테이너 추가 설정 0), cold start 1~2초 → 0.1초 (10배), pip 1개로 끝, 정확도는 Mecab 수준 (KoNLPy Okt 동등 또는 우수).
+
+### 변경 대상 파일
+
+- `pyproject.toml` — `kiwipiepy>=0.17` 의존 추가 (`dependencies`)
+- `domain/generation/title_validator.py` — `_normalize_morpheme()` helper 추가 + `_check_keyword_repetition` 호출 분기
+- `tests/test_generation/test_title_validator.py` — 형태소 매칭 6 신규 케이스
+- `config/settings.py` — `TITLE_VALIDATOR_MORPHEME_THRESHOLD` env 토글 (default 0.7)
+- `application/stage_runner.py` (또는 호출자) — kiwipiepy import 실패 시 degrade 분기 (fallback, drop-in 안전망)
+
+### kiwipiepy 도입 정책 (확정)
+
+- **사용자 결정**: kiwipiepy 채택 (KoNLPy 폐기)
+- 형태소 분석기: `Kiwi` (`from kiwipiepy import Kiwi`)
+- 사용 패턴:
+  ```python
+  from kiwipiepy import Kiwi
+  kiwi = Kiwi()
+  result = kiwi.analyze("다이어트한의원")
+  nouns = [t.form for t in result[0][0] if t.tag.startswith("NN")]
+  # → ["다이어트", "한의원"]
+  ```
+- **fallback (필수)**: `from kiwipiepy import Kiwi` ImportError 시 → 공백 제거 + lowercase 만으로 degrade. ImportError 를 흡수하지 않고 logger.warning 1회 + 모듈 단위 캐시
+- ImportError 발생 가능 환경: ARM 일부 wheel 미지원 — fallback 으로 graceful degrade (KoNLPy plan 과 동일 패턴 유지)
+- **JVM 의존 제거**: Dockerfile 수정 불필요. Render 컨테이너 추가 설정 0
+- 대안: kiwipiepy 가 본 프로젝트 다른 곳에서 쓰이지 않음 (확인 필요) → Step 4.0 에서 grep 1회
+
+### 구현 단계
+
+- [ ] **Step 4.0 — kiwipiepy 의존 영향 평가 + 환경 검증 (plan-reviewer 보강 B/C)** (0.25일)
+  - `grep -r "kiwipiepy\|konlpy\|from kiwipiepy\|from konlpy" .` 으로 본 프로젝트의 기존 사용 확인
+  - **default**: 미사용 — pyproject.toml 에 의존 추가
+  - 🔴 **production 환경 검증** (1회):
+    - dev: `python -c "from kiwipiepy import Kiwi; Kiwi()"` 통과
+    - prod (Render 시뮬레이션): linux x86_64 wheel 설치 통과 확인
+    - Render 배포 영향: **0** (JVM 의존 없음 — kiwipiepy 는 wheel + C++ 바이너리만)
+  - 🔴 **cold start 측정** (1회): `time python -c "from kiwipiepy import Kiwi; k = Kiwi(); k.analyze('테스트')"` 1회 측정
+    - 추정 0.1초 (KoNLPy JVM 1~2초 대비 10배)
+    - 결과를 plan 안에 기록 후 Step 4.2 의 모듈 단위 캐시 (singleton 패턴) 정당성 확인
+  - ImportError fallback 정책: 만약 wheel 미지원 환경 (ARM 일부) → fallback 으로 graceful degrade
+- [ ] **Step 4.1 — pyproject.toml 의존 추가** (0.25일)
+  - `dependencies` 에 `kiwipiepy>=0.17` 추가 (정상 흐름 필수)
+  - `pip install -e ".[dev]"` 후 `from kiwipiepy import Kiwi` 동작 확인
+  - 검증: `python -c "from kiwipiepy import Kiwi; k = Kiwi(); print([t.form for t in k.analyze('다이어트 한의원')[0][0] if t.tag.startswith('NN')])"` 출력 → `["다이어트", "한의원"]`
+- [ ] **Step 4.2 — `_normalize_morpheme(text, keyword)` helper 추가** (0.5일)
+  - title_validator.py 에 신규 함수 + 모듈 단위 Kiwi 캐시 (`_kiwi_instance: Kiwi | None = None`, lazy init via singleton)
+  - 동작:
+    1. text 와 keyword 양쪽에 `kiwi.analyze()` → `tag.startswith("NN")` 필터로 명사 set 추출
+    2. set 교집합 비율 계산 — `TITLE_VALIDATOR_MORPHEME_THRESHOLD` (default 0.7) 이상이면 "포함" 판정
+    3. fallback (ImportError): 기존 `_normalize` 만 사용 (degrade)
+  - 모듈 단위 캐시 (singleton 패턴) 로 worker 당 1회만 시동 (cold start 0.1초 추정 — Step 4.0 측정 결과)
+  - 검증: `_normalize_morpheme("다이어트 한의원 추천", "다이어트한의원")` → True
+- [ ] **Step 4.3 — `_check_keyword_repetition` 분기** (0.25일)
+  - 기존 `_normalize` exact match → 매칭 안 되면 `_normalize_morpheme` fallback
+  - **순서 중요**: exact match 우선 (현재 21 vitest 회귀 0), 형태소는 fallback only
+  - 신규 매칭은 severity=warning 으로 처리 시작 (default error 시 회귀 위험)
+  - 운영 1주 후 severity 상향 결정 (잔존 결정 사항)
+- [ ] **Step 4.4 — 형태소 매칭 6 신규 vitest 케이스 (plan-reviewer 보강 H)** (0.5일)
+  - 🔴 **임계값 분모 명시**: 분모 = **keyword 명사 set 크기** (recall 기준 — keyword 의 명사가 title 에 얼마나 포함되었는지)
+  - 임계값 0.7 은 default, env 토글 `TITLE_VALIDATOR_MORPHEME_THRESHOLD` 추가 (운영 데이터 누적 후 조정)
+  - 케이스:
+    1. "다이어트 한의원 추천" + "다이어트한의원" → 매칭 (keyword 명사 2개 모두 포함, ratio=1.0)
+    2. "한의원 다이어트 후기" + "다이어트한의원" → 매칭 (어순 다름, ratio=1.0)
+    3. "한의원 추천 다이어트" + "다이어트한의원" → 매칭 (ratio=1.0)
+    4. "강남 다이어트한의원" + "다이어트 한의원" → 매칭 (역방향, ratio=1.0)
+    5. **70% 경계값 케이스**: keyword 명사 3개 중 2개 포함 = 0.67 → 통과 (미매칭) / 3개 모두 = 1.0 → fail (매칭)
+    6. kiwipiepy ImportError mock → fallback 만으로 동작 검증 (`_normalize` exact match 결과 검증)
+  - 기존 21 vitest 회귀 0
+- [ ] **Step 4.5 — 빌드 게이트 + commit + 데모** (0.25일)
+
+### 검증 게이트
+
+- `bash .claude/hooks/build-check.sh` 그린
+- pytest 1296 + 6 (형태소 매칭) = 1302 그린
+- kiwipiepy ImportError 시뮬레이션 (mock) 으로 fallback 동작 회귀 1건
+- production wheel 설치 1회 검증 (Step 4.0)
+
+### 데모 시나리오
+
+1. `python -c "from domain.generation.title_validator import _normalize_morpheme; print(_normalize_morpheme('다이어트 한의원 추천', '다이어트한의원'))"` → True
+2. kiwipiepy 미설치 환경 (mock) → degrade fallback (exact match 만)
+3. 실제 outline 생성 시 "다이어트 한의원 추천 (강남)" 같은 title 이 "다이어트한의원" 키워드와 매칭 — 회귀 없음
+4. cold start 측정: `time python -c "from kiwipiepy import Kiwi; Kiwi()"` → 0.1초대 확인
+
+### 위험 요소
+
+- ✅ **R1 (구 KoNLPy JVM 의존)**: kiwipiepy 채택으로 N/A — JVM 미사용
+- ✅ **R2 (구 Render JVM 설정)**: kiwipiepy 채택으로 자동 해결 (Dockerfile 수정 불필요)
+- ✅ **R3 (구 cold start 1~2초)**: kiwipiepy 채택으로 자동 해결 (0.1초 → worker N개 spawn 영향 없음, 모듈 단위 캐시 1회 시동)
+- **R4**: 형태소 매칭의 70% 임계값이 false positive 유발 가능성 → severity=warning 으로 시작 + env 토글 (`TITLE_VALIDATOR_MORPHEME_THRESHOLD`) 로 1주 운영 후 미세 조정
+- **R5**: ARM 일부 wheel 미지원 환경 → fallback 으로 graceful degrade (Step 4.0 에서 wheel 검증)
+- **R6**: kiwipiepy 라이센스 — LGPL 2.1+ (KoNLPy Okt 의 Apache-2.0 보다 강함, 단 dynamic linking 으로 사용 시 통합 안전). 외부 배포 SaaS 운영에는 영향 없음 — Step 4.0 에서 1회 확인
+
+---
+
+## 사용자 결정 사항 (이미 답변 / 잔존)
+
+각 Phase 시작 전 사용자 답변 또는 자체 결정:
+
+1. ✅ **(Phase 1 Step 1.0) Tailwind 4 token API 방식**: `@theme inline` CSS 변수 only vs JS 매핑 병행 — **확정**: 병행 (자체 결정)
+2. ✅ **(Phase 2 Step 2.0) 모바일 우선순위**: "운영자 = 데스크톱 only / 외부 공유 = 모바일" + HIGH/MEDIUM/LOW 매트릭스 — **확정** (2026-05-06): A 채택. HIGH = `/queue?slug=...&drawer=preview` + `/rankings/[id]` / MEDIUM = `/`, `/queue`, `/batches` (sanity) / LOW = `/create`, `/brand-studio`, `/insights`, `/usage`, `/_dev/ui` (제외)
+3. ✅ **(Phase 3 Step 3.0) WelcomeModal 트리거 조건**: `localStorage` 키 — **확정**: `cc:onboarded` (namespace prefix 로 충돌 회피)
+4. ✅ **(Phase 4 의존) 형태소 분석기 채택**: KoNLPy → kiwipiepy — **확정** (2026-05-06): JVM 의존 제거, cold start 10배 단축, Render 추가 설정 0
+5. ✅ **(Phase 4 Step 4.0) kiwipiepy 의존 위치**: `dependencies` (정상 흐름 필수) — **확정** (정상 흐름에서 사용, optional 분리 불필요)
+6. ✅ **(공통) 데모 환경**: dev 서버 + 실 운영 데이터 그대로 사용. 별도 fixture 분리 OUT-OF-SCOPE
+7. ✅ **(공통) Phase 순서**: P1 → P2 → P3 → P4 (default). P4 는 backend 독립 — 어느 시점에서나 병행 가능
+
+### 잔존 결정 사항 (운영 데이터 누적 후 결정)
+
+- **(P3 종료 시)** 온보딩 가치 측정 메트릭: 1주 후 신규 진입 운영자 학습 시간 / modal dismiss 비율 / HelpTooltip click 횟수 측정 후 효과 평가. **현 plan 안에서는 OUT-OF-SCOPE** — 별도 P3 후속 PR 로 분리 가능
+- **(P4 Step 4.3)** 형태소 매칭 severity = warning 으로 시작 → 1주 운영 후 error 상향 결정. `TITLE_VALIDATOR_MORPHEME_THRESHOLD` env 토글로 임계값 0.7 미세 조정 가능
+
+## OUT-OF-SCOPE (영구 제외)
+
+- **Slack notifier 연결** — Phase 4 PR1 에서 인프라만 도입, 실 운영 webhook 연결은 사용자 결정 후 별도 작업 (memory 참조)
+- **rules.py 스팸 카테고리 통합** — title_validator 의 `_TITLE_SPAM_LITERALS` 와 compliance/rules.py 의 `FORBIDDEN_LITERALS` 통합은 SPEC-SEO-TEXT.md + SPEC-BRAND-CARD.md + 5 파일 동시 수정 의무 회피
+- **Title 단독 LLM helper** — title 만 LLM 으로 재생성하는 helper 는 M2 톤 락 보호 (도입부 흔들림 위험) — 영구 금지
+- **다국어 (i18n)** — 한국어 단일 유지 (UX Refactor OUT-OF-SCOPE 와 동일)
+- **A/B 테스트 인프라** — Polish Pack 효과 측정은 별도 PR
+- **Real-time push (WebSocket)** — polling 5초 유지
+- **권한 시스템 (관리자/운영자 분리)** — 단일 권한 유지
+- **Storybook 도입** — `_dev/ui` 페이지로 충분, 별도 도구 도입 X
+- **Visual regression 테스트 (Percy / Chromatic)** — manual 검증 우선, 도구 도입 OUT-OF-SCOPE
+- **모바일 native 앱** — 웹 반응형 한정
+
+## 참조
+
+- UX Refactor 6 Phase plan (본 todo.md 1511~ 라인)
+- 8774267 commit (UX Refactor P1~P6 완료)
+- `web/frontend/AGENTS.md` ("This is NOT the Next.js you know" — Next.js 16 docs 우선)
+- `web/frontend/src/components/ui/StatusBadge.tsx` (Phase 1 sweep 대상)
+- `web/frontend/src/app/globals.css` (Phase 1 `@theme inline` 확장)
+- `domain/generation/title_validator.py` (Phase 4 대상)
+- `pyproject.toml` (Phase 4 KoNLPy 의존 추가)
+- `tasks/lessons.md` (실수 패턴, 매 Phase 종료 시 참조 + 갱신)
+- memory: `feedback_no_emoji.md` (이모지 사용 금지), `project_seo_operating_philosophy.md` (단일 흐름 보호)
+
 
