@@ -212,6 +212,21 @@ create index if not exists idx_publications_keyword
 create index if not exists idx_publications_slug
     on publications (slug);
 
+-- ⚠️ 주의: 이전에 운영 DB 에 `publication_id text` 로 적용된 환경이 있을 수 있다.
+-- `add column if not exists` 는 기존 컬럼이 있으면 type 변경 안 함 → publications(id)
+-- (uuid) 와 type mismatch 로 foreign key 실패. 그 경우 다음 중 1개 선택:
+--
+--   [데이터 없음] 컬럼 drop 후 재생성:
+--     alter table generated_contents drop column if exists publication_id;
+--     (그 후 본 alter 블록 재실행)
+--
+--   [데이터 보존] type 변경:
+--     alter table generated_contents
+--         alter column publication_id type uuid
+--         using nullif(publication_id, '')::uuid;
+--     alter table generated_contents
+--         add constraint generated_contents_publication_id_fkey
+--         foreign key (publication_id) references publications(id) on delete set null;
 alter table generated_contents
     add column if not exists keyword text,
     add column if not exists slug text,
