@@ -1508,3 +1508,562 @@
 - **composer 의 `<title>` 템플릿 변경** — `<title>` 은 본문 복사 대상 아니므로 SERP 영향 없음
 - **title 전용 compliance 화이트리스트** — strict default false 로 false positive 영향 최소화. 운영 데이터 누적 후 후속 PR
 - **regression 테스트 fixture 추가 (실측 HTML 기반)** — 본 plan 은 단위 테스트 + intro 보존 회귀 1건만
+
+---
+
+# UX Refactor — Operations OS 정렬 (6 Phase 풀패키지)
+
+> 2026-05-06 착수. 사용자 확정 결정 4건 (운영 홈 / `/create` 통합 / `/queue` 통합 / 라벨 매핑) 반영.
+> 2026-05-06 갱신. 사용자 확정 결정 5건 + plan-reviewer 보완 5건 반영. P1 즉시 시작 가능.
+> 백엔드는 이미 운영 OS 구조 (`application/operations_home.py` 4 큐 + workflow_status FSM). UI 가 못 따라온 상태를 정렬한다.
+> 총 22 일 예상 (P2 5일→4일 압축). 단계 별 검증 게이트 통과 시에만 다음 Phase 진입.
+
+## 🟢 P1 즉시 시작 가능 (사용자 결정 완료)
+
+기존 "사용자 답변 받기 전 진행 불가" 블로커 5건 모두 ✅ 처리됨:
+
+1. ✅ **`/pipeline` 처리** = `/` 로 redirect (P1 Step 1.3-bis). nav "생성" 항목은 `/create` (P4 신설) 만 가리킴. 사용자 의도 (단계별 흐름 시각화) 는 운영 홈 안 섹션으로 보존.
+2. ✅ **lucide-react 도입** = 확정. P2 Step 2.0 에서 `web/frontend/package.json` 의존 추가.
+3. ✅ **P5 데이터 소스** = frontend merge 확정. 백엔드 `application/unified_queue.py` 신설 안 함 (운영 규모 1000 row 미만).
+4. ✅ **vitest 라벨 매칭 영향** = 0건 (현재 18 vitest 의 텍스트 매칭은 라벨 매핑과 무관). P3 Step 추가: 신규 StatusBadge 도입 시 vitest 는 labels.ts 함수 호출 결과로 매칭.
+5. ✅ **공지 = 안 함 + README 1줄** = `web/README.md` 또는 `CLAUDE.md` 변경 이력에 1줄 추가 (P1 종료 step). 별도 in-app 배너 X.
+
+## 🔴 핵심 원칙 (전 Phase 공통)
+
+- **단일 흐름 시그니처 절대 무변경** — `application/orchestrator.py` 의 `run_pipeline / run_analyze_only / run_generate_only / run_validate_only` 4 함수, `application/operations_home.py`, `application/batch_orchestrator.py`, `application/auto_publisher.py` 시그니처 손대지 않는다 (`@project_seo_operating_philosophy.md` 위반 차단)
+- **web/api 라우터 시그니처 무변경** — 기존 엔드포인트는 그대로. UX 리팩터는 frontend 만
+- **DB enum 무변경** — `workflow_status`, `visibility_status`, `batch_item_status` 마이그레이션 X. **UI 라벨 매핑 함수만** 추가
+- **Next.js 16 경고 준수** — `web/frontend/AGENTS.md` "This is NOT the Next.js you know". 새 API 사용 시 반드시 `node_modules/next/dist/docs/` 확인 후 코딩
+- **이모지 금지** — `feedback_no_emoji.md` 메모리 준수. 본 plan 작성·UI 카피·코드 모두 이모지 X
+- **additive 우선** — Phase 2 컴포넌트 추가 후 Phase 3~5 가 기존 컴포넌트를 점진 교체. 한 번에 다 바꾸지 않음
+- **각 Phase 종료 시 데모 가능** — 사용자 보고 후 다음 Phase 진입
+
+## 🔴 절대 금지 (전 Phase)
+
+- 백엔드 use case 시그니처 변경 (orchestrator.py / operations_home.py / batch_orchestrator.py)
+- DB enum 변경 / Supabase migration
+- compliance/rules.py 변경
+- needs_review 자동 폐기 (운영 철학: 후보 키워드 = 전부 발행 대상)
+- 단일 PR 에서 2 Phase 이상 묶음 (검증 게이트 누락 위험)
+
+## Phase 1 — Nav 정리 + 운영 홈 승격 (2일)
+
+목표: nav 9개 → 6 영역 재편. `/` 가 운영 홈 (현재 `/rankings` 컨텐츠) 으로 승격. 기존 `/` 의 단일 작업 입력 + Job 모니터링은 임시 보존 영역으로 이동. 외부 링크는 redirect 로 보호.
+
+### 변경 대상 파일
+
+| 파일 | 변경 종류 |
+|---|---|
+| `web/frontend/src/app/layout.tsx` | nav 항목 재편, 6 영역 + active 표시 |
+| `web/frontend/src/app/page.tsx` | 운영 홈 컨텐츠로 교체 (`/rankings/page.tsx` 컨텐츠 이전) |
+| `web/frontend/src/app/rankings/page.tsx` | redirect 어댑터 (`/` 로 영구 redirect) |
+| `web/frontend/src/app/pipeline/page.tsx` | redirect 어댑터 (`/` 로 영구 redirect) <!-- 2026-05-06 추가 --> |
+| `web/frontend/src/app/legacy-jobs/page.tsx` | 신규 — 기존 `/` 의 NewJobForm + JobList + ResultsArchive 임시 보존 (Phase 4 에서 정리) |
+| `web/frontend/src/components/__tests__/NavBar.test.tsx` | 신규 — 6 메뉴 렌더링 + active state 회귀 |
+| `web/README.md` 또는 `CLAUDE.md` 변경 이력 | 1줄 추가 — UX 리팩토링 시작 + `/legacy-jobs` 임시 보존 안내 <!-- 2026-05-06 추가 --> |
+
+### 6 영역 매핑 (확정) <!-- 2026-05-06 갱신: nav 라벨/path 모순 해결 -->
+
+| nav 라벨 | 경로 | 비고 |
+|---|---|---|
+| 운영 홈 | `/` | 현재 `/rankings` 본체 (운영 OS 메인) + `/pipeline` 의 단계별 흐름 섹션 흡수 |
+| 생성 | `/legacy-jobs` (P1) → `/create` (P4 신설) | P1 단계는 기존 NewJobForm 임시 보존, P4 에서 통합 페이지 신설 |
+| 검수·발행 | `/batches` (P1) → `/queue` (P5 신설) | P1 단계는 기존 batches 그대로 |
+| 성과·분석 | `/insights` | drawer: 향후 통합 검토 |
+| 브랜드 | `/brand-studio` | 그대로 |
+| 관리 | `/usage` | drawer: `/keywords` (난이도) |
+
+**중요**: `/pipeline` 은 어떤 nav 에도 직접 link 안 함. P1 시점에 `/` 로 영구 redirect. 사용자 의도 (단계별 흐름 시각화) 는 운영 홈 안 별도 섹션으로 흡수 (P1 plan 내 P3·P5 후속 검토).
+
+### 구현 단계 (체크리스트)
+
+- [ ] **Step 1.1**: `web/frontend/src/app/page.tsx` 의 현재 컨텐츠 (NewJobForm + JobList + ResultsArchive) 를 `app/legacy-jobs/page.tsx` 로 이동. import 경로 그대로 동작 확인 (`pnpm --filter ./web/frontend dev` 띄우고 `/legacy-jobs` 진입). 검증: 단일 작업 제출 1회 + Job 목록 polling 동작
+- [ ] **Step 1.2**: `web/frontend/src/app/rankings/page.tsx` 의 컨텐츠를 `web/frontend/src/app/page.tsx` 로 이동 (default export 함수 이름 `OperationsHomePage` 유지). 검증: `/` 진입 시 운영 홈 카드 + 4 큐 탭 + 240여 row 정상 렌더링
+- [ ] **Step 1.3**: `web/frontend/src/app/rankings/page.tsx` 를 redirect 어댑터로 교체. Next.js 16 redirect 방식: `import { redirect } from "next/navigation"; export default function Page() { redirect("/"); }`. **선결 조건**: `node_modules/next/dist/docs/` 에서 redirect API 가 P1 시점 Next 16 에서 stable 인지 1회 확인. 검증: `/rankings` 입력 시 `/` 로 즉시 이동
+- [ ] **Step 1.3-bis**: `web/frontend/src/app/pipeline/page.tsx` 를 redirect 어댑터로 교체 (`/` 로 영구 redirect). Step 1.3 과 동일 패턴. <!-- 2026-05-06 추가: `/pipeline` 처리 결정 (사용자 확정 5건 #1) --> 사용자 의도 (단계별 흐름 시각화) 는 운영 홈 안 별도 섹션 또는 P5 의 `/queue` MetricStrip 으로 흡수 (P3·P5 후속 검토). 검증: `/pipeline` 입력 시 `/` 로 즉시 이동
+- [ ] **Step 1.4**: `web/frontend/src/app/layout.tsx` 의 nav 9개 → 6개로 재편. 헤더 라벨/path 매핑은 위 표 그대로 (`생성 → /legacy-jobs`, P4 에서 `/create` 로 변경). `/pipeline` 은 어떤 nav 에도 link 안 함. `usePathname()` 으로 active 표시 (active 시 `text-blue-700 font-semibold`, 그 외 `text-gray-700`). 검증: 6 메뉴 클릭으로 모두 진입 가능 + active 라벨 1개만 강조
+- [ ] **Step 1.5**: `web/frontend/src/app/page.tsx` 상단의 "대시보드 ← 링크" (line 119) 제거. 운영 홈이 메인이므로 자기 자신 백링크 불필요. h1 라벨 "운영 홈" 유지
+- [ ] **Step 1.6**: `web/frontend/src/components/__tests__/NavBar.test.tsx` 신규 — **P1 시점 시나리오 한정** <!-- 2026-05-06 갱신: plan-reviewer 보완 A --> — `/`, `/legacy-jobs`, `/batches`, `/insights`, `/brand-studio`, `/usage` 6개만 유효 클릭 단언. `/queue` 는 P5 까지 미존재이므로 nav 가 가리키지 않음 (P1 단언 대상 아님). usePathname 모킹 후 active state 클래스 단언. vitest 3건. (P5 후 후속 PR 에서 시나리오 갱신: `/`, `/create`, `/queue`, `/insights`, `/brand-studio`, `/usage`)
+- [ ] **Step 1.7**: 임시 보존 표시 — `legacy-jobs/page.tsx` 상단에 "P4 통합 후 제거 예정" 문구 + nav 에서 P1 라벨 "생성" 이 가리킴 (P4 에서 `/create` 로 전환). 외부 링크 깨짐 방지 위해 `/jobs` 와 `/results/[slug]` 는 그대로 유지
+- [ ] **Step 1.8**: README 1줄 추가 <!-- 2026-05-06 추가: 사용자 확정 5건 #5 --> — `web/README.md` (없으면 신규) 또는 `CLAUDE.md` 변경 이력에 1줄: "2026-05-06 UX 리팩토링 시작, 단일 작업 폼은 P4 까지 `/legacy-jobs` 임시 보존". 별도 in-app 배너·공지 채널 없음
+- [ ] **Step 1.9**: 회귀 점검 — `pnpm --filter ./web/frontend test` (vitest) 통과, `pnpm --filter ./web/frontend tsc --noEmit` 통과
+
+### 검증 게이트
+
+- [ ] `bash .claude/hooks/build-check.sh` 그린 (frontend tsc + vitest 포함)
+- [ ] 6 메뉴 클릭으로 모두 진입 가능
+- [ ] `/rankings` 진입 시 `/` 로 redirect 동작
+- [ ] `/pipeline` 진입 시 `/` 로 redirect 동작 <!-- 2026-05-06 추가 -->
+- [ ] `/legacy-jobs` 직접 입력 시 NewJobForm 정상 (P4 까지 가용)
+- [ ] 기존 1296 pytest 회귀 0
+- [ ] 사용자 데모 보고 — "Phase 1 완료, nav 정리 + 홈 승격 + redirect 안정"
+
+### 데모 시나리오 (P1 종료 시) <!-- 2026-05-06 추가: plan-reviewer 보완 C -->
+
+1. `/` 진입 → 운영 홈 카드 + 4 큐 탭 (action_required / republishing / held / active) 정상 표시
+2. nav 6 메뉴 (운영 홈 / 생성 / 검수·발행 / 성과·분석 / 브랜드 / 관리) 클릭 → 모두 정상 진입
+3. `/rankings` URL 입력 → `/` 로 redirect 확인
+4. `/pipeline` URL 입력 → `/` 로 redirect 확인
+5. `/legacy-jobs` URL 입력 → NewJobForm + JobList 정상 (P4 까지 임시 보존)
+6. nav active state — 현재 페이지 라벨만 `text-blue-700 font-semibold` 강조
+
+### 위험 요소
+
+- **R1**: Next.js 16 의 redirect 가 client-side 가 아닌 RSC 환경에서 다르게 동작할 수 있음. 완화: Step 1.3 시작 전 `node_modules/next/dist/docs/` 확인 + `/rankings` 은 client component (`"use client"`) 가 아닌 server component 로 작성
+- **R2**: layout.tsx active state 가 dynamic route (`/jobs/[id]`) 에서 깜빡일 가능성. 완화: usePathname 결과를 `startsWith("/jobs")` 로 매칭
+
+---
+
+## Phase 2 — 공통 화면 패턴 추출 (4일) <!-- 2026-05-06 갱신: plan-reviewer 보완 B (5일→4일 압축, Skeleton/ErrorBanner 는 P3/P5 시점 추가) -->
+
+목표: 신규 `web/frontend/src/components/ui/` 폴더에 **8종 컴포넌트** 추가. <!-- 2026-05-06 갱신: plan-reviewer 보완 B — Skeleton.tsx 는 P5 (QueueItemDrawer lazy load), ErrorBanner.tsx 는 P3 (PublicationActionRow 마이그레이션) 시점에 추가 --> 기존 페이지 변경 X (additive only). Phase 3~5 가 점진 마이그레이션 시 사용.
+
+### 신규 파일
+
+| 파일 | 책임 |
+|---|---|
+| `components/ui/PageHeader.tsx` | 제목 + 부제 + 우측 액션 영역 슬롯 |
+| `components/ui/StatusBadge.tsx` | `kind="workflow"\|"visibility"\|"difficulty"\|"compliance"\|"diagnosis"\|"batch"` + status → 색상/라벨 자동 매핑 |
+| `components/ui/MetricStrip.tsx` | 운영 홈/배치 상단 카운트 카드 6~8개 (현재 `SummaryCards` 일반화) |
+| `components/ui/DataTableShell.tsx` | sticky header + sort/filter 시그니처 + empty/error 슬롯 (loading 슬롯은 임시 inline div, P5 에서 Skeleton 으로 교체) |
+| `components/ui/EmptyState.tsx` | icon (lucide-react) + title + description + CTA |
+| `components/ui/ActionBar.tsx` | bulk action button row |
+| `components/ui/Dialog.tsx` | overlay + ESC 닫기 + focus trap (현재 7개 dialog 가 wrapper 직접 작성) |
+| `components/ui/Button.tsx` | `variant=primary\|secondary\|danger\|ghost` × `size=sm\|md` |
+| ~~`components/ui/ErrorBanner.tsx`~~ | **P3 시점에 추가** (마이그레이션 중 필요 시) |
+| ~~`components/ui/Skeleton.tsx`~~ | **P5 시점에 추가** (QueueItemDrawer lazy load 시) |
+| `components/ui/__tests__/*.test.tsx` | 컴포넌트당 2~3건 vitest |
+| `components/ui/index.ts` | barrel export |
+
+### 구현 단계
+
+- [ ] **Step 2.0** <!-- 2026-05-06 추가: 사용자 확정 5건 #2 — lucide-react 도입 확정 -->: `web/frontend/package.json` 에 `lucide-react` 의존 추가. `pnpm --filter ./web/frontend add lucide-react`. 검증: `import { ChevronDown } from "lucide-react"` 정상 import + tsc 통과. `pnpm-lock.yaml` 커밋 포함
+- [ ] **Step 2.1**: `Button.tsx` — variant×size 매트릭스, disabled/loading prop. tests: primary 클릭, danger className, disabled 클릭 무시 (3건)
+- [ ] **Step 2.2**: `Dialog.tsx` — `<dialog>` HTML 요소 또는 portal 결정 (Step 시작 전 결정). ESC 닫기, 외부 클릭 닫기, body scroll lock. tests: 열림/닫힘 콜백, ESC, focus return (3건)
+- [ ] **Step 2.3**: `StatusBadge.tsx` — Phase 6 의 라벨 매핑 함수와 미리 통합 가능하도록 internal map. kind 별 색상 매트릭스 정의. tests: workflow="action_required" 빨강 클래스, visibility="off_radar" 로즈, batch="needs_review" 앰버 (3건)
+- [ ] **Step 2.4**: `EmptyState.tsx` — lucide-react 의 `FileSearch`, `Inbox`, `AlertCircle` 등 사용 (Step 2.0 도입 완료 전제). tests: title/description 렌더링, CTA 클릭 (2건)
+- [ ] **Step 2.5**: `MetricStrip.tsx` — props: `metrics: { label, value, color }[]`, grid responsive. 현재 `page.tsx` 의 `SummaryCards` 시그니처 그대로 받을 수 있게 설계. tests: 7 카드 렌더링, color prop 적용 (2건)
+- [ ] **Step 2.6**: `DataTableShell.tsx` — 가장 복잡. sticky header, columns prop, sort callback, empty/error slot. **loading slot 은 임시 inline div** (P5 에서 Skeleton 도입 후 교체). 현재 `BatchProgressTable` / `BatchReviewQueue` 의 공통 추출 대상. tests: 빈 데이터 → empty slot, error → error slot, sort 클릭 콜백 (3건)
+- [ ] **Step 2.7**: `PageHeader.tsx` + `ActionBar.tsx` — 단순 레이아웃. tests 각 2건
+- [ ] **Step 2.8**: `index.ts` barrel export. `import { Button, Dialog } from "@/components/ui"` 형태로 사용 가능 확인
+- [ ] **Step 2.9** <!-- 2026-05-06 추가: plan-reviewer 보완 C — 데모용 sample page -->: `app/_dev/ui/page.tsx` 신규 (개발용, nav 미연결, 직접 URL 만). 8 컴포넌트 사용 예시 1개씩. 사용자 데모 시 1 page 로 모두 확인 가능. robots/noindex meta 추가
+- [ ] **Step 2.10**: 기존 페이지 변경 0 회귀 확인 — `pnpm --filter ./web/frontend tsc --noEmit` + `pnpm --filter ./web/frontend test`. 추가 ui 컴포넌트가 기존 import 와 충돌하지 않는지 확인
+
+### 검증 게이트
+
+- [ ] `bash .claude/hooks/build-check.sh` 그린
+- [ ] 신규 vitest 약 20건 (8 컴포넌트 × 평균 2.5건) 추가 + 통과 <!-- 2026-05-06 갱신: 25 → 20 -->
+- [ ] 기존 18 vitest 회귀 0
+- [ ] 기존 페이지 동작 시각 회귀 0 (스크린샷 비교는 안 함, 사용자 manual 확인)
+- [ ] `app/_dev/ui` 진입 시 8 컴포넌트 sample 시각 확인
+- [ ] 사용자 데모 보고 — "Phase 2 완료, ui 컴포넌트 라이브러리 가용. Phase 3 부터 점진 적용"
+
+### 데모 시나리오 (P2 종료 시) <!-- 2026-05-06 추가: plan-reviewer 보완 C -->
+
+1. `/_dev/ui` 진입 → 8 컴포넌트 sample 모두 표시 (PageHeader / Button / Dialog / StatusBadge / MetricStrip / DataTableShell / EmptyState / ActionBar)
+2. Button 4 variant × 2 size 매트릭스 시각 확인
+3. Dialog 열기 → ESC 닫기 / 외부 클릭 닫기 동작
+4. StatusBadge — workflow / visibility / batch 3 kind 의 status 별 색상 시각 확인
+5. DataTableShell — 빈 데이터 / 에러 / 일반 데이터 3 case slot 표시
+6. EmptyState — lucide-react 아이콘 정상 렌더링
+7. 기존 페이지 (`/`, `/legacy-jobs`, `/batches`, `/insights`, `/brand-studio`, `/usage`) manual 진입 → 시각 회귀 0
+
+### 위험 요소
+
+- **R1**: 디자인 토큰 (색상/spacing) 표준화 욕구 발생. 완화: 본 Phase 는 변종 통합만, 토큰 시스템은 OUT-OF-SCOPE 명시
+- ~~**R2**: lucide-react 미의존~~ <!-- 2026-05-06 해제: 사용자 확정 5건 #2 — lucide-react 도입 확정 (Step 2.0) -->
+
+---
+
+## Phase 3 — 운영 홈 row 정보밀도 정리 (4일)
+
+목표: `PublicationActionRow.tsx` (현재 384줄, row 당 9~14 요소) 를 정보 우선순위 기반 재설계. 주요 정보 3~4개 + 추천 액션 1개 + ⋯ Dropdown 보조 액션. 4종 Badge → P2 의 `StatusBadge` 단일화.
+
+### 변경 대상 파일
+
+| 파일 | 변경 |
+|---|---|
+| `web/frontend/src/components/PublicationActionRow.tsx` | 384 → 약 180 줄 목표 재작성 |
+| `web/frontend/src/components/RowDropdownMenu.tsx` | 신규 — ⋯ 메뉴 (보조 액션) |
+| `web/frontend/src/components/__tests__/PublicationActionRow.test.tsx` | 신규 — 6 탭 별 row 회귀 |
+
+### 정보 노출 정책 (확정)
+
+| 위치 | 표시 |
+|---|---|
+| **항상 표시** (왼쪽→오른쪽) | 키워드 / Workflow Badge / 최신 순위 + 날짜 / Diagnosis Badge (있을 때) |
+| **추천 액션 1개** (workflow_status 별) | action_required→"재발행 판단" / republishing→"진행 중" disabled / held→"해제" / active→없음 / dismissed→"복원" / draft→"URL 등록" |
+| **⋯ Dropdown 메뉴** | 보류 / 제외 / 원문 열기 / 상세 보기 / 삭제(draft 만) |
+| **hover 시에만** (tooltip) | URL 풀버전, held_until, held_reason, difficulty 상세, visibility status |
+
+**삭제**: 항상 노출되던 VisibilityBadge / KeywordDifficultyBadge / 원문 링크 / "재발행 진행 중" 큰 버튼 → tooltip 또는 dropdown 으로 이전.
+
+### 구현 단계
+
+- [ ] **Step 3.0** <!-- 2026-05-06 추가: plan-reviewer 보완 D — action_required 비율 측정 -->: 운영 DB 의 publication 중 `workflow_status='action_required'` 비율 측정. supabase query 1회: `SELECT workflow_status, COUNT(*) FROM publications GROUP BY workflow_status`. 결과를 본 plan 안에 기록. **분기 결정**:
+  - 50% 이하 → R2 의 `border-l-red-500` 좌측 색강조 적용 (계획대로)
+  - 50% 초과 → 색강조 대신 lucide-react `AlertTriangle` 아이콘을 키워드 옆 inline 표시 또는 우측 inset shadow (`shadow-inner shadow-red-200`) 로 변경
+  - 본 분기 결정을 Step 3.3 시작 전 R2 완화 방식에 반영
+- [ ] **Step 3.1**: 추천 액션 매핑 함수 작성 (`getPrimaryAction(item: QueueItem): { label, onClick, variant } | null`). pure function 으로 분리 → 단위 테스트 가능. workflow_status 6값 + visibility_status 5값 매트릭스 정리. tests: 6 케이스 (4건)
+- [ ] **Step 3.2**: `RowDropdownMenu.tsx` 신규 — P2 의 `Dialog` 또는 popover 패턴. menu items prop 으로 보류/제외/원문/상세 받음. 키보드 네비 (위/아래/Enter/ESC). tests: 열림 토글, item 클릭 콜백, ESC 닫기 (3건)
+- [ ] **Step 3.3**: `PublicationActionRow.tsx` 재작성 — P2 의 `StatusBadge kind="workflow"`, `kind="diagnosis"` 호출. 4종 자체 Badge 함수 (WorkflowBadge / VisibilityBadge / DiagnosisBadge / KeywordDifficultyBadge) 제거. layout: `[키워드][workflow badge][rank·date][diagnosis?] [primary CTA] [⋯]`. action_required 시각 강조는 Step 3.0 결정 따름. 모바일 가독성은 OUT-OF-SCOPE
+- [ ] **Step 3.4**: tooltip 통합 — 현재 `title=` 속성 사용. URL/held_until/difficulty 상세는 hover tooltip 만. native title 유지 (별도 tooltip 라이브러리 추가 X)
+- [ ] **Step 3.5**: HoldDialog / RepublishDialog 그대로 유지 (행동은 동일, 진입 경로만 dropdown 으로 변경). tests: dropdown→Hold→Dialog 열림 (1건)
+- [ ] **Step 3.6**: `__tests__/PublicationActionRow.test.tsx` 신규 — 6 탭 (action_required/republishing/held/active/dismissed/all) 별 row 렌더링 vitest. 각 탭에서 primary CTA 라벨 단언. **vitest 라벨 매칭 규칙** <!-- 2026-05-06 추가: 사용자 확정 5건 #4 -->: StatusBadge 의 라벨 텍스트 직접 매칭 금지, P6 의 `getWorkflowLabel(status)` 함수 호출 결과로 매칭 (P6 라벨 변경 시 vitest 자동 동기화). P6 미완성 시점이라도 미리 함수 호출 패턴으로 작성. 6건
+- [ ] **Step 3.7**: ErrorBanner.tsx 추가 <!-- 2026-05-06 추가: P2 보류분 -->: P3 마이그레이션 중 row 단위 에러 표시 필요 시 `components/ui/ErrorBanner.tsx` 신규 (severity warn/error + retry slot). tests 2건. 필요 없으면 P5 로 이연
+- [ ] **Step 3.8**: 운영 홈 (`/`) 시각 회귀 점검 — 사용자가 manual 로 6 탭 돌면서 row 동작 확인. 정보 누락 시 dropdown 또는 tooltip 으로 복원
+
+### 검증 게이트
+
+- [ ] `bash .claude/hooks/build-check.sh` 그린
+- [ ] PublicationActionRow.tsx 줄 수 200 이하
+- [ ] 기존 row 의 모든 액션이 primary CTA 또는 dropdown 으로 도달 가능 (회귀 0)
+- [ ] 6 탭 별 vitest 통과
+- [ ] vitest 라벨 매칭이 `getWorkflowLabel` 등 함수 호출 결과로 작성됨 (라벨 텍스트 직접 매칭 grep 0)
+- [ ] 사용자 데모 — 6 탭 돌면서 "행동 가능, 정보 누락 0" 확인 후 다음 Phase
+
+### 데모 시나리오 (P3 종료 시) <!-- 2026-05-06 추가: plan-reviewer 보완 C -->
+
+1. `/` 운영 홈 진입 → 4 큐 탭 (action_required / republishing / held / active) 별 row 시각 변화 확인
+2. 1 row 클릭 → primary CTA (workflow_status 별) 라벨 정확
+3. ⋯ Dropdown 클릭 → 보류 / 제외 / 원문 / 상세 / (draft 만 삭제) 메뉴 노출
+4. Dropdown → Hold 클릭 → HoldDialog 열림 → 보류 사유 입력 → 저장 동작
+5. action_required 시각 강조 (Step 3.0 결정에 따라 border-l-red 또는 AlertTriangle 아이콘 또는 inset shadow) 확인
+6. tooltip — URL 풀버전, held_until, difficulty 상세 hover 표시
+7. 모든 기존 액션 (재발행/보류/제외/복원/URL 등록) 도달 가능 회귀 0
+
+### 위험 요소
+
+- **R1**: dropdown 안 보조 액션 발견성 저하 → 운영자 학습 비용. 완화: dropdown trigger 옆에 hint "더 보기" microcopy. 운영 데이터 1주 후 재평가
+- **R2** <!-- 2026-05-06 갱신: plan-reviewer 보완 D -->: VisibilityBadge 가 사라지면 "노출 이탈" 시각 신호 약해짐. 완화 분기 (Step 3.0 측정 결과 따름):
+  - action_required 비율 ≤ 50% → row 좌측 `border-l-red-500` 색 강조 (계획안)
+  - action_required 비율 > 50% → "전부 빨강" 위험. 색 강조 대신 lucide-react `AlertTriangle` 아이콘 inline 또는 우측 inset shadow 로 변경
+- **R3**: difficulty badge 제거 시 "난이도 상" 키워드를 한눈에 못 봄. 완화: `/keywords` 페이지 별도 존재 + tooltip 으로 보존
+
+---
+
+## Phase 4 — 생성 흐름 통합 (`/create`) (4일)
+
+목표: 신규 `/create` 페이지 — 단일 키워드 / CSV 배치 탭 통합. 기존 `NewJobForm` + `BatchUploadForm` 동일 컨테이너 안 두 탭. 고급 옵션 접기. 운영 홈 우상단 "+ 새로 만들기" 버튼 추가.
+
+### 변경 대상 파일
+
+| 파일 | 변경 |
+|---|---|
+| `web/frontend/src/app/create/page.tsx` | 신규 — 탭 컨테이너 |
+| `web/frontend/src/components/CreateTabs.tsx` | 신규 — "단일 / 배치" 탭 컴포넌트 |
+| `web/frontend/src/components/NewJobForm.tsx` | 고급 옵션 접기 (`<details>`) — generate_images 외 추가 옵션 |
+| `web/frontend/src/components/BatchUploadForm.tsx` | 고급 옵션 접기 (cluster_dedupe / auto_publish_enabled / min_search_volume / max_difficulty) |
+| `web/frontend/src/app/page.tsx` | 우상단 "+ 새로 만들기" 버튼 추가 → `/create` 이동 |
+| `web/frontend/src/app/legacy-jobs/page.tsx` | 삭제 (P1 임시 보존 정리) |
+| `web/frontend/src/app/batches/page.tsx` | BatchUploadForm 제거, batch list + drill-down 진입점만 유지 |
+| `web/frontend/src/app/layout.tsx` | nav "생성" → `/create` 링크 |
+
+### 구현 단계
+
+- [ ] **Step 4.1**: `app/create/page.tsx` 신규 — `CreateTabs` 호출. URL 쿼리 `?tab=single|batch` 로 초기 탭 결정 (외부 링크 호환). 기본 `single`. 검증: `/create?tab=batch` 진입 시 배치 탭 활성
+- [ ] **Step 4.2**: `CreateTabs.tsx` 신규 — P2 의 PageHeader + 탭 UI. 탭 변경 시 URL 쿼리 동기화 (`router.replace`). NewJobForm/BatchUploadForm 을 lazy import (코드 스플릿). 검증: 탭 전환 매끄럽 + URL 동기화
+- [ ] **Step 4.3**: `NewJobForm.tsx` 고급 옵션 접기 — generate_images 토글은 기본 노출, 그 외 향후 추가 옵션은 `<details>` 안. 현재 옵션이 generate_images 만 있어 P4 에선 minimal 변경. 검증: form 동작 회귀 0
+- [ ] **Step 4.4**: `BatchUploadForm.tsx` 고급 옵션 접기 — `min_search_volume / max_difficulty / cluster_dedupe / auto_publish_enabled` 4개를 `<details><summary>고급 옵션 (사전 필터·자동 발행)</summary>` 안에 배치. 기본 collapsed. CSV 파일 + 이름 + 처리 모드만 항상 노출. 검증: 옵션 전부 사용 회귀 0
+- [ ] **Step 4.5**: `app/page.tsx` 우상단 액션 영역에 "+ 새로 만들기" 버튼 추가 (P2 의 `Button variant="primary"`). 클릭 시 `router.push("/create")`. 검증: 버튼 클릭 → /create 이동
+- [ ] **Step 4.6**: `app/layout.tsx` nav "생성" 항목 → `/create`. (P1 에서 path 는 `/legacy-jobs` 였음, 본 step 에서 `/create` 로 변경)
+- [ ] **Step 4.7**: `app/legacy-jobs/page.tsx` 삭제. `app/batches/page.tsx` 의 `<BatchUploadForm />` JSX 제거 (batch list + drill-down 진입만 남김). 검증: `/batches` 가 list-only 동작
+- [ ] **Step 4.8** <!-- 2026-05-06 갱신: 사용자 확정 5건 #1 — `/pipeline` redirect 결정 완료 -->: `app/pipeline/page.tsx` 는 P1 Step 1.3-bis 에서 이미 `/` redirect 처리됨. P4 시점에 추가 변경 없음. 만약 P1 에서 누락됐다면 본 step 에서 redirect 어댑터 처리. 검증: `/pipeline` → `/` 진입 후 운영 홈 표시
+- [ ] **Step 4.9** <!-- 2026-05-06 추가: 사용자 확정 5건 #5 — README 1줄 -->: README 임시 보존 안내 제거 — P1 Step 1.8 에서 추가한 `web/README.md` 또는 `CLAUDE.md` 변경 이력의 "P4 까지 `/legacy-jobs` 임시 보존" 문구를 P4 종료 시점에 갱신: "2026-05-XX `/legacy-jobs` 제거, `/create` 로 통합 완료". 별도 공지 X
+- [ ] **Step 4.10**: vitest — `CreateTabs` 탭 전환 + URL 동기화 (3건), `BatchUploadForm` 고급 옵션 접기 (1건). 4건 추가
+- [ ] **Step 4.11**: 회귀 — 단일 작업 1회 + 배치 CSV 업로드 1회 + `/jobs/[id]` 진입 정상 동작 manual 확인
+
+### 검증 게이트
+
+- [ ] `bash .claude/hooks/build-check.sh` 그린
+- [ ] `/create?tab=single` / `/create?tab=batch` 양쪽 동작
+- [ ] `/legacy-jobs` 404 (삭제됨)
+- [ ] `/batches` 에서 BatchUploadForm 사라짐 (list 만)
+- [ ] `/pipeline` → `/` redirect 유지 (P1 동작 회귀 0)
+- [ ] 사용자 데모 — 단일/배치 모두 새 흐름으로 1회 제출 성공
+
+### 데모 시나리오 (P4 종료 시) <!-- 2026-05-06 추가: plan-reviewer 보완 C -->
+
+1. `/` 운영 홈 우상단 "+ 새로 만들기" 버튼 클릭 → `/create` 이동
+2. `/create` 진입 → 단일 / 배치 탭 표시. 기본 단일 탭 활성
+3. 배치 탭 클릭 → URL `?tab=batch` 동기화 + BatchUploadForm 표시
+4. BatchUploadForm 의 고급 옵션 collapsed (기본). `<details>` 펼치면 cluster_dedupe / auto_publish_enabled / min_search_volume / max_difficulty 4개 노출
+5. 단일 탭 → NewJobForm 으로 키워드 1개 제출 → `/jobs/[id]` 정상 진입
+6. 배치 탭 → CSV 업로드 → `/batches/[id]` 정상 진입
+7. `/legacy-jobs` URL 입력 → 404 확인
+8. `/batches` 진입 → BatchUploadForm 없음, list + drill-down 만
+
+### 위험 요소
+
+- **R1**: 기존 운영자 북마크가 `/` 의 NewJobForm 을 가리킴. 완화: P1 에서 `/legacy-jobs` 보존 + P4 에서 `/` → "+ 새로 만들기" 로 명시적 entry. README 1줄 안내 (Step 4.9)
+- ~~**R2**: `/pipeline` 이 nav 외에 다른 진입점이 있을 가능성~~ <!-- 2026-05-06 해제: P1 Step 1.3-bis 에서 redirect 처리 완료 -->
+- **R3**: BatchUploadForm 고급 옵션 접기 후 cluster_dedupe 발견성 저하. 완화: details summary 라벨에 "고급 옵션 (사전 필터·자동 발행)" 명시
+
+---
+
+## Phase 5 — 검수·발행 큐 통합 (`/queue`) (6일) — 최대 작업
+
+목표: 신규 `/queue` 페이지 — 단일 큐 (출처 무관 batch/single 모두 노출). drill-down 은 `/batches/[id]` 유지. PublicationForm/ExternalUrlForm/PublicationEditDialog 3종 → 단일 컴포넌트.
+
+### 변경 대상 파일
+
+| 파일 | 변경 |
+|---|---|
+| `web/frontend/src/app/queue/page.tsx` | 신규 — 통합 큐 |
+| `web/frontend/src/components/QueueTable.tsx` | 신규 — DataTableShell 사용, 출처/상태/키워드/액션 컬럼 |
+| `web/frontend/src/components/QueueItemDrawer.tsx` | 신규 — 본문 미리보기 drawer (slide-in) |
+| `web/frontend/src/components/PublicationForm.tsx` | `variant=create\|edit` 통합 |
+| `web/frontend/src/components/ExternalUrlForm.tsx` | 삭제 (PublicationForm variant=create 흡수) |
+| `web/frontend/src/components/PublicationEditDialog.tsx` | 삭제 (PublicationForm variant=edit 흡수) |
+| `web/frontend/src/app/results/[slug]/page.tsx` | redirect → `/queue?slug=...&drawer=preview` |
+| `web/frontend/src/app/batches/[id]/review/page.tsx` | redirect → `/queue?source=batch&batch_id=[id]` |
+| `web/frontend/src/app/batches/[id]/publish/page.tsx` | redirect → `/queue?source=batch&batch_id=[id]&status=ready_to_publish` |
+| `web/frontend/src/app/batches/[id]/page.tsx` | drill-down 유지 (배치 상세 + 해당 배치만 필터링한 큐 링크) |
+| `web/frontend/src/app/layout.tsx` | nav "검수·발행" → `/queue` 링크 |
+
+### 큐 데이터 소스 (백엔드 무변경 전제) <!-- 2026-05-06 갱신: 사용자 확정 5건 #3 — frontend merge 확정 -->
+
+기존 API 조합으로 큐 구성. **frontend merge 확정** (백엔드 use case 신설 안 함):
+
+- **단일 출처** (jobs API): `listJobs()` → status=succeeded 인 single job 의 generated_contents
+- **배치 출처** (batch API): `listBatches()` 의 모든 batch 의 review queue (`/batches/{id}/review` 기존 엔드포인트)
+
+→ Frontend `lib/api.ts` 에 `getUnifiedQueue(filters)` 신설 — 두 API 병합 + client side merge. 백엔드 라우터 무변경.
+
+**근거**: 운영 데이터 = 활성 batch 최대 10개 × 배치당 키워드 100 미만 = 최대 1000 row. frontend merge 가능 한도. `application/unified_queue.py` 같은 신규 use case 추가 안 함.
+
+~~대안: 백엔드 `application/unified_queue.py` 신설~~ <!-- 2026-05-06 해제: 사용자 확정 5건 #3 -->
+
+### 구현 단계
+
+- [ ] **Step 5.0** <!-- 2026-05-06 추가: plan-reviewer 보완 E — ResultViewer 직렬화 경계 확인 -->: `web/frontend/src/components/ResultViewer.tsx` 의 server vs client component 확인. 첫 줄 `"use client"` 유무, 사용 hooks (useState/useEffect) 유무. 결과를 본 plan 안에 기록. drawer 재사용 시:
+  - client component → drawer 안 직접 import + lazy load
+  - server component → next/dynamic 으로 동적 import (`ssr: true`) + Skeleton fallback
+- [ ] **Step 5.1** <!-- 2026-05-06 갱신: frontend merge 확정 -->: ~~데이터 소스 결정~~ — frontend merge 확정 (사용자 결정 #3). 본 step 은 운영 규모 점검만: 활성 batch 수 + 평균 review queue size 1회 측정해서 N+1 수용 가능 재확인. 운영 데이터 결과 (예: batch 8개, 평균 30 row) 를 plan 에 기록
+- [ ] **Step 5.2**: `lib/api.ts` 에 `getUnifiedQueue(filters: { source?, status?, batch_id?, search? })` 추가. 내부적으로 `listJobs` + `listBatches.flatMap(getBatchReview)` 병합. 캐싱은 단순 5초 stale (P0)
+- [ ] **Step 5.3**: `Skeleton.tsx` 추가 <!-- 2026-05-06 추가: P2 보류분 도입 -->: P2 에서 보류한 `components/ui/Skeleton.tsx` 신규 (테이블 행 / 카드 / 문단 변형). DataTableShell 의 loading slot 도 inline div → Skeleton 으로 교체. tests 2건
+- [ ] **Step 5.4**: `app/queue/page.tsx` + `QueueTable.tsx` 신규 — P2 의 `DataTableShell` 사용. 컬럼: 키워드 / 출처 / 상태 (P2 StatusBadge kind="batch" or "workflow") / 다음 액션 / ⋯ 메뉴. 필터: 출처 (all/batch/single) / 상태 (multi-select) / 검색
+- [ ] **Step 5.5**: `QueueItemDrawer.tsx` 신규 — slide-in drawer. 진입: row 클릭 또는 "본문 미리보기" 액션. 컨텐츠는 Step 5.0 결정에 따라 ResultViewer 재사용 (client → 직접 import, server → next/dynamic). 닫기: ESC + 외부 클릭. 검증: drawer 안 HTML 미리보기 정상
+- [ ] **Step 5.6**: `PublicationForm.tsx` 통합 — `variant: "create" | "edit"`, `defaultValues?` prop. variant=create 시 ExternalUrlForm 동등, variant=edit 시 PublicationEditDialog 동등. 두 기존 컴포넌트의 props/onSubmit 시그니처 차이 흡수. tests: variant 별 렌더링 + submit 콜백 (4건)
+- [ ] **Step 5.7**: `ExternalUrlForm.tsx` / `PublicationEditDialog.tsx` 삭제. 호출자 (`app/page.tsx`, `app/rankings/[id]/page.tsx`, `BulkRegisterDialog.tsx` 등) 를 `PublicationForm` 으로 sweep. grep 으로 import 전수 조사 후 일괄 교체
+- [ ] **Step 5.8**: `app/batches/[id]/page.tsx` 수정 — drill-down 유지 (배치 진행 카드 + BatchProgressTable). 하단에 "이 배치의 검수 큐만 보기 → /queue?batch_id={id}" 링크 추가
+- [ ] **Step 5.9**: redirect 어댑터 3개:
+  - `app/results/[slug]/page.tsx` → `/queue?slug={slug}&drawer=preview`
+  - `app/batches/[id]/review/page.tsx` → `/queue?source=batch&batch_id={id}&status=needs_review,ready_to_publish`
+  - `app/batches/[id]/publish/page.tsx` → `/queue?source=batch&batch_id={id}&status=ready_to_publish`
+  Next.js 16 redirect 사용. 검증: 외부 북마크 깨짐 0
+- [ ] **Step 5.10**: 큐 액션 — row 클릭 메뉴: approve / needs_fix / reject (기존 BatchReviewQueue 동작) / URL 등록 (PublicationForm variant=create) / 본문 미리보기 / 의료법 위반 상세. 권한별 표시 분기는 OUT-OF-SCOPE (현재 운영자 단일 권한)
+- [ ] **Step 5.11**: vitest — QueueTable 필터/정렬, QueueItemDrawer 열림/닫힘, PublicationForm variant 분기, redirect 어댑터 3개 (총 10건)
+- [ ] **Step 5.12**: 회귀 manual — 단일 출처 1건 + 배치 출처 1건 모두 큐에 노출, URL 등록 → `ranking_orchestrator.register_publication` 호출, approve/needs_fix dropdown 동작, drawer 본문 정상
+
+### 검증 게이트
+
+- [ ] `bash .claude/hooks/build-check.sh` 그린
+- [ ] `/queue` 진입 시 단일+배치 모두 표시
+- [ ] 출처 필터 (all/batch/single) 동작
+- [ ] PublicationForm 단일 컴포넌트로 등록/수정 양쪽 동작 (3개 → 1개 통합)
+- [ ] redirect 3개 동작 (외부 북마크 깨짐 0)
+- [ ] needs_review item 폐기 X 정책 유지 (UI 에서 reject 가 default 액션이 아님 확인)
+- [ ] 백엔드 use case 신설 0 (frontend merge 확정 — `grep -r "unified_queue" application/` 결과 0건)
+- [ ] 사용자 데모 — 단일/배치 큐 통합, 발행 흐름 1회 완주
+
+### 데모 시나리오 (P5 종료 시) <!-- 2026-05-06 추가: plan-reviewer 보완 C -->
+
+1. `/queue` 진입 → 단일+배치 출처 모두 row 노출 (출처 컬럼으로 구분)
+2. 출처 필터 (all/batch/single) 클릭 → 큐 즉시 필터링
+3. 상태 multi-select (needs_review / ready_to_publish / draft) → 큐 필터링
+4. 키워드 검색창 → row 즉시 필터링
+5. row 클릭 → QueueItemDrawer 열림 → ResultViewer 본문 미리보기 (Skeleton 로딩 후 컨텐츠)
+6. drawer 안 "URL 등록" 클릭 → PublicationForm variant=create 표시 → URL 입력 → 저장 → ranking_orchestrator.register_publication 호출
+7. 큐 row dropdown → approve / needs_fix / 본문 미리보기 / 의료법 위반 상세 정상 동작
+8. `/results/{slug}` URL 입력 → `/queue?slug=...&drawer=preview` redirect
+9. `/batches/{id}/review` URL 입력 → `/queue?source=batch&batch_id=...&status=...` redirect
+10. `/batches/{id}` drill-down → "이 배치의 검수 큐만 보기" 링크 → `/queue?batch_id={id}` 진입
+
+### 위험 요소
+
+- ~~**R1**: 큐 데이터 fetch N+1~~ <!-- 2026-05-06 해제: 사용자 확정 5건 #3 — frontend merge 확정. 운영 규모 1000 row 미만으로 수용 가능 -->
+- **R2**: PublicationForm variant 통합 시 두 form 의 validation 차이 흡수 누락. 완화: 두 기존 form 의 zod schema 또는 validation 코드를 P5 시작 전 diff 비교 + 통합 테스트 우선
+- **R3**: `/results/[slug]` 외부 북마크가 SEO 채널에 외부 게시되어 있을 가능성. 완화: redirect 어댑터 영구 유지 (삭제 안 함)
+- **R4** <!-- 2026-05-06 갱신: plan-reviewer 보완 E -->: drawer 안 ResultViewer 가 무거운 HTML 을 client 에서 lazy load 시 깜빡임. 완화 분기 (Step 5.0 결정 따름):
+  - ResultViewer = client component → 직접 import + Skeleton fallback
+  - ResultViewer = server component → next/dynamic ssr=true + Skeleton fallback
+- **R5**: needs_review 자동 폐기 방지 — UI 에서 reject 가 dropdown 보조 액션으로만 노출 + approve/needs_fix 가 primary. 운영 철학 위반 차단
+
+---
+
+## Phase 6 — 카피 정리 + 라벨 매핑 단일화 (2일)
+
+목표: `web/frontend/src/lib/labels.ts` 신규. DB enum → UI 라벨 매핑 함수 단일 출처. 모든 컴포넌트가 `getWorkflowLabel(status)` 호출. 페이지 상단 설명 문구 다이어트.
+
+### 변경 대상 파일
+
+| 파일 | 변경 |
+|---|---|
+| `web/frontend/src/lib/labels.ts` | 신규 — 매핑 함수 + 매트릭스 |
+| `web/frontend/src/lib/__tests__/labels.test.ts` | 신규 — 매핑 회귀 |
+| `web/frontend/src/components/ui/StatusBadge.tsx` | labels.ts import (P2 단계는 internal map, P6 에서 sweep) |
+| `web/frontend/src/components/PublicationActionRow.tsx` | REASON_LABELS / VIS_LABELS 제거 → labels.ts |
+| `web/frontend/src/components/BatchProgressTable.tsx` | status 라벨 sweep |
+| `web/frontend/src/components/BatchReviewQueue.tsx` | status 라벨 sweep |
+| 운영 홈 / 큐 / 배치 페이지 | 페이지 상단 설명 문구 압축 (1~2 문장) |
+
+### 라벨 매핑 매트릭스 (확정 — 본 plan 의 핵심 산출물)
+
+#### workflow_status (Publication)
+
+| enum | UI 라벨 |
+|---|---|
+| `action_required` | 재발행 판단 필요 |
+| `republishing` | 재발행 중 |
+| `held` | 임시 보류 |
+| `active` | 노출 중 |
+| `dismissed` | 추적 제외 |
+| `draft` | URL 등록 필요 |
+
+#### visibility_status
+
+| enum | UI 라벨 |
+|---|---|
+| `not_measured` | 미측정 |
+| `exposed` | 노출 |
+| `off_radar` | 노출 이탈 |
+| `recovered` | 회복 |
+| `persistent_off` | 장기 미노출 |
+
+#### batch_item_status
+
+| enum | UI 라벨 |
+|---|---|
+| `queued` | 대기 |
+| `running` | 진행 중 |
+| `succeeded` | 생성 완료 |
+| `ready_to_publish` | 발행 대기 |
+| `needs_review` | 검수 대기 |
+| `rejected` | 검수 거부 |
+| `skipped` | 건너뜀 |
+| `failed` | 실패 |
+
+#### diagnosis reason
+
+| enum | UI 라벨 |
+|---|---|
+| `no_publication` | 발행 URL 미등록 |
+| `no_measurement` | 측정 누락 |
+| `never_indexed` | 미노출 |
+| `lost_visibility` | 노출 이탈 |
+| `cannibalization` | 카니발라이제이션 |
+
+#### compliance
+
+| 조건 | UI 라벨 |
+|---|---|
+| `compliance_passed=False` | 의료법 위반 발견 |
+| `compliance_passed=True` | 의료법 통과 |
+| `compliance_passed=null` | 미검증 |
+
+#### difficulty grade
+
+| enum | UI 라벨 |
+|---|---|
+| `missing` | 노출 불가 |
+| `high` | 난이도 상 |
+| `medium` | 난이도 중 |
+| `low` | 난이도 하 |
+
+### 구현 단계
+
+- [ ] **Step 6.1**: `lib/labels.ts` 작성 — 6개 매핑 함수: `getWorkflowLabel / getVisibilityLabel / getBatchItemLabel / getDiagnosisLabel / getComplianceLabel / getDifficultyLabel`. 각 함수는 `(status: string) => string`. 미존재 enum 입력 시 raw 반환 + console.warn (개발 가시성)
+- [ ] **Step 6.2**: `__tests__/labels.test.ts` — 6 매핑 × 평균 3 케이스 = 18건 vitest. 미존재 입력 fallback 단언
+- [ ] **Step 6.3**: `components/ui/StatusBadge.tsx` 의 internal map 제거 → labels.ts 호출. P2 에서 작성한 색상 매트릭스는 유지 (라벨만 위임)
+- [ ] **Step 6.4**: `PublicationActionRow.tsx` 의 `REASON_LABELS / VIS_LABELS` 상수 삭제 → labels.ts 호출. P3 변경과 충돌 가능 — Step 6.4 시작 전 P3 결과 diff 확인
+- [ ] **Step 6.5**: `BatchProgressTable.tsx` / `BatchReviewQueue.tsx` 의 status 표시 sweep
+- [ ] **Step 6.6**: grep `'대기'\|'진행 중'\|'완료'\|'실패'` 등으로 하드코딩 라벨 전수 조사 후 sweep
+- [ ] **Step 6.7**: 페이지 상단 설명 문구 다이어트:
+  - `app/page.tsx` (운영 홈) — 헤더 미니멀화. `/`의 h1 만 "운영 홈" 유지, 부제 제거
+  - `app/queue/page.tsx` — "검수·발행 큐" 한 줄. 사용 안내는 `?` 아이콘 tooltip
+  - `app/create/page.tsx` — 탭 라벨 외 설명 문구 0
+  - `app/batches/[id]/page.tsx` — 배치 메타 1줄 (이름 / created_at / 상태) + 진행 카드 바로
+- [ ] **Step 6.8**: 회귀 manual — 6 페이지 돌면서 라벨 일치 확인 + 영문 enum 노출 0
+- [ ] **Step 6.9**: vitest 회귀 — `getWorkflowLabel` 등 호출하는 컴포넌트 테스트가 라벨 변경 후 깨지면 expectation 일괄 갱신
+
+### 검증 게이트
+
+- [ ] `bash .claude/hooks/build-check.sh` 그린
+- [ ] `lib/labels.ts` 18 vitest 통과
+- [ ] grep 으로 영문 enum 직접 표시 0 (`workflow_status === "active" ? "active" : ...` 패턴 제거)
+- [ ] DB 마이그레이션 0 (Supabase 변경 X)
+- [ ] 기존 18 vitest 회귀 0 — <!-- 2026-05-06 추가: 사용자 확정 5건 #4 --> 현재 18 vitest 텍스트 매칭은 라벨 매핑과 무관 (BrandRegisterDialog 형식위반/slug중복, CardPlanCard 브랜드 카드 상태, ComplianceRiskBadge 의료법 메시지). P6 라벨 매핑 도입으로 깨질 vitest 0건 확인됨
+- [ ] P3 에서 추가한 `__tests__/PublicationActionRow.test.tsx` 가 `getWorkflowLabel` 함수 호출 결과로 매칭 (라벨 텍스트 직접 매칭 grep 0)
+- [ ] 사용자 데모 — 모든 라벨 한국어 통일, 설명 문구 정돈, "운영자가 매일 봐도 소음 없음" 확인
+
+### 데모 시나리오 (P6 종료 시) <!-- 2026-05-06 추가: plan-reviewer 보완 C -->
+
+1. P6 시작 전 스크린샷 1장 (운영 홈 / 큐 / 배치 / 브랜드 4 페이지) 캡처
+2. P6 완료 후 동일 4 페이지 스크린샷 비교 → 영문 enum 0, 한국어 라벨 통일 확인
+3. workflow_status 6종 (action_required / republishing / held / active / dismissed / draft) 모두 한국어 라벨 표시
+4. visibility_status 5종 (not_measured / exposed / off_radar / recovered / persistent_off) 한국어 라벨
+5. batch_item_status 8종 (queued / running / succeeded / ready_to_publish / needs_review / rejected / skipped / failed) 한국어 라벨
+6. compliance / diagnosis / difficulty 한국어 라벨
+7. 페이지 상단 설명 문구 다이어트 — 운영 홈 / 큐 / 생성 / 배치 상세 모두 1~2 문장 이하
+8. `/_dev/ui` 의 StatusBadge sample → labels.ts 호출 결과로 라벨 자동 동기화 확인
+
+### 위험 요소
+
+- **R1**: enum 추가 (예: 향후 `archived`) 시 fallback 동작 검증 필요. 완화: `getWorkflowLabel` 의 fallback 케이스 vitest 1건 강제
+- **R2**: 한국어 라벨 길이가 길어 row 가 줄바꿈. 완화: P2 의 StatusBadge 가 `truncate max-w-[120px]` + tooltip
+- **R3**: 배치 status `ready_to_publish` 라벨 "발행 대기" 와 publication workflow `draft` 라벨 "URL 등록 필요" 간 의미 충돌 — 둘 다 발행 준비. 완화: 배치 도메인은 "발행 대기" (운영자가 URL 검증 + 발행 액션), publication 도메인은 "URL 등록 필요" (URL 자체가 미등록). 도메인 별 다른 의미라서 라벨 다른 게 정합
+
+---
+
+## Phase 별 검증 게이트 요약 (반드시 통과해야 다음 진행)
+
+각 Phase 종료 시 **모두** 통과해야 다음 Phase 진입:
+
+- [ ] `bash .claude/hooks/build-check.sh` 그린 (pyright + ruff + pytest 1296 + vitest)
+- [ ] 기존 1296 pytest 회귀 0
+- [ ] 기존 18 vitest + 추가 vitest 모두 통과
+- [ ] 단일 흐름 시그니처 변경 0 (orchestrator.py / operations_home.py 시그니처 grep diff 확인)
+- [ ] DB enum 변경 0 (config/schema.sql diff 0)
+- [ ] 사용자 데모 보고 + "Phase N 완료, Phase N+1 진입 OK" 명시 승인
+
+---
+
+## 본 plan 에서 명시적으로 제외 (OUT-OF-SCOPE)
+
+- **모바일 반응형** — 별도 PR. 본 plan 은 desktop 1440 기준
+- **디자인 토큰 시스템** (색상/폰트 토큰화) — Phase 2 는 컴포넌트 변종 통합만, 토큰 추출 별도 PR
+- **온보딩/툴팁 시스템** — 현재 native title 만 사용, 별도 라이브러리 도입 X
+- **단일 흐름 백엔드 시그니처 변경** — 절대 금지 (CLAUDE.md @ project_seo_operating_philosophy.md)
+- **DB enum 마이그레이션** — UI 라벨 매핑만으로 한국어화. enum 변경은 별도 운영 결정 후 별도 PR
+- **권한 시스템** (관리자/운영자 분리) — 현재 단일 권한, 별도 PR
+- **A/B 테스트 인프라** — UX 개선 효과 측정 별도 PR
+- **다국어 (i18n)** — 한국어 단일. 향후 도입 시 labels.ts 가 i18n key 로 전환 가능하게 설계
+- **Real-time push** (WebSocket) — 현재 polling 5초 그대로. WebSocketProgressReporter 도입 별도 PR
+- **needs_review 자동 폐기** — 운영 철학 위반 (후보 키워드 = 전부 발행). UI 에서 reject 가 primary 가 되지 않도록만 보장
+
+---
+
+## 위험 요소 / 결정 필요 사항 <!-- 2026-05-06 갱신: 사용자 확정 5건 + plan-reviewer 보완 5건 반영 -->
+
+### ✅ 사용자 확정 결정 (5건, P1 즉시 시작 가능)
+
+1. ✅ **(P1) `/pipeline` 처리**: `/` 로 redirect 확정. Step 1.3-bis 추가. 사용자 의도 (단계별 흐름 시각화) 는 운영 홈 안 별도 섹션 또는 P5 의 `/queue` MetricStrip 으로 흡수. nav "생성" 항목은 `/create` (P4 신설) 만 가리킴
+2. ✅ **(P2) lucide-react 도입**: 확정. Step 2.0 추가 (`pnpm add lucide-react` + `pnpm-lock.yaml` 커밋)
+3. ✅ **(P5) Unified queue 데이터 소스**: frontend merge 확정 (운영 규모 1000 row 미만). `application/unified_queue.py` 신설 안 함
+4. ✅ **(P3·P6) vitest 라벨 매칭**: 현재 18 vitest 영향 0건 (BrandRegisterDialog/CardPlanCard/ComplianceRiskBadge 모두 라벨 매핑 무관). P3 부터 신규 vitest 는 `getWorkflowLabel(status)` 함수 호출 결과로 매칭 (P6 라벨 변경 시 자동 동기화)
+5. ✅ **(P1·P4) 공지 정책**: 별도 in-app 배너 X. `web/README.md` 또는 `CLAUDE.md` 변경 이력 1줄 추가 (P1 Step 1.8 + P4 Step 4.9)
+
+### 잔존 결정 필요 사항 (Phase 시작 시점에 자체 결정)
+
+각 Phase 시작 전 1회 자체 점검 — 사용자 결정 미루지 않음:
+
+- **(P1 Step 1.3 시작 전) Next.js 16 redirect API**: server component 의 `redirect()` stable 여부. `node_modules/next/dist/docs/` 1회 확인. **default**: stable, server component 로 작성
+- **(P2 Step 2.2 시작 전) Dialog 기반 기술**: HTML `<dialog>` vs React portal. **default**: HTML `<dialog>` (Chrome/Safari/FF 모두 stable, ESC + body scroll lock 내장)
+- **(P3 Step 3.0) action_required 비율 측정**: supabase query 1회 (`SELECT workflow_status, COUNT(*) FROM publications GROUP BY workflow_status`). 결과를 plan 안 R2 완화 분기 결정 (50% 임계). **default**: 50% 이하면 border-l-red-500 / 초과면 AlertTriangle 또는 inset shadow
+- **(P5 Step 5.0) ResultViewer 직렬화 경계**: `web/frontend/src/components/ResultViewer.tsx` 의 `"use client"` 유무 + hooks 사용 확인. **default**: client component 면 직접 import, server component 면 next/dynamic ssr=true + Skeleton fallback
+- **(P3 R1) PublicationActionRow 보조 액션 발견성**: dropdown 학습 비용 — 1주 후 운영 데이터 재평가. P3 종료 시 즉시 결정 X (운영 사용 후 미세조정)
+- **(P6 R1) 향후 enum 추가 (`archived` 등)**: fallback 동작 vitest 1건 강제 (Step 6.1 에 명시됨). 별도 사용자 결정 X
+- **(공통) 데모 환경**: 실 운영 publication 240여건 그대로 사용 (default). 테스트 fixture 분리 OUT-OF-SCOPE
+
+
