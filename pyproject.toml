@@ -27,6 +27,8 @@ dependencies = [
     "markdown>=3.6",         # 마크다운 → HTML 변환 (composer 도메인)
     # 순위 추적 트랙 (SPEC-RANKING.md §5)
     "apscheduler>=3.10",     # 매일 09:00 KST 자동 SERP 재크롤 (AsyncIOScheduler)
+    # title_validator 형태소 매칭 (Polish Pack P4) — JVM 의존 X, wheel + C++ 바이너리
+    "kiwipiepy>=0.17",
 ]
 
 [project.optional-dependencies]

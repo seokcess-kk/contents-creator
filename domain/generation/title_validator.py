@@ -22,6 +22,7 @@ build 후 주입한다 (prompt_builder 와 동일 패턴). domain/generation 이
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from typing import Literal
@@ -29,6 +30,8 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from domain.generation.model import Outline
+
+logger = logging.getLogger(__name__)
 
 # 의료법 패턴 타입: (카테고리 enum, 컴파일된 regex). enum 의 .value 만 사용해
 # compliance import 없이 issue 메시지 생성 가능.
@@ -147,6 +150,68 @@ def _check_length(title: str) -> TitleIssue | None:
 def _normalize(text: str) -> str:
     """대소문자 lower + 연속 공백 단일화."""
     return re.sub(r"\s+", " ", text.strip().lower())
+
+
+# Polish P4: kiwipiepy 형태소 매칭 — 모듈 단위 singleton 캐시 (worker 당 1회 시동).
+# Cold start 측정 (Step 4.0): import 0.09s + Kiwi() 0.74s + first analyze 1.21s ≈ 2.04s.
+# 두 번째 호출부터는 0.000s.
+_kiwi_instance: object | None = None
+_kiwi_unavailable: bool = False  # ImportError 후 재시도 안 함
+
+
+def _get_kiwi() -> object | None:
+    """Kiwi 인스턴스 lazy 생성. ImportError 시 None 반환 (fallback path)."""
+    global _kiwi_instance, _kiwi_unavailable
+    if _kiwi_unavailable:
+        return None
+    if _kiwi_instance is not None:
+        return _kiwi_instance
+    try:
+        from kiwipiepy import Kiwi  # type: ignore[import-not-found]
+
+        _kiwi_instance = Kiwi()
+        return _kiwi_instance
+    except ImportError:
+        _kiwi_unavailable = True
+        logger.warning(
+            "kiwipiepy unavailable — title morpheme matching disabled, falling back to exact"
+        )
+        return None
+
+
+def _extract_nouns(kiwi: object, text: str) -> set[str]:
+    """Kiwi 로 명사 set 추출 (NN* 태그)."""
+    result = kiwi.analyze(text)  # type: ignore[attr-defined]
+    if not result or not result[0]:
+        return set()
+    tokens = result[0][0]
+    return {t.form for t in tokens if t.tag.startswith("NN")}
+
+
+def _normalize_morpheme(text: str, keyword: str, *, threshold: float = 0.7) -> bool:
+    """text 안에 keyword 의 명사 set 이 threshold (default 0.7) 이상 포함되면 True.
+
+    분모 = keyword 명사 set 크기 (recall 기준).
+    "다이어트한의원" vs "다이어트 한의원 추천" → 매칭 (keyword 명사 모두 포함).
+
+    kiwipiepy 가 "한의원" 을 컨텍스트에 따라 ["한의원"] 또는 ["의원"] 으로 분리하는
+    모호성을 회피하기 위해, keyword 명사가 **title 원문에 substring 으로 존재** 하는지
+    검사 (set 교집합 대신). 이 방식이 형태소 분리 결과 의존성을 제거하고 더 강건.
+
+    kiwipiepy 미사용 시 False (degrade).
+    """
+    if not text or not keyword:
+        return False
+    kiwi = _get_kiwi()
+    if kiwi is None:
+        return False
+    keyword_nouns = _extract_nouns(kiwi, keyword)
+    if not keyword_nouns:
+        return False
+    title_lower = text.lower()
+    matched = sum(1 for noun in keyword_nouns if noun.lower() in title_lower)
+    recall = matched / len(keyword_nouns)
+    return recall >= threshold
 
 
 def _check_keyword_repetition(title: str, primary_keyword: str | None) -> TitleIssue | None:

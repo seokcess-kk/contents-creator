@@ -82,6 +82,11 @@ class Settings(BaseSettings):
     # 의료 외 도메인 false positive ("최초", "1등", "반드시") 폭발 방지 위해 default off.
     title_validator_strict_compliance: bool = False
 
+    # Polish Pack P4: title_validator 형태소 매칭 임계값 (recall = keyword 명사 set 크기 분모).
+    # default 0.7 — keyword 명사 70% 이상이 title 명사에 포함되면 매칭 (kiwipiepy 사용).
+    # 운영 데이터 누적 후 조정 (false positive 와 false negative trade-off).
+    title_validator_morpheme_threshold: float = 0.7
+
     # Supabase Storage (결과물 영속화 — Render 컨테이너 파일시스템 휘발 대응)
     storage_bucket: str = "results"
 

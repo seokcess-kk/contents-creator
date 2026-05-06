@@ -58,8 +58,10 @@ else
 fi
 
 # pytest는 tests/ 디렉토리가 존재할 때만 실행
+# Polish P4: PYTHONIOENCODING=utf-8 강제 — Windows cp949 환경에서 kiwipiepy 등 한글 처리
+# 라이브러리가 source file 읽기/byte 변환 시 platform encoding 사용 회피.
 if [[ -d tests ]]; then
-  step "pytest" pytest -q
+  step "pytest" env PYTHONUTF8=1 PYTHONIOENCODING=utf-8 pytest -q
 else
   echo "━━━ pytest — SKIP (tests/ 없음) ━━━"
 fi

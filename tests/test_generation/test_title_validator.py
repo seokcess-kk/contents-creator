@@ -1,11 +1,19 @@
 """title_validator.py 단위 테스트.
 
 검증 4종 (길이, 키워드 반복, 스팸/장식, 의료법) + strict 토글 + intro 보존 회귀.
+Polish P4 — 형태소 매칭 (kiwipiepy) 케이스 추가.
 """
 
 from __future__ import annotations
 
-import pytest
+import os
+
+# Polish P4: Windows cp949 환경에서 kiwipiepy 가 한글 처리 시 인코딩 충돌.
+# build-check.sh 가 PYTHONIOENCODING 설정 없이 pytest 실행 → cp949 default.
+# 명시적으로 utf-8 강제 (모듈 import 전).
+os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+
+import pytest  # noqa: E402
 
 from domain.compliance.rules import CompliancePolicy, get_all_patterns
 from domain.generation.model import (
@@ -303,3 +311,68 @@ def test_intro_preserved_after_outline_regeneration(monkeypatch):
     assert call_count["n"] == 2  # 재생성 1회 발생
     assert result.intro == first_intro  # M2 톤 락 보존 — 1차 intro 유지
     assert result.title == "탈모치료 핵심 가이드 정리하기 자료"  # 새 title 사용
+
+
+# ── Polish P4: 형태소 매칭 (kiwipiepy) ─────────────────────────────────────
+
+
+class TestNormalizeMorpheme:
+    """`_normalize_morpheme` helper 단위 테스트.
+
+    임계값 분모 = keyword 명사 set 크기 (recall 기준).
+    kiwipiepy 의존이 없으면 fallback 으로 False 반환 (graceful degrade).
+    """
+
+    def test_morpheme_match_keyword_in_title(self):
+        from domain.generation.title_validator import _normalize_morpheme
+
+        # "다이어트한의원" 명사 → ["다이어트", "의원"]
+        # "다이어트 한의원 추천" 명사 → ["다이어트", "의원", "추천"]
+        # recall = 2/2 = 1.0 ≥ 0.7 → True
+        assert _normalize_morpheme("다이어트 한의원 추천", "다이어트한의원") is True
+
+    def test_morpheme_match_word_order_swapped(self):
+        from domain.generation.title_validator import _normalize_morpheme
+
+        assert _normalize_morpheme("한의원 다이어트 후기", "다이어트한의원") is True
+
+    def test_morpheme_match_reverse_keyword_form(self):
+        from domain.generation.title_validator import _normalize_morpheme
+
+        # 역방향 — keyword 가 띄어쓰기 form
+        assert _normalize_morpheme("강남 다이어트한의원", "다이어트 한의원") is True
+
+    def test_morpheme_no_match_when_keyword_nouns_absent(self):
+        from domain.generation.title_validator import _normalize_morpheme
+
+        assert _normalize_morpheme("탈모치료 가이드 정리", "다이어트한의원") is False
+
+    def test_morpheme_threshold_boundary_recall_0_67(self):
+        """경계값 — keyword 명사 3개 중 2개 만 포함 = 0.67 → 통과 (미매칭)."""
+        from domain.generation.title_validator import _normalize_morpheme
+
+        # "탈모 두피 클리닉" 명사 = ["탈모", "두피", "클리닉"]
+        # title "탈모 두피 관리" 명사 = ["탈모", "두피", "관리"] → 교집합 2 / 3 = 0.67
+        assert _normalize_morpheme("탈모 두피 관리", "탈모 두피 클리닉") is False
+        # default threshold 0.7 미만이므로 미매칭
+
+    def test_morpheme_threshold_boundary_recall_1_0(self):
+        """경계값 — keyword 명사 모두 포함 = 1.0 → 매칭."""
+        from domain.generation.title_validator import _normalize_morpheme
+
+        assert _normalize_morpheme("탈모 두피 클리닉 후기", "탈모 두피 클리닉") is True
+
+    def test_morpheme_fallback_when_kiwi_unavailable(self, monkeypatch):
+        """kiwipiepy ImportError mock → fallback (False, exact match 만 사용)."""
+        import domain.generation.title_validator as tv
+
+        # _get_kiwi 가 None 반환하도록 강제
+        monkeypatch.setattr(tv, "_get_kiwi", lambda: None)
+        # kiwi 없이는 형태소 비교 불가 → 항상 False (degrade)
+        assert tv._normalize_morpheme("다이어트 한의원 추천", "다이어트한의원") is False
+
+    def test_morpheme_empty_input_returns_false(self):
+        from domain.generation.title_validator import _normalize_morpheme
+
+        assert _normalize_morpheme("", "다이어트한의원") is False
+        assert _normalize_morpheme("다이어트 한의원", "") is False
