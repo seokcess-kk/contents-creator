@@ -7,7 +7,10 @@
  *   { passed: bool, violations: { category, severity, reason, ... }[], ... }
  *
  * 빈 객체 / null 일 수 있어 안전하게 파싱한다.
+ *
+ * B1 sweep: 색상은 lib/tokens.ts 의 의미 토큰 사용 (compliance kind).
  */
+import { getStatusToken, getToken } from "@/lib/tokens";
 
 interface ComplianceRiskBadgeProps {
   report: Record<string, unknown> | null | undefined;
@@ -46,18 +49,20 @@ export default function ComplianceRiskBadge({ report }: ComplianceRiskBadgeProps
   const hasHigh = parsed.violations.some((v) => v.severity === "high");
   const hasAny = parsed.violations.length > 0;
 
+  // B1: 의미 토큰 매핑 — high → state-error / any → state-warning / passed → state-success / 미검증 → status-neutral
   const tone = hasHigh
-    ? { label: "차단", cls: "bg-red-50 text-red-800 border-red-300" }
+    ? { label: "차단", token: getToken("state-error") }
     : hasAny
-      ? { label: "경고", cls: "bg-amber-50 text-amber-800 border-amber-300" }
+      ? { label: "경고", token: getToken("state-warning") }
       : parsed.passed
-        ? { label: "통과", cls: "bg-emerald-50 text-emerald-800 border-emerald-300" }
-        : { label: "미검증", cls: "bg-gray-50 text-gray-700 border-gray-300" };
+        ? { label: "통과", token: getToken("state-success") }
+        : { label: "미검증", token: getToken("status-neutral") };
+  const cls = `${tone.token.bg} ${tone.token.text} ${tone.token.border}`;
 
   return (
     <span className="relative inline-block group">
       <span
-        className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded border ${tone.cls}`}
+        className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded border ${cls}`}
       >
         의료법 {tone.label}
         {hasAny && (
@@ -73,13 +78,11 @@ export default function ComplianceRiskBadge({ report }: ComplianceRiskBadgeProps
             {parsed.violations.map((v, i) => (
               <li key={i} className="flex gap-2">
                 <span
-                  className={`shrink-0 px-1.5 rounded text-[10px] ${
-                    v.severity === "high"
-                      ? "bg-red-100 text-red-800"
-                      : v.severity === "medium"
-                        ? "bg-amber-100 text-amber-800"
-                        : "bg-gray-100 text-gray-700"
-                  }`}
+                  className={`shrink-0 px-1.5 rounded text-[10px] ${(() => {
+                    if (v.severity === "high") return getStatusToken("compliance", "failed").bg + " " + getStatusToken("compliance", "failed").text;
+                    if (v.severity === "medium") return getToken("status-attention").bg + " " + getToken("status-attention").text;
+                    return getToken("status-neutral").bg + " " + getToken("status-neutral").text;
+                  })()}`}
                 >
                   {v.severity}
                 </span>

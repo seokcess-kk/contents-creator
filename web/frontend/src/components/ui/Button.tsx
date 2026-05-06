@@ -15,6 +15,8 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   children?: ReactNode;
 }
 
+// B1 sweep: variant → 색상 의미 토큰 매핑은 별도 시스템 (실제 클래스는 Tailwind scanner 가
+// 인식 가능한 정적 문자열로 유지). Button 의 primary 는 brand color 라 status token 과 분리.
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   primary: "bg-blue-600 text-white border-blue-600 hover:bg-blue-700 disabled:bg-blue-300",
   secondary: "bg-white text-gray-800 border-gray-300 hover:bg-gray-50 disabled:bg-gray-100",

@@ -209,3 +209,11 @@ export function getSemanticToken(
 ): SemanticToken {
   return KIND_STATUS_TOKEN[kind][status] ?? FALLBACK_TOKEN;
 }
+
+// ── B1 sweep helper: surface/state 직접 조회 ─────────────────────────────────
+
+/** SemanticToken 직접 매핑 (status 없이 token id 만으로 className 조회).
+ *  Dialog tone, soft surface 등에서 사용. */
+export function getToken(token: SemanticToken): StatusToken {
+  return TOKEN_CLASSES[token];
+}

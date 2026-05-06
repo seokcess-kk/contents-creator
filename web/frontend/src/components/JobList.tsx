@@ -2,12 +2,17 @@
 
 import Link from "next/link";
 import type { Job } from "@/types";
+import { getToken } from "@/lib/tokens";
 
+// B1 sweep: 의미 토큰 매핑. ring 표현은 token border 와 동등한 1px 강조.
+function _statusStyle(token: ReturnType<typeof getToken>): string {
+  return `${token.bg} ${token.text} ring-1 ring-inset ${token.border.replace("border-", "ring-")}`;
+}
 const STATUS_STYLES: Record<string, string> = {
-  pending: "bg-gray-100 text-gray-700 ring-1 ring-inset ring-gray-200",
-  running: "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-200",
-  succeeded: "bg-green-50 text-green-700 ring-1 ring-inset ring-green-200",
-  failed: "bg-red-50 text-red-700 ring-1 ring-inset ring-red-200",
+  pending: _statusStyle(getToken("status-neutral")),
+  running: _statusStyle(getToken("status-pending")),
+  succeeded: _statusStyle(getToken("state-success")),
+  failed: _statusStyle(getToken("state-error")),
 };
 
 const STATUS_LABELS: Record<string, string> = {
