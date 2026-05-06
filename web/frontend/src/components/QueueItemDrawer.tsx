@@ -49,7 +49,8 @@ export default function QueueItemDrawer({
       />
       {/* drawer */}
       <aside
-        className="absolute right-0 top-0 bottom-0 w-full md:w-[760px] bg-white shadow-2xl flex flex-col"
+        // P2 mobile: sm 미만 full-screen, md 이상 right-slide 760px
+        className="absolute inset-0 md:left-auto md:right-0 md:top-0 md:bottom-0 md:w-[760px] bg-white shadow-2xl flex flex-col"
         role="dialog"
         aria-modal="true"
       >
@@ -66,7 +67,8 @@ export default function QueueItemDrawer({
             <X size={18} />
           </button>
         </header>
-        <div className="flex flex-1 overflow-hidden">
+        {/* P2 mobile: sm 미만 stack (column), md 이상 row */}
+        <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
           <div className="flex-1 overflow-y-auto p-4">
             {!slug ? (
               <div className="text-sm text-gray-500 py-8 text-center">
@@ -79,7 +81,7 @@ export default function QueueItemDrawer({
             )}
           </div>
           {sidebar && (
-            <div className="w-72 border-l border-gray-200 overflow-y-auto p-4 bg-gray-50">
+            <div className="w-full md:w-72 border-t md:border-t-0 md:border-l border-gray-200 overflow-y-auto p-4 bg-gray-50">
               {sidebar}
             </div>
           )}

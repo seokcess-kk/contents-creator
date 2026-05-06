@@ -57,40 +57,62 @@ export default function DataTableShell<T>({
   }
 
   return (
-    <div className="overflow-x-auto border border-gray-200 rounded">
-      <table className="min-w-full text-sm">
-        <thead className="sticky top-0 bg-gray-50 border-b border-gray-200">
-          <tr>
-            {columns.map((c) => {
-              const active = sortBy === c.key;
-              const arrow = active ? (sortDir === "asc" ? " ▲" : " ▼") : "";
-              return (
-                <th
-                  key={c.key}
-                  className={`px-3 py-2 text-left text-xs font-medium text-gray-700 ${c.className ?? ""} ${
-                    c.sortable ? "cursor-pointer hover:bg-gray-100 select-none" : ""
-                  }`}
-                  onClick={() => c.sortable && onSort?.(c.key)}
-                >
+    <>
+      {/* P2 mobile: md 미만에서 카드 리스트 */}
+      <div className="md:hidden space-y-2">
+        {rows.map((row) => (
+          <div
+            key={rowKey(row)}
+            className="border border-gray-200 rounded p-3 bg-white space-y-1"
+          >
+            {columns.map((c) => (
+              <div key={c.key} className="flex items-start gap-2 text-sm">
+                <span className="text-xs text-gray-500 shrink-0 min-w-[64px]">
                   {c.header}
-                  {c.sortable && <span className="text-gray-400">{arrow}</span>}
-                </th>
-              );
-            })}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={rowKey(row)} className="border-b border-gray-100 hover:bg-gray-50">
-              {columns.map((c) => (
-                <td key={c.key} className={`px-3 py-2 ${c.className ?? ""}`}>
-                  {c.cell(row)}
-                </td>
-              ))}
+                </span>
+                <span className="flex-1">{c.cell(row)}</span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+
+      {/* Desktop: md 이상 테이블 */}
+      <div className="hidden md:block overflow-x-auto border border-gray-200 rounded">
+        <table className="min-w-full text-sm">
+          <thead className="sticky top-0 bg-gray-50 border-b border-gray-200">
+            <tr>
+              {columns.map((c) => {
+                const active = sortBy === c.key;
+                const arrow = active ? (sortDir === "asc" ? " ▲" : " ▼") : "";
+                return (
+                  <th
+                    key={c.key}
+                    className={`px-3 py-2 text-left text-xs font-medium text-gray-700 ${c.className ?? ""} ${
+                      c.sortable ? "cursor-pointer hover:bg-gray-100 select-none" : ""
+                    }`}
+                    onClick={() => c.sortable && onSort?.(c.key)}
+                  >
+                    {c.header}
+                    {c.sortable && <span className="text-gray-400">{arrow}</span>}
+                  </th>
+                );
+              })}
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={rowKey(row)} className="border-b border-gray-100 hover:bg-gray-50">
+                {columns.map((c) => (
+                  <td key={c.key} className={`px-3 py-2 ${c.className ?? ""}`}>
+                    {c.cell(row)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }

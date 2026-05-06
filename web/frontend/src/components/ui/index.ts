@@ -13,3 +13,4 @@ export { default as PageHeader } from "./PageHeader";
 export { default as ActionBar } from "./ActionBar";
 export { default as Skeleton } from "./Skeleton";
 export { default as ErrorBanner } from "./ErrorBanner";
+export { default as DesktopOnlyBanner } from "./DesktopOnlyBanner";

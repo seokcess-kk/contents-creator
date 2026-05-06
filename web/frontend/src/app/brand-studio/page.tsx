@@ -11,6 +11,7 @@ import {
   type BrandMessageSource,
   type BrandProfile,
 } from "@/lib/brand-studio-api";
+import { DesktopOnlyBanner } from "@/components/ui";
 
 export default function BrandStudioListPage() {
   const [brands, setBrands] = useState<BrandProfile[] | null>(null);
@@ -56,6 +57,7 @@ export default function BrandStudioListPage() {
 
   return (
     <div className="space-y-3">
+      <DesktopOnlyBanner />
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <Link href="/" className="text-sm text-blue-700 hover:underline">
           ← 대시보드

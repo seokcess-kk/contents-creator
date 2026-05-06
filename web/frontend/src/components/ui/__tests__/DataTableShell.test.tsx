@@ -40,7 +40,7 @@ describe("DataTableShell", () => {
 
   it("sortable column 클릭 시 onSort 호출", () => {
     const onSort = vi.fn();
-    render(
+    const { container } = render(
       <DataTableShell<Row>
         columns={COLUMNS}
         rows={[{ id: "a", name: "abc", count: 1 }]}
@@ -48,7 +48,10 @@ describe("DataTableShell", () => {
         onSort={onSort}
       />,
     );
-    fireEvent.click(screen.getByText("이름"));
+    // P2: 모바일/데스크톱 양쪽 렌더링되어 "이름" 텍스트 2개 — desktop 측 th 만 클릭
+    const th = container.querySelector("th");
+    expect(th).not.toBeNull();
+    fireEvent.click(th!);
     expect(onSort).toHaveBeenCalledWith("name");
   });
 });

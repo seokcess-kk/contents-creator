@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { getInsightsSummary, type InsightsSummary } from "@/lib/api";
+import { DesktopOnlyBanner } from "@/components/ui";
 
 const DIFFICULTY_ORDER = ["low", "medium", "high", "missing", "unknown"];
 const VOLUME_ORDER = ["<100", "100-500", "500-2K", "2K-10K", ">10K", "unknown"];
@@ -31,6 +32,7 @@ export default function InsightsPage() {
 
   return (
     <div className="space-y-4">
+      <DesktopOnlyBanner />
       <div>
         <h1 className="text-xl font-bold text-gray-900">인사이트</h1>
         <p className="text-xs text-gray-600 mt-0.5">

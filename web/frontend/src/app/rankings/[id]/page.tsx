@@ -91,7 +91,7 @@ export default function PublicationDetailPage({
               ) : (
                 <div className="text-gray-500">URL 미등록 초안</div>
               )}
-              <div className="text-xs text-gray-500 mt-2 grid grid-cols-2 gap-x-4 gap-y-1">
+              <div className="text-xs text-gray-500 mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
                 <span>키워드: {publication.keyword}</span>
                 <span>
                   발행일:{" "}
