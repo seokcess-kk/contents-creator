@@ -1,9 +1,12 @@
 "use client";
 
+// P4: BatchUploadForm 제거 — 업로드는 /create?tab=batch 에서. 본 페이지는 list + drill-down 진입만.
+
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import BatchUploadForm from "@/components/BatchUploadForm";
+import { Plus } from "lucide-react";
 import { dispatchOvernight, listBatches, type BatchSummary } from "@/lib/api";
+import { Button } from "@/components/ui";
 
 export default function BatchesPage() {
   const [batches, setBatches] = useState<BatchSummary[]>([]);
@@ -25,10 +28,6 @@ export default function BatchesPage() {
   useEffect(() => {
     reload();
   }, [reload]);
-
-  function handleCreated() {
-    reload();
-  }
 
   const overnightQueued = useMemo(
     () => batches.filter((b) => b.mode === "overnight" && b.status === "queued"),
@@ -56,14 +55,20 @@ export default function BatchesPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900">배치 운영</h1>
-        <p className="text-xs text-gray-600 mt-0.5">
-          CSV 업로드로 100건 이상 키워드를 자동 처리. 단일 흐름에 영향 0 (격리 워커 풀).
-        </p>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-xl font-bold text-gray-900">배치 운영</h1>
+          <p className="text-xs text-gray-600 mt-0.5">
+            CSV 업로드로 100건 이상 키워드를 자동 처리. 단일 흐름에 영향 0 (격리 워커 풀).
+          </p>
+        </div>
+        <Link href="/create?tab=batch">
+          <Button variant="primary">
+            <Plus size={14} />
+            새 배치 업로드
+          </Button>
+        </Link>
       </div>
-
-      <BatchUploadForm onCreated={handleCreated} />
 
       {overnightQueued.length > 0 && (
         <div className="bg-indigo-50 ring-1 ring-indigo-200 rounded-lg px-3 py-2 flex items-center justify-between gap-3 flex-wrap">
@@ -95,7 +100,12 @@ export default function BatchesPage() {
           </div>
         )}
         {!loading && !error && batches.length === 0 && (
-          <div className="text-sm text-gray-500 py-4">아직 배치가 없습니다. 위에서 CSV 를 업로드하세요.</div>
+          <div className="text-sm text-gray-500 py-4">
+            아직 배치가 없습니다.{" "}
+            <Link href="/create?tab=batch" className="text-blue-700 hover:underline">
+              새 배치 업로드
+            </Link>
+          </div>
         )}
         {batches.length > 0 && (
           <div className="overflow-auto">

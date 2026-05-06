@@ -5,10 +5,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Plus } from "lucide-react";
 import BulkCheckDialog from "@/components/BulkCheckDialog";
 import BulkRegisterDialog from "@/components/BulkRegisterDialog";
 import ExternalUrlForm from "@/components/ExternalUrlForm";
 import PublicationActionRow from "@/components/PublicationActionRow";
+import { Button } from "@/components/ui";
 import {
   getOperationsQueue,
   getOperationsSummary,
@@ -72,6 +75,7 @@ function sortItems(items: QueueItem[], sortBy: SortKey): QueueItem[] {
 }
 
 export default function OperationsHomePage() {
+  const router = useRouter();
   const [summary, setSummary] = useState<OperationsSummary | null>(null);
   const [tab, setTab] = useState<QueueTab>("action_required");
   const [items, setItems] = useState<QueueItem[]>([]);
@@ -134,6 +138,14 @@ export default function OperationsHomePage() {
           >
             월별 캘린더
           </Link>
+          <Button
+            variant="primary"
+            size="md"
+            onClick={() => router.push("/create")}
+          >
+            <Plus size={14} />
+            새로 만들기
+          </Button>
         </div>
       </div>
 

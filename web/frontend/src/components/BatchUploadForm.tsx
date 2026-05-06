@@ -141,9 +141,13 @@ export default function BatchUploadForm({ onCreated }: Props) {
           enqueue 완료 — created {result.created} / skipped {result.skipped} / failed {result.failed}
         </div>
       )}
-      {/* Phase 2 PR2 — 사전 필터 + cluster 재사용 옵션 */}
-      <div className="grid grid-cols-12 gap-3 items-end pt-2 border-t border-gray-100">
-        <div className="col-span-6 lg:col-span-3">
+      {/* P4: 고급 옵션 접기 — 사전 필터·cluster 재사용·자동 발행 */}
+      <details className="pt-2 border-t border-gray-100">
+        <summary className="text-xs font-semibold text-gray-700 cursor-pointer select-none hover:text-blue-700">
+          고급 옵션 (사전 필터 · 클러스터 재사용 · 자동 발행)
+        </summary>
+        <div className="grid grid-cols-12 gap-3 items-end mt-3">
+          <div className="col-span-6 lg:col-span-3">
           <label className="block text-xs font-semibold text-gray-700 mb-1">
             최소 월 검색량 <span className="text-gray-400 font-normal">(선택)</span>
           </label>
@@ -188,23 +192,24 @@ export default function BatchUploadForm({ onCreated }: Props) {
             </span>
           </label>
         </div>
-        <div className="col-span-12">
-          <label className="inline-flex items-start gap-2 text-xs font-semibold text-gray-700">
-            <input
-              type="checkbox"
-              checked={autoPublishEnabled}
-              onChange={(e) => setAutoPublishEnabled(e.target.checked)}
-              className="mt-0.5"
-            />
-            <span className="flex-1">
-              자동 발행 등록 (default OFF — opt-in)
-              <span className="block font-normal text-[11px] text-gray-500 mt-0.5">
-                배치 완료 시 <code>target_url</code> 채워진 <strong>ready_to_publish</strong> item 을 publications 자동 등록 → /rankings 추적 진입. 운영 철학상 실제 발행은 운영자가 직접 — 운영자가 미리 URL 을 정하고 자동 추적까지 일괄 처리할 때만 ON.
+          <div className="col-span-12">
+            <label className="inline-flex items-start gap-2 text-xs font-semibold text-gray-700">
+              <input
+                type="checkbox"
+                checked={autoPublishEnabled}
+                onChange={(e) => setAutoPublishEnabled(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span className="flex-1">
+                자동 발행 등록 (default OFF — opt-in)
+                <span className="block font-normal text-[11px] text-gray-500 mt-0.5">
+                  배치 완료 시 <code>target_url</code> 채워진 <strong>ready_to_publish</strong> item 을 publications 자동 등록 → /rankings 추적 진입. 운영 철학상 실제 발행은 운영자가 직접 — 운영자가 미리 URL 을 정하고 자동 추적까지 일괄 처리할 때만 ON.
+                </span>
               </span>
-            </span>
-          </label>
+            </label>
+          </div>
         </div>
-      </div>
+      </details>
       <p className="text-[11px] text-gray-500">
         operation 기본값은 <strong>analyze</strong> (실수로 100건 full pipeline 도는 사고 차단). pipeline 은 CSV 에 명시 선택.
       </p>

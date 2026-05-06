@@ -39,6 +39,12 @@ describe("NavBar (P1 시점)", () => {
     expect(screen.getByText("운영 홈").className).not.toContain("font-semibold");
   });
 
+  it("/create 진입 시 '생성' active (P4 통합 페이지)", () => {
+    mockedPathname.mockReturnValue("/create");
+    render(<NavBar />);
+    expect(screen.getByText("생성").className).toContain("font-semibold");
+  });
+
   it("/batches/xyz 진입 시 '검수·발행' active", () => {
     mockedPathname.mockReturnValue("/batches/xyz");
     render(<NavBar />);
