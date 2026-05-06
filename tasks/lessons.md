@@ -768,3 +768,72 @@ curl: (22) The requested URL returned error: 409
 - **로그는 매 호출마다 찍지 말고 누적 통계 주기적으로**. 매 hit 마다 INFO 가 찍히면 운영 로그 노이즈 + 진단 어려움. 50회마다 1줄이 적정
 - **UI 체감 속도 ≠ 백엔드 처리 시간**. 청크 작게 + 첫 결과 즉시 표시가 사용자 경험에 더 큼. 백엔드는 12 동시도 충분
 
+---
+
+## 디자인 토큰 sweep ROI — UX Refactor 후속 (2026-05-06)
+
+**배경**: UX Refactor 6 Phase 종료 후 287 위치 / 50+ 파일에 색상 클래스 (`bg-red-50`, `bg-amber-100` 등) 산발. "전체 sweep" 충동 vs "의미 매핑 가능한 것만" 간 결정.
+
+**시도**: Polish Pack P1 에서 StatusBadge 만 (35 위치) 토큰화. 이후 B1 작업으로 287 위치 추가 분석.
+
+**결과**: 7 파일 53 위치를 분류하니 실제 의미 매핑 가능한 것은 **ComplianceRiskBadge (7) + JobList (4)** 만. 나머지는:
+- Button: brand color (variant 자체가 의미)
+- PublicationStatusBadge: 5-stage lifecycle 자체 의미
+- BatchProgressTable: progress bar 강한 색
+- BatchReviewQueue / HoldDialog / BulkRegisterDialog: brand action color
+- 페이지 직접 사용분 (운영 홈 SummaryCards / 키워드 차트 등): 페이지 고유 의미
+
+**일반화 규칙**:
+- **토큰 sweep 가치 = 의미 매핑 가능한 위치 수 ÷ 전체 위치**. 10% 미만이면 sweep 보다는 **분류 + 명확한 OUT-OF-SCOPE** 가 효율적
+- **brand color (primary blue)** 는 status token 과 분리 — 변경하면 브랜드 정체성 영향
+- **lifecycle 자체 의미** 를 가진 컴포넌트 (5-stage indicator 등) 는 별도 token 계열 추가 vs raw 유지 결정 필요. 운영 데이터 누적 후 다크모드 도입 시 통합
+- **287 위치 강제 sweep 강요는 금물** — 의미 부적합 위치를 token 으로 끼워맞추면 다크모드/리브랜딩 시 더 큰 부채
+
+---
+
+## Windows cp949 콘솔 + Python 한글 처리 — Polish P4 (2026-05-06)
+
+**배경**: `kiwipiepy` (한국어 형태소 분석) 도입 후 build-check.sh 의 pytest 가 한글 string 처리 시 실패. `.venv/Scripts/python.exe -m pytest` 직접 호출은 통과, build-check 의 `pytest` 는 fail.
+
+**원인 발견**:
+- `which pytest` → `/c/Users/assag/AppData/Local/Programs/Python/Python313/Scripts/pytest` (system Python)
+- system Python 에 kiwipiepy 미설치 → ImportError → fallback (False) → 4 케이스 fail
+- `.venv` 의 pytest 와 다른 인터프리터 사용 중
+
+**해결**:
+1. `pip install kiwipiepy>=0.17` 을 system Python 에도 적용 (사용자가 venv activate 안 하고 build-check 직접 호출하는 환경 가정)
+2. build-check.sh 의 pytest 호출에 `env PYTHONUTF8=1 PYTHONIOENCODING=utf-8` prefix 추가 (cp949 default 회피)
+
+**일반화 규칙**:
+- **Windows + Python 의 default encoding 은 cp949** (한국어 locale). Python 3.7+ 의 `PYTHONUTF8=1` 이 가장 강력한 해결책
+- **build-check 같은 hook 스크립트는 venv activate 가정 X** — 사용자가 어느 환경에서 호출하든 같은 결과 보장 필요. 명시적 PATH 또는 환경 변수 prefix
+- **system Python vs .venv 충돌** 가능성 — `which pytest` 로 사전 점검. 본 프로젝트는 양쪽 모두 의존 설치 권장 (또는 .venv activate 강제 hint)
+- **kiwipiepy 형태소 분리 모호성**: 같은 단어 ("한의원") 가 컨텍스트에 따라 다르게 분리됨 (`["한의원"]` vs `["의원"]`). set 교집합 대신 **substring 매칭** (`noun in title_lower`) 으로 회피하면 분리 결과 의존성 제거 + 더 강건
+
+---
+
+## React 컴포넌트 prop 타입 확장 — Polish P3 (2026-05-06)
+
+**배경**: PageHeader 의 `title: string` prop 에 HelpTooltip 같은 inline ReactNode 삽입 필요. 두 가지 옵션 — title 옆에 별도 prop 추가 vs `title` 타입 자체 확장.
+
+**시도**: title 타입을 `string` → `ReactNode` 로 확장. h1 의 className 도 `flex items-center` 추가해 inline 노드 정렬.
+
+**결과**: 모든 호출자가 자연스럽게 `<>...<HelpTooltip /></>` 패턴 사용. 별도 prop 없이 깔끔.
+
+**일반화 규칙**:
+- **inline 노드 가능성 있는 prop 은 처음부터 `ReactNode` 권장** — 단순 string 으로 시작했다가 Node 로 확장하는 경우 잦음. 초기에 `ReactNode` 면 호환성 유지
+- **flex items-center 컨테이너 권장** — inline 노드 (icon, badge, tooltip) 가 들어올 때 정렬 깨짐 방지
+
+---
+
+## DataTableShell 모바일 자동 변환 + vitest 텍스트 매칭 충돌 — Polish P2 (2026-05-06)
+
+**배경**: DataTableShell 에 모바일 카드 + 데스크톱 테이블 양쪽 마크업을 동시 렌더 (`md:hidden` / `hidden md:block`). 기존 vitest 의 `getByText("이름")` 이 양쪽에 매칭되어 unique 실패.
+
+**해결**: vitest 가 desktop `<th>` 만 명확히 클릭하도록 `container.querySelector("th")` 사용. `getByText` 대신 DOM 위치로 매칭.
+
+**일반화 규칙**:
+- **반응형 양쪽 렌더링 (md:hidden + hidden md:block) 패턴** 도입 시 기존 vitest 의 텍스트 매칭이 양쪽 매칭으로 깨짐. 사전 grep `getByText|getAllByText` 로 영향 평가
+- **DOM 위치 기반 매칭** (`querySelector("th")`, `getAllByText()[0]`) 가 vitest 의 `getByText` 보다 모호성 적음. 단 selector specificity 유지 필요
+- **jsdom 의 viewport 한계**: `md:hidden` 같은 Tailwind 분기는 className 으로 hidden 표현 — DOM 에는 모두 존재. matchMedia mock 으로도 className 기반 hidden 은 우회 안 됨
+
