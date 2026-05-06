@@ -1700,17 +1700,14 @@
 
 ### 구현 단계
 
-- [ ] **Step 3.0** <!-- 2026-05-06 추가: plan-reviewer 보완 D — action_required 비율 측정 -->: 운영 DB 의 publication 중 `workflow_status='action_required'` 비율 측정. supabase query 1회: `SELECT workflow_status, COUNT(*) FROM publications GROUP BY workflow_status`. 결과를 본 plan 안에 기록. **분기 결정**:
-  - 50% 이하 → R2 의 `border-l-red-500` 좌측 색강조 적용 (계획대로)
-  - 50% 초과 → 색강조 대신 lucide-react `AlertTriangle` 아이콘을 키워드 옆 inline 표시 또는 우측 inset shadow (`shadow-inner shadow-red-200`) 로 변경
-  - 본 분기 결정을 Step 3.3 시작 전 R2 완화 방식에 반영
+- [x] **Step 3.0** <!-- 2026-05-06 추가: plan-reviewer 보완 D — action_required 비율 측정 -->: 운영 DB 비율 측정은 supabase 환경 전용. **자체 결정 (보수)**: 비율을 알 수 없는 상태에서 border-l-red-500 이 100% 빨강 위험 → **lucide-react `AlertTriangle` 아이콘을 action_required row 의 키워드 좌측에 inline 표시** 채택. 색강조 대신 아이콘으로 시각 신호 분리 → 운영 데이터 누적 후 재평가
 - [ ] **Step 3.1**: 추천 액션 매핑 함수 작성 (`getPrimaryAction(item: QueueItem): { label, onClick, variant } | null`). pure function 으로 분리 → 단위 테스트 가능. workflow_status 6값 + visibility_status 5값 매트릭스 정리. tests: 6 케이스 (4건)
 - [ ] **Step 3.2**: `RowDropdownMenu.tsx` 신규 — P2 의 `Dialog` 또는 popover 패턴. menu items prop 으로 보류/제외/원문/상세 받음. 키보드 네비 (위/아래/Enter/ESC). tests: 열림 토글, item 클릭 콜백, ESC 닫기 (3건)
 - [ ] **Step 3.3**: `PublicationActionRow.tsx` 재작성 — P2 의 `StatusBadge kind="workflow"`, `kind="diagnosis"` 호출. 4종 자체 Badge 함수 (WorkflowBadge / VisibilityBadge / DiagnosisBadge / KeywordDifficultyBadge) 제거. layout: `[키워드][workflow badge][rank·date][diagnosis?] [primary CTA] [⋯]`. action_required 시각 강조는 Step 3.0 결정 따름. 모바일 가독성은 OUT-OF-SCOPE
 - [ ] **Step 3.4**: tooltip 통합 — 현재 `title=` 속성 사용. URL/held_until/difficulty 상세는 hover tooltip 만. native title 유지 (별도 tooltip 라이브러리 추가 X)
 - [ ] **Step 3.5**: HoldDialog / RepublishDialog 그대로 유지 (행동은 동일, 진입 경로만 dropdown 으로 변경). tests: dropdown→Hold→Dialog 열림 (1건)
 - [ ] **Step 3.6**: `__tests__/PublicationActionRow.test.tsx` 신규 — 6 탭 (action_required/republishing/held/active/dismissed/all) 별 row 렌더링 vitest. 각 탭에서 primary CTA 라벨 단언. **vitest 라벨 매칭 규칙** <!-- 2026-05-06 추가: 사용자 확정 5건 #4 -->: StatusBadge 의 라벨 텍스트 직접 매칭 금지, P6 의 `getWorkflowLabel(status)` 함수 호출 결과로 매칭 (P6 라벨 변경 시 vitest 자동 동기화). P6 미완성 시점이라도 미리 함수 호출 패턴으로 작성. 6건
-- [ ] **Step 3.7**: ErrorBanner.tsx 추가 <!-- 2026-05-06 추가: P2 보류분 -->: P3 마이그레이션 중 row 단위 에러 표시 필요 시 `components/ui/ErrorBanner.tsx` 신규 (severity warn/error + retry slot). tests 2건. 필요 없으면 P5 로 이연
+- [x] **Step 3.7**: ErrorBanner.tsx 추가 <!-- 2026-05-06 추가: P2 보류분 -->: **P5 로 이연 결정** — P3 row 마이그레이션은 인라인 에러 텍스트 (`<div className="text-xs text-red-700 mt-1">`) 로 충분. ErrorBanner 는 페이지 레벨 에러 표시용 → /queue 페이지 (P5) 에서 본격 활용
 - [ ] **Step 3.8**: 운영 홈 (`/`) 시각 회귀 점검 — 사용자가 manual 로 6 탭 돌면서 row 동작 확인. 정보 누락 시 dropdown 또는 tooltip 으로 복원
 
 ### 검증 게이트
