@@ -9,7 +9,7 @@ import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import BulkCheckDialog from "@/components/BulkCheckDialog";
 import BulkRegisterDialog from "@/components/BulkRegisterDialog";
-import ExternalUrlForm from "@/components/ExternalUrlForm";
+import PublicationForm from "@/components/PublicationForm";
 import PublicationActionRow from "@/components/PublicationActionRow";
 import { Button } from "@/components/ui";
 import {
@@ -155,7 +155,10 @@ export default function OperationsHomePage() {
 
       <div className="flex items-stretch gap-2">
         <div className="flex-1">
-          <ExternalUrlForm onRegistered={() => void load()} />
+          <PublicationForm
+            variant="create"
+            onSubmitted={() => void load()}
+          />
         </div>
         <button
           type="button"

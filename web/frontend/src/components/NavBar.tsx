@@ -27,8 +27,9 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     label: "검수·발행",
-    href: "/batches",
-    matches: (p) => p.startsWith("/batches") || p.startsWith("/results"),
+    href: "/queue",
+    matches: (p) =>
+      p.startsWith("/queue") || p.startsWith("/batches") || p.startsWith("/results"),
   },
   {
     label: "성과·분석",

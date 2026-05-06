@@ -1,0 +1,147 @@
+// P5: 단일 + 배치 통합 큐 — frontend merge.
+// 백엔드 use case 신설 X (사용자 결정 #3 — 운영 규모 1000 row 미만).
+// 기존 listPipelineItems (백엔드가 batch 합산 제공) + listJobs 합쳐서 단일 row 시퀀스 생성.
+
+import {
+  listJobs,
+  listPipelineItems,
+  type BatchItem,
+} from "@/lib/api";
+import type { Job } from "@/types";
+
+export type QueueSource = "single" | "batch";
+export type UnifiedStatus =
+  | "needs_review"
+  | "ready_to_publish"
+  | "succeeded"
+  | "failed"
+  | "running"
+  | "queued"
+  | "skipped";
+
+export interface UnifiedQueueItem {
+  id: string;
+  source: QueueSource;
+  keyword: string;
+  status: string;
+  /** 결과 페이지 진입용 slug (batch 의 keyword_slug 또는 single job 의 결과 slug) */
+  slug: string | null;
+  /** 배치 출처일 때만 채움 */
+  batch_id: string | null;
+  /** 배치 item 의 review_status (검수 상태) */
+  review_status: string | null;
+  /** 의료법 통과 여부 (배치만) */
+  compliance_passed: boolean | null;
+  compliance_violations: string[];
+  /** 발행 등록된 publication id (있으면 추적 진입 가능) */
+  publication_id: string | null;
+  /** 발행 대상 URL (배치 csv 의 target_url 또는 publication URL) */
+  url: string | null;
+  created_at: string | null;
+}
+
+export interface UnifiedQueueFilters {
+  source?: "all" | QueueSource;
+  /** 다중 status 필터. 미지정 시 검수/발행 후보 전체 */
+  statuses?: string[];
+  batch_id?: string;
+  search?: string;
+}
+
+const DEFAULT_BATCH_STATUSES = [
+  "needs_review",
+  "ready_to_publish",
+  "succeeded",
+  "failed",
+];
+
+export async function getUnifiedQueue(
+  filters: UnifiedQueueFilters = {},
+): Promise<UnifiedQueueItem[]> {
+  const wantBatch = filters.source === "all" || filters.source === "batch" || !filters.source;
+  const wantSingle = filters.source === "all" || filters.source === "single" || !filters.source;
+
+  const promises: Promise<UnifiedQueueItem[]>[] = [];
+
+  if (wantBatch) {
+    const statuses = filters.statuses?.length ? filters.statuses : DEFAULT_BATCH_STATUSES;
+    for (const status of statuses) {
+      promises.push(
+        listPipelineItems(status, 100)
+          .then((res) => res.items.map(_batchItemToUnified))
+          .catch(() => []),
+      );
+    }
+  }
+
+  if (wantSingle) {
+    promises.push(
+      listJobs()
+        .then((jobs) => jobs.map(_jobToUnified))
+        .catch(() => []),
+    );
+  }
+
+  const results = await Promise.all(promises);
+  let merged = results.flat();
+
+  // batch_id 필터
+  if (filters.batch_id) {
+    merged = merged.filter((it) => it.batch_id === filters.batch_id);
+  }
+
+  // 검색어 필터 (키워드/slug/url)
+  if (filters.search?.trim()) {
+    const q = filters.search.trim().toLowerCase();
+    merged = merged.filter(
+      (it) =>
+        it.keyword.toLowerCase().includes(q) ||
+        (it.slug?.toLowerCase().includes(q) ?? false) ||
+        (it.url?.toLowerCase().includes(q) ?? false),
+    );
+  }
+
+  // 중복 제거 (같은 id 두 번 들어오는 경우 — batch 의 generated_content_id 와 publication 충돌 가능)
+  const seen = new Set<string>();
+  return merged.filter((it) => {
+    if (seen.has(it.id)) return false;
+    seen.add(it.id);
+    return true;
+  });
+}
+
+function _batchItemToUnified(item: BatchItem): UnifiedQueueItem {
+  return {
+    id: item.id,
+    source: "batch",
+    keyword: item.keyword,
+    status: item.status,
+    slug: item.keyword_slug,
+    batch_id: item.batch_id,
+    review_status: item.review_status,
+    compliance_passed: item.compliance_passed,
+    compliance_violations: item.compliance_violations,
+    publication_id: item.publication_id,
+    url: item.target_url,
+    created_at: item.created_at,
+  };
+}
+
+function _jobToUnified(job: Job): UnifiedQueueItem {
+  // Job.result 는 Record<string, unknown>. slug 가 채워졌을 때만 안전 추출.
+  const slug = job.result && typeof job.result.slug === "string" ? job.result.slug : null;
+  return {
+    id: job.id,
+    source: "single",
+    keyword: job.keyword,
+    status: job.status,
+    slug,
+    batch_id: null,
+    review_status: null,
+    compliance_passed: null,
+    compliance_violations: [],
+    publication_id: null,
+    url: null,
+    created_at: job.created_at,
+  };
+}

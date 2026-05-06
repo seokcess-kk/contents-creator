@@ -1,85 +1,12 @@
-"use client";
+// P5: /results/[slug] 는 /queue 의 drawer 미리보기로 redirect.
+// 외부 북마크 / SEO 채널 인입 보호 위해 영구 redirect.
+import { permanentRedirect } from "next/navigation";
 
-import { use, useEffect, useState } from "react";
-import Link from "next/link";
-import ResultViewer from "@/components/ResultViewer";
-import PublicationForm from "@/components/PublicationForm";
-import PublicationLineage from "@/components/PublicationLineage";
-import PublicationStatusBadge from "@/components/PublicationStatusBadge";
-import RankingTimeline from "@/components/RankingTimeline";
-import {
-  getLatestPublicationBySlug,
-  getSlugMeta,
-  type Publication,
-} from "@/lib/api";
-
-export default function ResultDetailPage({
+export default async function ResultRedirectPage({
   params,
 }: {
   params: Promise<{ slug: string }>;
-}) {
-  const { slug: rawSlug } = use(params);
-  const slug = decodeURIComponent(rawSlug);
-  const [publication, setPublication] = useState<Publication | null>(null);
-  const [originalKeyword, setOriginalKeyword] = useState<string | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
-
-  useEffect(() => {
-    getLatestPublicationBySlug(slug)
-      .then((p) => setPublication(p))
-      .catch(() => setPublication(null));
-  }, [slug, refreshKey]);
-
-  // Phase B9 fix #5 — generated_contents.keyword 에서 원본 키워드 fetch.
-  // slug.replace(/-/g, " ") 추정은 한국어 spacing 부정확. publication 또는 메타 우선.
-  useEffect(() => {
-    getSlugMeta(slug)
-      .then((meta) => setOriginalKeyword(meta.keyword))
-      .catch(() => setOriginalKeyword(null));
-  }, [slug]);
-
-  // 우선순위: publication.keyword > generated_contents.keyword > slug→spaces fallback.
-  const inferredKeyword =
-    publication?.keyword ?? originalKeyword ?? slug.replace(/-/g, " ");
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <Link href="/" className="text-sm text-blue-700 hover:underline">
-          ← 대시보드
-        </Link>
-        <h1
-          className="text-base font-bold text-gray-900 truncate max-w-[40%]"
-          title={slug}
-        >
-          {slug}
-        </h1>
-        <PublicationStatusBadge publication={publication} hasResult />
-        <Link href="/rankings" className="text-sm text-blue-700 hover:underline">
-          순위 대시보드 →
-        </Link>
-      </div>
-
-      <div className="grid grid-cols-12 gap-3">
-        <aside className="col-span-12 lg:col-span-4 space-y-2 lg:sticky lg:top-14 lg:self-start lg:max-h-[calc(100vh-80px)] lg:overflow-auto">
-          {publication && <PublicationLineage publication={publication} variant="results" />}
-          <PublicationForm
-            keyword={inferredKeyword}
-            slug={slug}
-            existingPublication={publication}
-            onRegistered={(p) => {
-              setPublication(p);
-              setRefreshKey((k) => k + 1);
-            }}
-          />
-          {publication && (
-            <RankingTimeline publicationId={publication.id} refreshKey={refreshKey} />
-          )}
-        </aside>
-        <main className="col-span-12 lg:col-span-8">
-          <ResultViewer slug={slug} imagesGenerated={0} />
-        </main>
-      </div>
-    </div>
-  );
+}): Promise<never> {
+  const { slug } = await params;
+  permanentRedirect(`/queue?slug=${encodeURIComponent(slug)}&drawer=preview`);
 }

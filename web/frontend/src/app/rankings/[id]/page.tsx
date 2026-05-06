@@ -4,8 +4,9 @@ import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import DiagnosisCard from "@/components/DiagnosisCard";
 import EventsTimeline from "@/components/EventsTimeline";
-import PublicationEditDialog from "@/components/PublicationEditDialog";
+import PublicationForm from "@/components/PublicationForm";
 import PublicationLineage from "@/components/PublicationLineage";
+import { Dialog } from "@/components/ui";
 import RankingTimeline from "@/components/RankingTimeline";
 import {
   deletePublication,
@@ -157,15 +158,23 @@ export default function PublicationDetailPage({
 
       <RankingTimeline publicationId={id} refreshKey={refreshKey} />
 
-      {editing && publication && (
-        <PublicationEditDialog
-          publication={publication}
+      {publication && (
+        <Dialog
+          open={editing}
           onClose={() => setEditing(false)}
-          onUpdated={() => {
-            setEditing(false);
-            setRefreshKey((k) => k + 1);
-          }}
-        />
+          title="publication 편집"
+          maxWidth="max-w-md"
+        >
+          <PublicationForm
+            variant="edit"
+            publication={publication}
+            onSubmitted={() => {
+              setEditing(false);
+              setRefreshKey((k) => k + 1);
+            }}
+            onCancel={() => setEditing(false)}
+          />
+        </Dialog>
       )}
     </div>
   );
