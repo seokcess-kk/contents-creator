@@ -355,24 +355,79 @@ def run_stage_outline_generation(
 
     생성 후 코드 검증 → 미달 시 1회 재생성.
     """
-    from domain.compliance.rules import CompliancePolicy, build_pre_generation_injection
+    from domain.compliance.rules import (
+        CompliancePolicy,
+        build_pre_generation_injection,
+        get_all_patterns,
+    )
     from domain.generation.outline_validator import validate_outline
     from domain.generation.outline_writer import generate_outline
+    from domain.generation.title_validator import validate_title
 
     reporter.stage_start("outline_generation")
 
     compliance_rules = build_pre_generation_injection(CompliancePolicy.SEO_STRICT)
     outline = generate_outline(pattern_card, compliance_rules)
 
-    issues = validate_outline(outline, pattern_card)
-    if issues:
-        feedback_lines = [f"- {i.field}: 기대 {i.expected}, 실제 {i.actual}" for i in issues]
-        feedback = "다음 항목이 부족합니다. 반드시 충족해주세요:\n" + "\n".join(feedback_lines)
+    # 의료법 패턴은 application 레이어에서 build → title_validator 에 DI 주입.
+    # domain/generation 이 domain/compliance 를 직접 import 하면 DAG 역방향 위반.
+    compliance_patterns = get_all_patterns(CompliancePolicy.SEO_STRICT)
+
+    outline_issues = validate_outline(outline, pattern_card)
+    title_report = validate_title(
+        outline,
+        pattern_card.keyword,
+        compliance_patterns=compliance_patterns,
+        strict_compliance=settings.title_validator_strict_compliance,
+    )
+    title_error_issues = [i for i in title_report.issues if i["severity"] == "error"]
+    title_warning_issues = [i for i in title_report.issues if i["severity"] == "warning"]
+    for warn in title_warning_issues:
         logger.warning(
-            "outline_validation.issues_found count=%d, retrying with feedback",
-            len(issues),
+            "title_validation.warning field=%s expected=%s actual=%s",
+            warn["field"],
+            warn["expected"],
+            warn["actual"],
         )
+
+    if outline_issues or title_error_issues:
+        feedback_blocks: list[str] = []
+        if outline_issues:
+            outline_lines = [
+                f"- {i.field}: 기대 {i.expected}, 실제 {i.actual}" for i in outline_issues
+            ]
+            feedback_blocks.append("[아웃라인 구조 미달]\n" + "\n".join(outline_lines))
+        if title_error_issues:
+            title_lines = [
+                f"- {i['field']}: 기대 {i['expected']}, 실제 {i['actual']}"
+                for i in title_error_issues
+            ]
+            feedback_blocks.append("[제목 품질 미달]\n" + "\n".join(title_lines))
+        feedback = "다음 항목이 부족합니다. 반드시 충족해주세요:\n\n" + "\n\n".join(feedback_blocks)
+        logger.warning(
+            "outline_validation.retry outline_issues=%d title_errors=%d",
+            len(outline_issues),
+            len(title_error_issues),
+        )
+        old_intro = outline.intro
         outline = generate_outline(pattern_card, compliance_rules, feedback=feedback)
+        # M2 톤 락 보존: 재생성된 outline 의 intro 만 1차 값으로 덮어쓰기 (LLM 호출 0회).
+        # title quality gate 의 핵심 정책 — sections / image_prompts 는 새 title 과
+        # 더 잘 맞을 수 있어 새 값 사용.
+        outline = _replace_intro(outline, old_intro)
+        # 재생성 후에도 title issue 가 남으면 logger.warning 만 (3계층 시스템 일관성).
+        retry_report = validate_title(
+            outline,
+            pattern_card.keyword,
+            compliance_patterns=compliance_patterns,
+            strict_compliance=settings.title_validator_strict_compliance,
+        )
+        retry_errors = [i for i in retry_report.issues if i["severity"] == "error"]
+        if retry_errors:
+            logger.warning(
+                "title_validation.unresolved_after_retry count=%d",
+                len(retry_errors),
+            )
 
     # 이미지 프롬프트 0개 폴백 — 코드로 강제 생성
     if not outline.image_prompts:
@@ -972,3 +1027,12 @@ def _extract_first_id(result: Any) -> str | None:
         return None
     raw = row.get("id")
     return str(raw) if raw is not None else None
+
+
+def _replace_intro(new_outline: Outline, old_intro: str) -> Outline:
+    """재생성된 outline 의 intro 만 이전 값으로 덮어쓰기 (M2 톤 락 보존).
+
+    title quality gate 의 핵심 정책 — title 위반으로 outline 을 재생성해도
+    1차 도입부의 톤은 보존한다. LLM 호출 0회.
+    """
+    return new_outline.model_copy(update={"intro": old_intro})

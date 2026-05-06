@@ -168,6 +168,7 @@ class TestCrossAnalysis:
 
 
 class TestOutlineGeneration:
+    @patch("domain.generation.title_validator.validate_title")
     @patch("domain.generation.outline_validator.validate_outline")
     @patch("domain.generation.outline_writer.generate_outline")
     @patch("domain.compliance.rules.build_pre_generation_injection")
@@ -176,10 +177,14 @@ class TestOutlineGeneration:
         mock_injection: MagicMock,
         mock_gen: MagicMock,
         mock_validate: MagicMock,
+        mock_title_validate: MagicMock,
         tmp_path: Path,
     ) -> None:
         mock_injection.return_value = "rules text"
         mock_validate.return_value = []  # no issues
+        from domain.generation.title_validator import TitleValidationReport
+
+        mock_title_validate.return_value = TitleValidationReport(passed=True, issues=[])
         mock_outline = MagicMock()
         mock_outline.title = "Test Title"
         mock_outline.sections = [MagicMock(), MagicMock()]
@@ -193,6 +198,7 @@ class TestOutlineGeneration:
         assert result == mock_outline
         assert (tmp_path / "content" / "outline.json").exists()
 
+    @patch("domain.generation.title_validator.validate_title")
     @patch("domain.generation.outline_validator.validate_outline")
     @patch("domain.generation.outline_writer.generate_outline")
     @patch("domain.compliance.rules.build_pre_generation_injection")
@@ -201,21 +207,25 @@ class TestOutlineGeneration:
         mock_injection: MagicMock,
         mock_gen: MagicMock,
         mock_validate: MagicMock,
+        mock_title_validate: MagicMock,
         tmp_path: Path,
     ) -> None:
         """검증 실패 시 1회 재생성한다."""
         mock_injection.return_value = "rules text"
 
         from domain.generation.outline_validator import OutlineIssue
+        from domain.generation.title_validator import TitleValidationReport
 
         mock_validate.return_value = [
             OutlineIssue(field="section_count", expected=">=5", actual="3")
         ]
+        mock_title_validate.return_value = TitleValidationReport(passed=True, issues=[])
         mock_outline = MagicMock()
         mock_outline.title = "Retried Title"
         mock_outline.sections = [MagicMock()] * 5
         mock_outline.image_prompts = [MagicMock()]
         mock_outline.model_dump_json.return_value = '{"title":"Retried Title"}'
+        mock_outline.model_copy.return_value = mock_outline  # _replace_intro 처리
         mock_gen.return_value = mock_outline
 
         from application.stage_runner import run_stage_outline_generation

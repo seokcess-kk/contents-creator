@@ -1341,3 +1341,170 @@
 ### B19.4 검증 + commit
 - [ ] `bash .claude/hooks/build-check.sh` 그린
 - [ ] commit `feat(batch): Phase 5 PR1 — 본문 차별화 검증 (Jaccard)`
+
+---
+
+# Title Validator (HTML title 검증/템플릿) — Plan
+
+> 2026-05-06 착수. SPEC-SEO-TEXT.md §3 [6] + docs/naver-seo-guide.md §2.2 / §4. Layer 1 품질 강제 라인 (outline_validator) 의 자매 검증 모듈.
+> 2026-05-06 갱신: 사용자 확정 결정 6건 반영 (재생성 전략 B / strict env 토글 / 스팸 모듈 상수 / 길이 hard+권장 분기 / exact match / Slack 보류).
+
+## 🔴 핵심 원칙 (모든 step 의 상위 가이드)
+
+> **"제목은 고치되 intro 톤 락은 절대 흔들지 않는다."**
+> **본 모듈은 title quality gate 이지 LLM fixer 시스템이 아니다.**
+>
+> - 신규 prompt builder / 신규 tool_use 스키마 / title 단독 LLM helper — **모두 금지**
+> - 추가 LLM 호출은 outline 재생성 1회뿐. title 만 따로 재생성하지 않음
+> - intro 톤 락 보존은 코드(programmatic) 덮어쓰기로만 달성 (LLM 호출 0회)
+> - 구현 범위가 LLM 호출을 늘리거나 새 프롬프트를 만드는 방향으로 가면 잘못된 것
+
+## 배경 (3줄)
+
+본 프로젝트의 출력은 네이버 스마트에디터 붙여넣기용 본문 HTML 이며, composer 화이트리스트가 `<head>` 메타를 전부 제거하기 때문에 `<title>` 태그 자체는 SERP 에 반영되지 않는다. 그러나 `Outline.title` 은 사용자가 네이버 에디터의 "제목" 입력란에 직접 복사하는 **단일 출처**이므로, [6] 아웃라인 생성 직후가 품질 검증의 유일한 지점이다. 네이버 가이드 (콘텐츠 작성 권장사항) 가 명시한 "잦은 제목 변경, 과도한 길이, 2회 이상 반복 키워드, 스팸성/홍보 문구" 4 항목을 코드로 검증하고, 의료법 단일 출처 (`domain/compliance/rules.py`) 를 재사용해 새 위반 생성을 차단한다.
+
+## 변경 대상 파일
+
+| 파일 | 변경 종류 | 책임 |
+|---|---|---|
+| `domain/generation/title_validator.py` | **신규** | 제목 검증 진입점 + Pydantic 모델 + 스팸 모듈 상수 |
+| `tests/test_generation/test_title_validator.py` | **신규** | 단위 테스트 (총 19~20 케이스) |
+| `application/stage_runner.py` `run_stage_outline_generation` | **수정** | outline_validator 와 동일 패턴으로 1회 재생성 통합 + intro 코드 덮어쓰기 |
+| `config/settings.py` | **수정** | `title_validator_strict_compliance: bool = False` 필드 추가 |
+| `tasks/todo.md` (본 섹션) | **수정** | 진행 추적 |
+| `tasks/lessons.md` | **(선택)** | 의사결정 핵심 1건 기록 (예: title gate 와 fixer 의 경계) |
+
+명시적으로 **수정하지 않는** 파일:
+- `domain/generation/model.py` — `Outline.title` 시그니처 무변경 (단일 출처 유지)
+- `domain/generation/outline_writer.py` — 검증은 호출 측 (stage_runner) 에서. writer 는 순수 생성만
+- `domain/generation/outline_validator.py` — title 검증 통합하지 않고 자매 모듈로 분리 (사유: outline_validator 는 "구조" 검증, title_validator 는 "텍스트 품질" 검증으로 책임 분리)
+- `domain/compliance/rules.py` — 단일 출처 무변경. **카테고리 추가/스팸 패턴 추가 금지** (의료 도메인 정의 외 일반 SEO 품질 규칙은 검증기 자체 보유)
+- `domain/composer/naver_html.py` — `<title>` 은 본문 복사 대상 아니므로 SERP 영향 없음. 템플릿 변경 안 함
+- `domain/generation/CLAUDE.md` — 본 모듈은 "검증" 이지 "생성" 이 아니므로 가드 문서 갱신 대상 아님
+- `application/notifier.py` / Slack webhook — Phase 4 notifier 연결은 **본 plan 보류** (후속 PR)
+
+## 구현 단계 (체크리스트)
+
+- [ ] **Step 1**: `domain/generation/title_validator.py` 신규 — `TitleIssue` (dataclass, `severity: Literal["error","warning"]` 필드 포함) + `TitleValidationReport` (Pydantic) 모델 정의 + 빈 `validate_title(outline, primary_keyword, *, strict_compliance: bool) -> TitleValidationReport` 골격. 의존: `Outline`, `domain.compliance.rules.get_all_patterns(SEO_STRICT)` import. **`severity="error"` 만 재생성 트리거 / `"warning"` 은 logger 만**. (~30분)
+- [ ] **Step 2**: 길이 검증 helper `_check_length(title) -> TitleIssue | None`. 임계값 모듈 상수: `_TITLE_HARD_MIN=20`, `_TITLE_RECOMMEND_MIN=25`, `_TITLE_RECOMMEND_MAX=35`, `_TITLE_HARD_MAX=40`. 분기:
+  - `len < 20` 또는 `len > 40` → `severity="error"` (hard fail, 재생성)
+  - `20 <= len < 25` 또는 `35 < len <= 40` → `severity="warning"` (logger 만)
+  - `25 <= len <= 35` → 통과 (issue 없음)
+  - CLAUDE.md "임계값/매직 넘버는 상수 모듈로 승격" 준수. (~30분)
+- [ ] **Step 3**: 키워드 반복 검증 helper `_check_keyword_repetition(title, primary_keyword) -> TitleIssue | None`. **normalized exact match 만**: 대소문자 lower + 연속 공백 단일화 후 `normalized_title.count(normalized_keyword) >= 2` 면 `severity="error"`. `primary_keyword` 가 None/빈 문자열이면 검증 스킵. **부분 매치 / 형태소 분석 / 공백 변형 ("다이어트한의원" vs "다이어트 한의원") 은 본 plan 범위 외 (OUT-OF-SCOPE — 후속 PR)**. (~30분)
+- [ ] **Step 4**: 스팸/장식 표현 검증 helper `_check_spam(title) -> list[TitleIssue]`. **`title_validator.py` 자체 모듈 상수**:
+  - `_TITLE_SPAM_LITERALS = ("필독", "초강추", "대박", "진짜", "핫이슈", "클릭", ...)` — 단순 literal 매치
+  - `_TITLE_SPAM_PATTERNS = (re.compile(r"!{3,}"), re.compile(r"[★♥]"), re.compile(r"~{2,}"), re.compile(r"\?{2,}"), re.compile(r"(이모지 범위 regex)"), ...)` — 정규식 매치
+  - 위치 결정 사유: 의료 도메인 의존이 아닌 도메인 독립 품질 규칙. compliance/rules.py 카테고리 추가는 SPEC 2개 + 5개 파일 동시 수정 의무 동반 → 본 plan 범위 폭증 회피. **단일 출처 원칙은 "의료법 카테고리"에 한정**, 일반 SEO 품질 규칙은 검증기 자체 보유 가능
+  - 모든 스팸 위반은 `severity="error"` (strict 토글 무관 항상 hard fail). (~45분)
+- [ ] **Step 5**: 의료법 금지 표현 검증 helper `_check_compliance(title, *, strict: bool) -> list[TitleIssue]`. `get_all_patterns(CompliancePolicy.SEO_STRICT)` 로 컴파일된 regex 목록 → 매치 카테고리 전부 issue 화. **strict 분기**:
+  - `strict=True` → `severity="error"` (재생성 트리거)
+  - `strict=False` (default) → `severity="warning"` (logger.warning 만, **재생성 트리거 안 함**, `passed=True` 유지)
+  - env 변수 `TITLE_VALIDATOR_STRICT_COMPLIANCE` (default `false`) 를 `config/settings.py` 의 `title_validator_strict_compliance: bool = False` 필드로 노출
+  - **rules.py 외부에 패턴 하드코딩 절대 금지** (compliance/CLAUDE.md 단일 출처 원칙 — 의료 카테고리는 항상 rules.py 만 참조). (~45분)
+- [ ] **Step 6**: `validate_title()` 본체 — 위 4종 helper (`_check_length`, `_check_keyword_repetition`, `_check_spam`, `_check_compliance`) 차례로 호출, 모든 issue 수집. `passed` 계산: **`severity="error"` 가 1개라도 있으면 `passed=False`**. warning 만 있으면 `passed=True` (재생성 트리거 안 함). suggestions 는 빈 리스트 유지 (YAGNI). (~30분)
+- [ ] **Step 7**: `application/stage_runner.py` `run_stage_outline_generation` 통합 — **재생성 전략 = B (통째 재생성 + intro 덮어쓰기)**:
+  - 기존 `validate_outline` 호출 직후 `validate_title(outline, pattern_card.keyword, strict_compliance=settings.title_validator_strict_compliance)` 추가
+  - 두 검증 결과를 합쳐 **1회 재생성** (LLM 비용 최소화)
+  - 재생성 호출은 기존과 동일한 `generate_outline(pattern_card, compliance_rules, feedback=...)`
+  - **재생성 후 intro 만 코드 덮어쓰기**: `replaced_outline.intro_md = old_outline.intro_md` (programmatic, LLM 호출 0회). helper `_replace_intro(new_outline: Outline, old_intro_md: str) -> Outline` 추가
+  - sections / image_prompts 는 재생성된 새 값 사용 (새 title 과 잘 맞을 가능성)
+  - feedback 문자열 합성 시 outline issues / title issues (severity=error 만) 구분된 섹션으로 표기
+  - 재생성 후에도 title issue 가 남으면 logger.warning 만 (3계층 시스템 일관성)
+  - **title 단독 LLM helper / 신규 프롬프트 빌더 / 신규 tool_use 스키마 — 모두 금지** (핵심 원칙). (~1시간)
+- [ ] **Step 8**: `config/settings.py` — `title_validator_strict_compliance: bool = False` 필드 추가. env 변수 매핑 `TITLE_VALIDATOR_STRICT_COMPLIANCE`. Pydantic settings 패턴 기존 필드 따름. (~15분)
+- [ ] **Step 9**: `tests/test_generation/test_title_validator.py` 신규 — 아래 "테스트 케이스" 19~20개 작성. `_make_outline_with_title()` 헬퍼로 minimal `Outline` 인스턴스 생성. (~1시간 30분)
+- [ ] **Step 10**: 검증 — `pytest tests/test_generation/test_title_validator.py --no-cov` 그린, `pytest tests/test_generation/test_outline_validator.py --no-cov` regression 그린, `pytest tests/test_application --no-cov` (stage_runner 영향 검증) 그린, `bash .claude/hooks/build-check-fast.sh` 클린. (~30분)
+- [ ] **Step 11**: 최종 게이트 — `bash .claude/hooks/build-check.sh` 그린 (커버리지 포함). 통과 시 commit `feat(generation): HTML title 검증 (길이/반복/스팸/의료법)` 안 (사용자 승인 후 실제 commit). (~30분)
+
+총 예상: 7~8시간 (Step 7 의 intro 덮어쓰기 helper + Step 9 의 테스트 작성이 가장 무거움).
+
+## 검증 항목 상세
+
+### 1. 길이 (`length`)
+- **hard fail (error, 재생성)**: `< 20자` 또는 `> 40자`
+- **권장 범위 외 (warning, logger 만)**: `20~24자`, `36~40자`
+- **정상**: `25~35자`
+- 사유: 네이버 SERP PC ~30자, 모바일 ~25자에서 잘림. 의료 정보성 키워드 일부가 25 미만으로 자연스러울 수 있어 hard fail 은 20 까지 완화. 40 초과는 가독성 손실 확정
+
+### 2. 키워드 반복 (`keyword_repetition`)
+- `pattern_card.keyword` 를 primary keyword 로 받음 (stage_runner 가 전달)
+- **normalized exact match 만**: 대소문자 lower + 연속 공백 단일화 후 `count() >= 2` 면 위반 (`severity="error"`)
+- 부분 매치 / 형태소 분석 / 공백 변형 — **OUT-OF-SCOPE** (후속 PR)
+- 빈 키워드 / None → 검증 스킵 (graceful)
+
+### 3. 스팸/장식 표현 (`spam`)
+- **위치**: `title_validator.py` 자체 모듈 상수 `_TITLE_SPAM_LITERALS` / `_TITLE_SPAM_PATTERNS`
+- 위반 시 항상 `severity="error"` (strict 토글 무관)
+- compliance/rules.py 변경 없음 (의료 카테고리 외 일반 품질 규칙)
+
+### 4. 의료법 금지 표현 (`compliance`)
+- `domain.compliance.rules.get_all_patterns(CompliancePolicy.SEO_STRICT)` 호출 → 10개 카테고리 regex
+- **strict 토글 분기**:
+  - `TITLE_VALIDATOR_STRICT_COMPLIANCE=true` → `severity="error"` (재생성 트리거)
+  - default `false` → `severity="warning"` (logger 만, `passed=True` 유지)
+- `rules.py` 외부에 패턴/금지표현 절대 하드코딩 금지 (post-edit-lint.sh 훅이 차단)
+
+## 테스트 케이스 (총 19~20개)
+
+`TestValidateTitle` 클래스 내부:
+
+### 길이 (6개)
+1. `test_passes_when_all_ok` — 28자 + 위반 없음 → `passed=True, issues=[]`
+2. `test_fails_when_title_too_short_under_20` — 12자 → `length` error
+3. `test_fails_when_title_too_long_over_40` — 45자 → `length` error
+4. `test_warns_when_title_in_recommend_outer_22` — 22자 → `length` warning, `passed=True`
+5. `test_warns_when_title_in_recommend_outer_38` — 38자 → `length` warning, `passed=True`
+6. `test_passes_at_recommend_boundary_25_and_35` — 정확히 25자 / 35자 → 통과
+
+### 키워드 반복 (3개)
+7. `test_fails_when_primary_keyword_repeats_twice` — "탈모치료 가이드 - 탈모치료 핵심" → `keyword_repetition` error
+8. `test_passes_when_primary_keyword_appears_once` — "탈모치료 핵심 가이드 정리" → 통과
+9. `test_skips_repetition_check_when_keyword_empty` — primary_keyword=None → issue 없음
+
+### 스팸 / 장식 (3개)
+10. `test_fails_when_title_contains_spam_literal` — "필독! 탈모치료 핵심 가이드" → `spam` error
+11. `test_fails_when_title_contains_excessive_exclamation` — "탈모치료 가이드!!!" → `spam` error (`!{3,}` 패턴)
+12. `test_fails_when_title_contains_decorative_chars` — "★ 탈모치료 핵심 정리 ★" → `spam` error
+
+### 의료법 strict 토글 (2개)
+13. `test_warns_compliance_when_strict_off` — "100% 효과 보장 탈모치료 정리" + `strict_compliance=False` → `compliance` warning, `passed=True`
+14. `test_fails_compliance_when_strict_on` — 동일 title + `strict_compliance=True` → `compliance` error, `passed=False`
+
+### 다중 issue 동시 수집 (1개)
+15. `test_collects_multiple_issues_simultaneously` — 길이 위반 + 키워드 반복 + 스팸 → 모든 issue 수집 (short-circuit 안 함)
+
+### intro 보존 회귀 (1개) — stage_runner 통합 테스트
+16. `test_intro_preserved_after_outline_regeneration` — Mock `generate_outline` 으로 1차→2차 다른 intro 반환 / title issue 1차에서 발생 / 2차 outline 의 `intro_md` 가 1차 값으로 덮어써졌는지 확인 (M2 톤 락 회귀)
+
+### 단일 출처 / 케이스 (2~3개)
+17. `test_keyword_repetition_normalized_case` — primary "Hair" + title 내 "HAIR ... hair" → 위반
+18. `test_compliance_via_rules_module_only` — monkeypatch 로 `rules.RULES` 비우면 compliance issue 0
+19. `test_validate_title_passes_with_only_warnings` — warning 만 다수 / error 없음 → `passed=True`
+
+선택 (시간 여유 시):
+20. `test_settings_default_strict_compliance_is_false` — `config/settings.py` 의 default 회귀
+
+## 위험 요소 / 결정 필요 사항
+
+1. **(✅ 결정 — 길이)** 20~40 hard fail / 25~35 권장 (warning) / 20~24·36~40 warning. severity 분기로 구현
+2. **(✅ 결정 — 키워드 반복)** normalized exact match 만. 부분 매치 / 형태소 / 공백 변형 OUT-OF-SCOPE
+3. **(✅ 결정 — 재생성 정책)** B (outline 통째 재생성 + intro 코드 덮어쓰기). title 단독 LLM helper 금지
+4. **(✅ 결정 — compliance false positive)** env 토글 `TITLE_VALIDATOR_STRICT_COMPLIANCE` default `false`. False → warning + `passed=True`. True → error + 재생성
+5. **(✅ 결정 — 스팸 검증)** 본 plan 포함. `title_validator.py` 자체 모듈 상수. compliance/rules.py 변경 없음
+6. **(✅ 결정 — Slack notifier)** 본 plan 보류. logger.warning + 테스트만. 후속 PR 에서 별도 plan
+7. **(잔존 리스크) primary_keyword 의 전달 경로**: `pattern_card.keyword` 가 항상 채워진다는 가정. `tests/test_outline_validator.py` 의 `_make_pattern_card` 가 `keyword="테스트"` 명시 → 안전
+8. **(잔존 리스크) Pydantic 모델 정의 위치**: `TitleValidationReport` 는 `domain/generation/title_validator.py` 안. outline_validator.py 의 `OutlineIssue` 자매 패턴 일관성. model.py 는 "도메인 출력", validator report 는 "검증 결과" 분리
+9. **(잔존 리스크) intro 덮어쓰기와 sections 정합성**: 새 title 에 맞춰 sections 가 바뀌었는데 intro 만 옛 값이면 어긋날 가능성. 완화: intro 는 도입부(200~300자) 톤 락이라 sections 와 직접 의존 약함. 어긋남 발생 시 운영 데이터로 후속 PR
+
+## 본 plan 에서 명시적으로 제외한 것 (OUT-OF-SCOPE)
+
+- **title 단독 LLM helper / 신규 prompt builder / 신규 tool_use 스키마** — 핵심 원칙 위반 (LLM 호출 추가 금지)
+- **자동 수정 (fixer)** — 본 plan 은 quality gate, fixer 아님. 위반은 outline 재생성 1회 + warning 만
+- **부분 매치 / 형태소 분석 / 공백 변형 키워드 반복** — 후속 PR 에서 형태소 분석기 도입 시 별도 plan
+- **의료법 카테고리 추가 / `domain/compliance/rules.py` 변경** — 스팸 규칙은 `title_validator.py` 자체 보유. 단일 출처 원칙은 의료 카테고리에 한정
+- **Slack notifier / Phase 4 알림 연결** — `logger.warning` 만으로 충분. 후속 PR 에서 "재생성 실패 / strict fail" 운영 이벤트 별도 plan
+- **Meta description / og:* / JSON-LD / canonical 생성** — naver-seo-guide.md "Top 5" 의 #1·#3·#4 별도 plan
+- **composer 의 `<title>` 템플릿 변경** — `<title>` 은 본문 복사 대상 아니므로 SERP 영향 없음
+- **title 전용 compliance 화이트리스트** — strict default false 로 false positive 영향 최소화. 운영 데이터 누적 후 후속 PR
+- **regression 테스트 fixture 추가 (실측 HTML 기반)** — 본 plan 은 단위 테스트 + intro 보존 회귀 1건만

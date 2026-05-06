@@ -76,6 +76,12 @@ class Settings(BaseSettings):
     )
     job_timeout_seconds: int = 3600  # 단일 파이프라인 실행 상한
 
+    # Title validator (domain/generation/title_validator.py)
+    # default False — 의료법 위반은 logger.warning 만, 재생성 트리거 안 함.
+    # True 시 strict 모드로 의료법 위반도 hard fail 처리 → outline 1회 재생성 트리거.
+    # 의료 외 도메인 false positive ("최초", "1등", "반드시") 폭발 방지 위해 default off.
+    title_validator_strict_compliance: bool = False
+
     # Supabase Storage (결과물 영속화 — Render 컨테이너 파일시스템 휘발 대응)
     storage_bucket: str = "results"
 
