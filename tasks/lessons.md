@@ -984,3 +984,28 @@ render(withSwr(<PublicationForm variant="create" />));
 
 **참조**: `web/frontend/src/components/__tests__/PublicationForm.test.tsx:withSwr`
 
+---
+
+## build-check.sh 의 pytest 는 system python 사용 — venv 와 의존 동기화 필수 (2026-05-08)
+
+**배경**: UX Refactor Step 4 에서 kiwipiepy 를 venv 에 설치한 뒤 단독 pytest 실행은 32/32 PASS. 그러나 `build-check.sh` 의 전체 pytest 는 5 fail (TestNormalizeMorpheme 4 + TestKeywordRepetitionMorphemeBranch 1).
+
+**원인**: `build-check.sh` 가 `pytest -q` 만 호출 → `which pytest` 가 `/c/Users/assag/AppData/Local/Programs/Python/Python313/Scripts/pytest` (시스템 python) 을 가리킴. venv 의 pytest 가 아님. 시스템 python 에는 kiwipiepy 미설치 → `_get_kiwi()` 가 ImportError → `_kiwi_unavailable=True` 모듈 글로벌 변수 set → 전체 morpheme 테스트 fail.
+
+**해결**: 시스템 python 에도 kiwipiepy 설치.
+
+```bash
+/c/Users/assag/AppData/Local/Programs/Python/Python313/python.exe -m pip install "kiwipiepy>=0.17"
+```
+
+**일반화 규칙**:
+- **`bash .claude/hooks/build-check.sh` 는 시스템 python 의 pytest 사용** — Windows 환경에서 venv 활성화 없이 호출되는 패턴. venv 와 시스템 python 양쪽에 같은 패키지 설치 필요
+- **신규 의존 추가 시 두 번 설치**: `.venv/Scripts/python.exe -m pip install X` + 시스템 python 도 동일
+- **단독 PASS / build-check FAIL 패턴 진단**: `which pytest` + `which python` 로 PATH 확인 → 시스템 vs venv 차이 의심
+- **모듈 글로벌 캐시의 함정**: `_kiwi_instance` 같은 lazy singleton 이 첫 호출에서 ImportError 면 `_kiwi_unavailable=True` 가 모듈 lifetime 동안 유지. 한 테스트 fail 이 후속 테스트 전체 fail 유발. monkeypatch 만으로는 cleanup 안 됨 (글로벌 변수는 setattr 대상 아님)
+- **장기 해결**: `.venv/Scripts/python.exe -m pytest` 로 build-check.sh 변경 (TODO — 운영 환경 고정 후)
+
+**참조**:
+- `domain/generation/title_validator.py:_get_kiwi` (singleton + ImportError sticky)
+- `.claude/hooks/build-check.sh:64` (`pytest -q` 시스템 호출)
+

@@ -2402,7 +2402,7 @@ UX Refactor P1~P6 에서 산발적으로 적용한 색상/spacing/typography 변
 
 ### 구현 단계
 
-- [ ] **Step 4.0 — kiwipiepy 의존 영향 평가 + 환경 검증 (plan-reviewer 보강 B/C)** (0.25일)
+- [x] **Step 4.0 — kiwipiepy 의존 영향 평가 + 환경 검증 (plan-reviewer 보강 B/C)** ✅ 2026-05-08 — cold start 측정 import 0.087s + Kiwi() 0.655s + first analyze 1.130s + second 0.0002s ≈ 1.87s (Plan 추정 0.1s 보다 느리지만 singleton 캐시로 worker 당 1회만)
   - `grep -r "kiwipiepy\|konlpy\|from kiwipiepy\|from konlpy" .` 으로 본 프로젝트의 기존 사용 확인
   - **default**: 미사용 — pyproject.toml 에 의존 추가
   - 🔴 **production 환경 검증** (1회):
@@ -2413,11 +2413,11 @@ UX Refactor P1~P6 에서 산발적으로 적용한 색상/spacing/typography 변
     - 추정 0.1초 (KoNLPy JVM 1~2초 대비 10배)
     - 결과를 plan 안에 기록 후 Step 4.2 의 모듈 단위 캐시 (singleton 패턴) 정당성 확인
   - ImportError fallback 정책: 만약 wheel 미지원 환경 (ARM 일부) → fallback 으로 graceful degrade
-- [ ] **Step 4.1 — pyproject.toml 의존 추가** (0.25일)
+- [x] **Step 4.1 — pyproject.toml 의존 추가** ✅ 2026-05-08 — pyproject 에 이미 추가돼 있었으나 venv (+ system python) 양쪽 미설치였음. `pip install kiwipiepy>=0.17` 으로 양쪽 설치 (build-check.sh 가 system pytest 사용)
   - `dependencies` 에 `kiwipiepy>=0.17` 추가 (정상 흐름 필수)
   - `pip install -e ".[dev]"` 후 `from kiwipiepy import Kiwi` 동작 확인
   - 검증: `python -c "from kiwipiepy import Kiwi; k = Kiwi(); print([t.form for t in k.analyze('다이어트 한의원')[0][0] if t.tag.startswith('NN')])"` 출력 → `["다이어트", "한의원"]`
-- [ ] **Step 4.2 — `_normalize_morpheme(text, keyword)` helper 추가** (0.5일)
+- [x] **Step 4.2 — `_normalize_morpheme(text, keyword)` helper 추가** ✅ 2026-05-08 — `domain/generation/title_validator.py:155~214` 에 이미 구현돼 있었음. singleton 캐시 (`_kiwi_instance` + `_kiwi_unavailable`) + ImportError fallback
   - title_validator.py 에 신규 함수 + 모듈 단위 Kiwi 캐시 (`_kiwi_instance: Kiwi | None = None`, lazy init via singleton)
   - 동작:
     1. text 와 keyword 양쪽에 `kiwi.analyze()` → `tag.startswith("NN")` 필터로 명사 set 추출
@@ -2425,12 +2425,11 @@ UX Refactor P1~P6 에서 산발적으로 적용한 색상/spacing/typography 변
     3. fallback (ImportError): 기존 `_normalize` 만 사용 (degrade)
   - 모듈 단위 캐시 (singleton 패턴) 로 worker 당 1회만 시동 (cold start 0.1초 추정 — Step 4.0 측정 결과)
   - 검증: `_normalize_morpheme("다이어트 한의원 추천", "다이어트한의원")` → True
-- [ ] **Step 4.3 — `_check_keyword_repetition` 분기** (0.25일)
-  - 기존 `_normalize` exact match → 매칭 안 되면 `_normalize_morpheme` fallback
-  - **순서 중요**: exact match 우선 (현재 21 vitest 회귀 0), 형태소는 fallback only
-  - 신규 매칭은 severity=warning 으로 처리 시작 (default error 시 회귀 위험)
-  - 운영 1주 후 severity 상향 결정 (잔존 결정 사항)
-- [ ] **Step 4.4 — 형태소 매칭 6 신규 vitest 케이스 (plan-reviewer 보강 H)** (0.5일)
+- [x] **Step 4.3 — `_check_keyword_repetition` 분기** ✅ 2026-05-08 (commit `05f9345`)
+  - exact 1회 일 때 마스킹 후 형태소 매칭 → `keyword_repetition_morpheme` warning issue 추가 (passed=True 유지)
+  - exact 0/2+ 케이스는 기존 동작 유지 (회귀 0)
+  - 운영 1주 후 severity 상향 (error) 결정 — 잔존 결정 사항
+- [x] **Step 4.4 — 형태소 매칭 11 신규 pytest 케이스** ✅ 2026-05-08 — `TestNormalizeMorpheme` 8건 + `TestKeywordRepetitionMorphemeBranch` 3건. 단순 helper 검증 + validate_title 분기 회귀 + kiwi 미사용 fallback. 32/32 그린
   - 🔴 **임계값 분모 명시**: 분모 = **keyword 명사 set 크기** (recall 기준 — keyword 의 명사가 title 에 얼마나 포함되었는지)
   - 임계값 0.7 은 default, env 토글 `TITLE_VALIDATOR_MORPHEME_THRESHOLD` 추가 (운영 데이터 누적 후 조정)
   - 케이스:
@@ -2441,7 +2440,7 @@ UX Refactor P1~P6 에서 산발적으로 적용한 색상/spacing/typography 변
     5. **70% 경계값 케이스**: keyword 명사 3개 중 2개 포함 = 0.67 → 통과 (미매칭) / 3개 모두 = 1.0 → fail (매칭)
     6. kiwipiepy ImportError mock → fallback 만으로 동작 검증 (`_normalize` exact match 결과 검증)
   - 기존 21 vitest 회귀 0
-- [ ] **Step 4.5 — 빌드 게이트 + commit + 데모** (0.25일)
+- [x] **Step 4.5 — 빌드 게이트 + commit + 데모** ✅ 2026-05-08 (commit `05f9345`) — `build-check.sh` PASSED, vitest 143/143, pytest 1316/1316
 
 ### 검증 게이트
 
