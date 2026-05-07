@@ -204,7 +204,12 @@ class TestUpdatePublication:
         assert result is not None
         assert result.keyword == "new"
         storage_mock.update_publication.assert_called_once_with(
-            "pub-1", keyword="new", url=None, slug=None, published_at=None
+            "pub-1",
+            keyword="new",
+            url=None,
+            slug=None,
+            published_at=None,
+            blog_channel_id=None,
         )
 
     def test_url_normalized_before_update(self, storage_mock: MagicMock) -> None:

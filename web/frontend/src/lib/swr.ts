@@ -10,6 +10,7 @@ import {
   getMonthlyCalendar,
   getOperationsQueue,
   getOperationsSummary,
+  listBlogChannels,
   type QueueTab,
 } from "@/lib/api";
 import { getUnifiedQueue, type UnifiedQueueFilters } from "@/lib/unifiedQueue";
@@ -21,6 +22,7 @@ export const K = {
   monthlyCalendar: (month: string) => `/rankings/calendar?month=${month}`,
   unifiedQueue: (f: UnifiedQueueFilters) =>
     `unified-queue:${f.source ?? "all"}|${(f.statuses ?? []).join(",")}|${f.batch_id ?? ""}|${f.search ?? ""}`,
+  blogChannels: "/blog-channels",
 } as const;
 
 // 헬퍼: 페이지에서 useSWR(K.xxx, fetchOps.xxx) 로 쓸 수 있게 묶음.
@@ -30,4 +32,5 @@ export const fetchOps = {
   insightsSummary: () => getInsightsSummary(),
   monthlyCalendar: (month: string) => () => getMonthlyCalendar(month),
   unifiedQueue: (f: UnifiedQueueFilters) => () => getUnifiedQueue(f),
+  blogChannels: () => listBlogChannels(),
 } as const;

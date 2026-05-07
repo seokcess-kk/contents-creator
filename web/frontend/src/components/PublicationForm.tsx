@@ -4,12 +4,17 @@
 // variant=create  → 신규 등록 (단일 결과 페이지의 jobId/slug 또는 외부 URL 모두 지원)
 // variant=edit    → 기존 publication 수정 (PublicationEditDialog 동등)
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import Link from "next/link";
+import useSWR from "swr";
 import {
   createPublication,
+  listBlogChannels,
   updatePublication,
+  type BlogChannel,
   type Publication,
 } from "@/lib/api";
+import { K } from "@/lib/swr";
 import { Button } from "@/components/ui";
 
 export type PublicationFormVariant = "create" | "edit";
@@ -70,6 +75,24 @@ export default function PublicationForm({
   const [error, setError] = useState<string | null>(null);
   const [okMessage, setOkMessage] = useState<string | null>(null);
 
+  // 블로그 채널 — 등록된 채널 목록 (Supabase 미설정 환경/Render cold start 시 빈 배열)
+  const { data: channelData } = useSWR(K.blogChannels, listBlogChannels, {
+    // 발행 폼은 자주 열리지만 채널 목록은 거의 안 변하므로 dedupe 30초.
+    dedupingInterval: 30_000,
+  });
+  const channels: BlogChannel[] = channelData?.items ?? [];
+  const defaultChannelId = channels.find((c) => c.is_default)?.id ?? "";
+  const [blogChannelId, setBlogChannelId] = useState<string>(
+    source?.blog_channel_id ?? "",
+  );
+  // SWR 가 채널 목록을 가져온 뒤, 사용자가 아직 안 골랐으면 default 자동 선택.
+  // editing variant 의 source.blog_channel_id 가 있으면 건너뜀.
+  useEffect(() => {
+    if (blogChannelId) return;
+    if (source?.blog_channel_id) return;
+    if (defaultChannelId) setBlogChannelId(defaultChannelId);
+  }, [defaultChannelId, blogChannelId, source?.blog_channel_id]);
+
   const effectiveTone = tone ?? (variant === "edit" ? "blue" : slug ? "amber" : "emerald");
 
   async function handleSubmit(e: React.FormEvent) {
@@ -86,6 +109,7 @@ export default function PublicationForm({
           url: url.trim(),
           job_id: jobId ?? null,
           published_at: publishedAt ? new Date(publishedAt).toISOString() : null,
+          blog_channel_id: blogChannelId || null,
         });
         // 외부 등록은 입력 초기화
         if (!slug) {
@@ -102,6 +126,9 @@ export default function PublicationForm({
         const newPubAt = publishedAt ? new Date(publishedAt).toISOString() : null;
         if ((newPubAt ?? null) !== (publication.published_at ?? null)) {
           patch.published_at = newPubAt;
+        }
+        if ((blogChannelId || null) !== (publication.blog_channel_id ?? null)) {
+          patch.blog_channel_id = blogChannelId || null;
         }
         if (Object.keys(patch).length === 0) {
           onCancel?.();
@@ -182,6 +209,30 @@ export default function PublicationForm({
         required
         className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
       />
+      <div className="flex items-center gap-2 flex-wrap">
+        <label className="text-xs text-gray-700">블로그 채널:</label>
+        <select
+          value={blogChannelId}
+          onChange={(e) => setBlogChannelId(e.target.value)}
+          className="flex-1 min-w-[140px] px-2 py-1 border border-gray-300 rounded text-xs bg-white"
+          aria-label="발행 블로그 채널 선택"
+        >
+          <option value="">— 미지정 —</option>
+          {channels.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+              {c.is_default ? " ★" : ""}
+            </option>
+          ))}
+        </select>
+        <Link
+          href="/blogs"
+          className="text-[11px] text-blue-700 hover:underline shrink-0"
+          title="블로그 채널 등록·수정"
+        >
+          + 채널 관리
+        </Link>
+      </div>
       <div className="flex items-center gap-2 flex-wrap">
         <label className="text-xs text-gray-700">발행일 (선택):</label>
         <input

@@ -50,7 +50,9 @@ const NAV_ITEMS: NavItem[] = [
   {
     label: "관리",
     href: "/usage",
-    matches: (p) => p.startsWith("/usage"),
+    // /blogs 도 운영 메타 관리이므로 "관리" 하위로 active 처리.
+    // 직접 진입은 PublicationForm 채널 셀렉트의 "관리" 링크 또는 URL 직접 입력.
+    matches: (p) => p.startsWith("/usage") || p.startsWith("/blogs"),
   },
 ];
 

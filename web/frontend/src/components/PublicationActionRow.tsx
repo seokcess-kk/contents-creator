@@ -7,6 +7,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
+import useSWR from "swr";
 import HoldDialog from "@/components/HoldDialog";
 import RepublishDialog from "@/components/RepublishDialog";
 import RowDropdownMenu from "@/components/RowDropdownMenu";
@@ -15,10 +16,13 @@ import { Button, StatusBadge } from "@/components/ui";
 import {
   deletePublication,
   dismissPublication,
+  listBlogChannels,
   releasePublicationHold,
   restorePublication,
+  type BlogChannel,
   type QueueItem,
 } from "@/lib/api";
+import { K } from "@/lib/swr";
 import {
   getDiagnosisLabel,
   getDifficultyLabel,
@@ -37,6 +41,15 @@ export default function PublicationActionRow({ item, onChanged }: PublicationAct
   const [error, setError] = useState<string | null>(null);
   const [holdOpen, setHoldOpen] = useState(false);
   const [republishOpen, setRepublishOpen] = useState(false);
+
+  // 같은 키 dedupe → N row 가 동시 렌더돼도 1번만 fetch.
+  const { data: channelData } = useSWR(K.blogChannels, listBlogChannels, {
+    dedupingInterval: 30_000,
+  });
+  const channels: BlogChannel[] = channelData?.items ?? [];
+  const channel = item.blog_channel_id
+    ? channels.find((c) => c.id === item.blog_channel_id) ?? null
+    : null;
 
   const wf = item.workflow_status;
   const latest = item.latest_snapshot;
@@ -77,7 +90,7 @@ export default function PublicationActionRow({ item, onChanged }: PublicationAct
     onDelete: () => handleAction(() => deletePublication(item.id)),
   });
 
-  const tooltip = buildTooltip(item);
+  const tooltip = buildTooltip(item, channel);
 
   function handlePrimaryClick(id: string) {
     if (id === "republish_decide") setRepublishOpen(true);
@@ -116,6 +129,14 @@ export default function PublicationActionRow({ item, onChanged }: PublicationAct
             status={diagnosis.reason}
             label={`${getDiagnosisLabel(diagnosis.reason)} (${Math.round(diagnosis.confidence * 100)}%)`}
           />
+        )}
+        {channel && (
+          <span
+            className="text-[11px] text-gray-600 bg-gray-100 rounded px-1.5 py-0.5 truncate max-w-[120px] shrink-0"
+            title={`발행 블로그: ${channel.name} (${channel.blog_id})`}
+          >
+            @{channel.name}
+          </span>
         )}
         <div className="ml-auto flex items-center gap-1 shrink-0">
           {primary && (
@@ -161,11 +182,14 @@ export default function PublicationActionRow({ item, onChanged }: PublicationAct
   );
 }
 
-function buildTooltip(item: QueueItem): string {
+function buildTooltip(item: QueueItem, channel: BlogChannel | null): string {
   const parts: string[] = [
     `상태: ${getWorkflowLabel(item.workflow_status)}`,
     `노출: ${getVisibilityLabel(item.visibility_status)}`,
   ];
+  if (channel) {
+    parts.push(`블로그: ${channel.name} (${channel.blog_id})`);
+  }
   if (item.url) parts.push(`URL: ${item.url}`);
   if (item.held_until) {
     parts.push(

@@ -239,6 +239,7 @@ def update_publication(
     url: str | None = None,
     slug: str | None = None,
     published_at: datetime | None = None,
+    blog_channel_id: str | None = None,
 ) -> Publication | None:
     """publication 부분 수정. 전달된 필드만 갱신.
 
@@ -248,6 +249,8 @@ def update_publication(
     draft → active 자동 전이: url 등록 시 현재 workflow_status="draft" 면
     `url_registered` 액션 기록 + workflow_status="active" 로 전이해 측정 대상화.
     재발행 자식 publication 이 URL 등록 후 측정에서 빠지지 않도록 하기 위함.
+
+    blog_channel_id: 운영자가 어느 블로그 채널에서 발행했는지 갱신 (nullable FK).
     """
     normalized_url: str | None = None
     if url is not None:
@@ -267,6 +270,7 @@ def update_publication(
         url=normalized_url,
         slug=slug,
         published_at=published_at,
+        blog_channel_id=blog_channel_id,
     )
     if updated is None:
         return None

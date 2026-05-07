@@ -64,6 +64,7 @@ class PublicationCreateRequest(BaseModel):
     slug: str | None = Field(default=None, min_length=1)
     job_id: str | None = None
     published_at: datetime | None = None
+    blog_channel_id: str | None = None
 
     @field_validator("url")
     @classmethod
@@ -83,6 +84,7 @@ class PublicationUpdateRequest(BaseModel):
     url: str | None = Field(default=None, min_length=1)
     slug: str | None = Field(default=None, min_length=1)
     published_at: datetime | None = None
+    blog_channel_id: str | None = None
 
 
 # ── 엔드포인트 ──
@@ -98,6 +100,7 @@ def create_publication(req: PublicationCreateRequest) -> dict[str, Any]:
             url=req.url,
             job_id=req.job_id,
             published_at=req.published_at,
+            blog_channel_id=req.blog_channel_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

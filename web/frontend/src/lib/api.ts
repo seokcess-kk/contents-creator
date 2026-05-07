@@ -150,6 +150,7 @@ export interface Publication {
   visibility_status?: string;
   held_until?: string | null;
   keyword_difficulty_snapshot_id?: string | null;
+  blog_channel_id?: string | null;
 }
 
 export interface RankingSnapshot {
@@ -182,6 +183,7 @@ export function createPublication(params: {
   slug?: string | null;
   job_id?: string | null;
   published_at?: string | null;
+  blog_channel_id?: string | null;
 }): Promise<Publication> {
   return fetchJson("/rankings/publications", {
     method: "POST",
@@ -275,6 +277,7 @@ export function updatePublication(
     url?: string | null;
     slug?: string | null;
     published_at?: string | null;
+    blog_channel_id?: string | null;
   },
 ): Promise<Publication> {
   return fetchJson(`/rankings/publications/${encodeURIComponent(publicationId)}`, {
@@ -848,4 +851,62 @@ export function getPatternCardById(id: string): Promise<PatternCardDetail> {
 
 export function getPatternCardBySlugLatest(slug: string): Promise<PatternCardDetail> {
   return fetchJson(`/pattern-cards/by-slug/${encodeURIComponent(slug)}/latest`);
+}
+
+// ── Blog Channels (2026-05-07) ──
+
+export interface BlogChannel {
+  id: string;
+  name: string;
+  blog_id: string;
+  homepage_url: string;
+  memo: string | null;
+  is_default: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export function listBlogChannels(): Promise<{ count: number; items: BlogChannel[]; warning?: string }> {
+  return fetchJson("/blog-channels");
+}
+
+export function createBlogChannel(params: {
+  name: string;
+  blog_id: string;
+  homepage_url: string;
+  memo?: string | null;
+  is_default?: boolean;
+}): Promise<BlogChannel> {
+  return fetchJson("/blog-channels", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
+export function updateBlogChannel(
+  channelId: string,
+  patch: {
+    name?: string;
+    blog_id?: string;
+    homepage_url?: string;
+    memo?: string | null;
+    is_default?: boolean;
+  },
+): Promise<BlogChannel> {
+  return fetchJson(`/blog-channels/${encodeURIComponent(channelId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+export async function deleteBlogChannel(channelId: string): Promise<void> {
+  // 204 응답은 본문 없음 — fetchJson 의 res.json() 회피 (cancelJob 동등 패턴).
+  const res = await fetch(`${API_BASE}/blog-channels/${encodeURIComponent(channelId)}`, {
+    method: "DELETE",
+    headers: buildHeaders(),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`API ${res.status}: ${text}`);
+  }
 }
