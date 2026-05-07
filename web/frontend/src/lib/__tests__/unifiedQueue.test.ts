@@ -47,6 +47,7 @@ describe("getUnifiedQueue", () => {
           brand_id: null,
           target_url: null,
           memo: null,
+          blog_channel_id: null,
           status,
           retry_count: 0,
           max_retries: 0,

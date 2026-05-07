@@ -112,6 +112,7 @@ class BulkPublicationItem(BaseModel):
     url: str | None = None
     slug: str | None = Field(default=None, min_length=1)
     published_at: datetime | None = None
+    blog_channel_id: str | None = None
 
 
 class BulkPublicationsRequest(BaseModel):

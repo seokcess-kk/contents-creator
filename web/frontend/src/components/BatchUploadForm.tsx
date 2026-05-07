@@ -73,7 +73,12 @@ export default function BatchUploadForm({ onCreated }: Props) {
             className="block w-full text-sm text-gray-700 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-blue-50 file:text-blue-700 file:font-semibold hover:file:bg-blue-100"
           />
           <p className="text-[11px] text-gray-500 mt-1">
-            컬럼: keyword(필수), operation, priority, cluster_id, cluster_role, intent, region, brand_id, target_url, memo
+            컬럼: keyword(필수), operation, priority, cluster_id, cluster_role, intent, region, brand_id, target_url, memo,
+            <strong> blog</strong>(채널 별칭 또는 네이버 blog_id —{" "}
+            <a href="/blogs" className="text-blue-700 hover:underline">
+              /blogs
+            </a>{" "}
+            에서 등록한 채널과 매칭)
           </p>
         </div>
         <div className="col-span-7 lg:col-span-3">

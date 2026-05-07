@@ -198,6 +198,7 @@ export interface BulkPublicationInput {
   url?: string | null;
   slug?: string | null;
   published_at?: string | null;
+  blog_channel_id?: string | null;
 }
 
 export interface BulkRegisterResponse {
@@ -576,6 +577,7 @@ export interface BatchItem {
   brand_id: string | null;
   target_url: string | null;
   memo: string | null;
+  blog_channel_id: string | null;
   status: string;
   retry_count: number;
   max_retries: number;

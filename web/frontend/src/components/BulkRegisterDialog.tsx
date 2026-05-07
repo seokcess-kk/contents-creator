@@ -1,11 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import useSWR from "swr";
 import {
   bulkRegisterPublications,
+  listBlogChannels,
+  type BlogChannel,
   type BulkPublicationInput,
   type BulkRegisterResponse,
 } from "@/lib/api";
+import { K } from "@/lib/swr";
 
 interface BulkRegisterDialogProps {
   onClose: () => void;
@@ -39,6 +43,13 @@ export default function BulkRegisterDialog({ onClose, onCompleted }: BulkRegiste
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<BulkRegisterResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [blogChannelId, setBlogChannelId] = useState<string>("");
+
+  // 채널 목록 (모든 row 의 일괄 매핑용 셀렉트). 미설정 → 미지정으로 등록.
+  const { data: channelData } = useSWR(K.blogChannels, listBlogChannels, {
+    dedupingInterval: 30_000,
+  });
+  const channels: BlogChannel[] = channelData?.items ?? [];
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -60,6 +71,7 @@ export default function BulkRegisterDialog({ onClose, onCompleted }: BulkRegiste
         keyword: r.keyword,
         url: r.url,
         published_at: r.publishedAt ?? null,
+        blog_channel_id: blogChannelId || null,
       }));
       const res = await bulkRegisterPublications(items);
       setResult(res);
@@ -97,6 +109,32 @@ export default function BulkRegisterDialog({ onClose, onCompleted }: BulkRegiste
               <div>
                 • 한 번에 최대 500개. 중복 URL 은 자동 skipped, 형식 위반은 failed 로 표시.
               </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap text-xs">
+              <label className="text-gray-700 font-medium">이번 등록의 블로그 채널:</label>
+              <select
+                value={blogChannelId}
+                onChange={(e) => setBlogChannelId(e.target.value)}
+                className="px-2 py-1 border border-gray-300 rounded bg-white"
+                aria-label="대량 등록 블로그 채널"
+              >
+                <option value="">— 미지정 (모든 row) —</option>
+                {channels.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                    {c.is_default ? " ★" : ""}
+                  </option>
+                ))}
+              </select>
+              <a
+                href="/blogs"
+                target="_blank"
+                rel="noreferrer"
+                className="text-blue-700 hover:underline"
+              >
+                + 채널 관리
+              </a>
             </div>
 
             <textarea

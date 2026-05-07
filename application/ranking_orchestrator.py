@@ -191,6 +191,7 @@ def bulk_register_publications(
                 slug=raw.get("slug"),
                 job_id=raw.get("job_id"),
                 published_at=_parse_iso(raw.get("published_at")),
+                blog_channel_id=raw.get("blog_channel_id"),
             )
         except ValueError as exc:
             failed.append({"index": idx, "reason": str(exc), "input": raw})

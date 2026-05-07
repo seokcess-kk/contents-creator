@@ -37,6 +37,8 @@ export interface UnifiedQueueItem {
   publication_id: string | null;
   /** 발행 대상 URL (배치 csv 의 target_url 또는 publication URL) */
   url: string | null;
+  /** 발행 블로그 채널 (nullable). 배치 = item.blog_channel_id, 단일 = 추적 미대응(null). */
+  blog_channel_id: string | null;
   created_at: string | null;
 }
 
@@ -123,6 +125,7 @@ function _batchItemToUnified(item: BatchItem): UnifiedQueueItem {
     compliance_violations: item.compliance_violations,
     publication_id: item.publication_id,
     url: item.target_url,
+    blog_channel_id: item.blog_channel_id,
     created_at: item.created_at,
   };
 }
@@ -142,6 +145,7 @@ function _jobToUnified(job: Job): UnifiedQueueItem {
     compliance_violations: [],
     publication_id: null,
     url: null,
+    blog_channel_id: null,
     created_at: job.created_at,
   };
 }

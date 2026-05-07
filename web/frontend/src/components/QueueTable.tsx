@@ -5,9 +5,12 @@
 import { useMemo } from "react";
 import Link from "next/link";
 import { ExternalLink } from "lucide-react";
+import useSWR from "swr";
 import RowDropdownMenu, { type MenuItem } from "@/components/RowDropdownMenu";
 import { DataTableShell, StatusBadge, type Column } from "@/components/ui";
+import { listBlogChannels, type BlogChannel } from "@/lib/api";
 import { getBatchItemLabel } from "@/lib/labels";
+import { K } from "@/lib/swr";
 import type { UnifiedQueueItem } from "@/lib/unifiedQueue";
 
 interface QueueTableProps {
@@ -31,6 +34,16 @@ export default function QueueTable({
   onReject,
   onRegisterUrl,
 }: QueueTableProps) {
+  // 모든 row 가 blog_channel_id 를 lookup 할 수 있도록 채널 목록을 1번만 fetch.
+  const { data: channelData } = useSWR(K.blogChannels, listBlogChannels, {
+    dedupingInterval: 30_000,
+  });
+  const channelById = useMemo(() => {
+    const map = new Map<string, BlogChannel>();
+    for (const c of channelData?.items ?? []) map.set(c.id, c);
+    return map;
+  }, [channelData]);
+
   const columns: Column<UnifiedQueueItem>[] = useMemo(
     () => [
       {
@@ -107,6 +120,24 @@ export default function QueueTable({
           ),
       },
       {
+        key: "blog",
+        header: "블로그",
+        cell: (row) => {
+          if (!row.blog_channel_id) {
+            return <span className="text-xs text-gray-400">미지정</span>;
+          }
+          const ch = channelById.get(row.blog_channel_id);
+          return (
+            <span
+              className="text-xs text-gray-700 truncate inline-block max-w-[120px]"
+              title={ch ? `${ch.name} (${ch.blog_id})` : "삭제된 채널"}
+            >
+              {ch ? ch.name : "(삭제됨)"}
+            </span>
+          );
+        },
+      },
+      {
         key: "actions",
         header: "",
         className: "text-right w-[140px]",
@@ -115,7 +146,7 @@ export default function QueueTable({
         ),
       },
     ],
-    [onPreview, onApprove, onNeedsFix, onReject, onRegisterUrl],
+    [onPreview, onApprove, onNeedsFix, onReject, onRegisterUrl, channelById],
   );
 
   function buildItems(row: UnifiedQueueItem): MenuItem[] {
