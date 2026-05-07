@@ -2522,47 +2522,48 @@ UX Refactor P1~P6 에서 산발적으로 적용한 색상/spacing/typography 변
 | Web API | `web/api/routers/blog_channels.py` — CRUD |
 | Frontend | `lib/api.ts` 확장 + `PublicationForm` 셀렉트 + `/blogs` 페이지 + 검수 큐 |
 
-### Phase 1 — 백엔드 (DB + 도메인 + API)
+### Phase 1 — 백엔드 (DB + 도메인 + API) ✅ 완료 (2026-05-07, commit `763c2a1`)
 
-- [ ] `config/schema.sql` — `blog_channels` 테이블 신설
+- [x] `config/schema.sql` — `blog_channels` 테이블 신설
   - id (uuid), name (별칭), blog_id (네이버 ID — `myblog123`), homepage_url, memo, is_default (bool), created_at, updated_at
   - unique(name), unique(blog_id)
-- [ ] `config/schema.sql` — `publications` + `keyword_batch_items` 에 `blog_channel_id uuid references blog_channels(id) on delete set null` 추가
-- [ ] `domain/blog_channel/__init__.py` + `model.py` — `BlogChannel` Pydantic
-- [ ] `domain/blog_channel/storage.py` — Supabase CRUD (`list_channels`, `get_channel`, `create_channel`, `update_channel`, `delete_channel`, `find_channel_by_name`)
-- [ ] `.claude/hooks/architecture-check.sh` — `STAGE_ORDER[blog_channel]=0` 격리 도메인 등록
-- [ ] `domain/ranking/model.py` — `Publication.blog_channel_id: str | None = None` 추가
-- [ ] `domain/ranking/storage.py` — insert/select 시 blog_channel_id 매핑
-- [ ] `domain/batch/model.py` — `KeywordBatchItem.blog_channel_id: str | None = None`
-- [ ] `domain/batch/storage.py` — payload 변환에 blog_channel_id 추가
-- [ ] `domain/batch/csv_parser.py` — `blog` 컬럼 매핑 (별칭 또는 채널 ID 문자열로 받음, application 에서 lookup)
-- [ ] `application/batch_orchestrator.py` — CSV `blog` 별칭 → `blog_channel_id` lookup (없으면 warning + null)
-- [ ] `application/auto_publisher.py` — `register_publication` 호출 시 `blog_channel_id` 전파
-- [ ] `application/ranking_orchestrator.py` — `register_publication(blog_channel_id=...)` 인자 추가
-- [ ] `web/api/routers/blog_channels.py` — `GET/POST/PATCH/DELETE /blog-channels`
-- [ ] `web/api/main.py` — 라우터 등록
-- [ ] `tests/test_blog_channel/test_storage.py` (Supabase mock) + `tests/test_application/test_blog_channel_lookup.py`
-- [ ] `bash .claude/hooks/build-check.sh` 그린 확인
+- [x] `config/schema.sql` — `publications` + `keyword_batch_items` 에 `blog_channel_id uuid references blog_channels(id) on delete set null` 추가
+- [x] `domain/blog_channel/__init__.py` + `model.py` — `BlogChannel` Pydantic
+- [x] `domain/blog_channel/storage.py` — Supabase CRUD (`list_channels`, `get_channel`, `create_channel`, `update_channel`, `delete_channel`, `find_channel_by_name`, `find_channel_by_blog_id`, `get_default_channel`)
+- [x] `.claude/hooks/architecture-check.sh` — `STAGE_ORDER[blog_channel]=0` 격리 도메인 등록
+- [x] `domain/ranking/model.py` — `Publication.blog_channel_id: str | None = None` 추가
+- [x] `domain/ranking/storage.py` — insert/update/select 시 blog_channel_id 매핑
+- [x] `domain/batch/model.py` — `KeywordBatchItem.blog_channel_id: str | None = None`
+- [x] `domain/batch/storage.py` — payload 변환에 blog_channel_id 추가
+- [x] `domain/batch/csv_parser.py` — `blog` 컬럼 + DI 패턴 `blog_resolver` (도메인 격리 유지)
+- [x] `application/batch_orchestrator.py` — `_build_blog_resolver()` (list_channels 1회 dict 캐시)
+- [x] `application/auto_publisher.py` — `register_publication` 호출 시 `blog_channel_id` 전파
+- [x] `application/ranking_orchestrator.py` — `register_publication`/`update_publication`/`bulk_register_publications` 모두 blog_channel_id 인자 추가
+- [x] `web/api/routers/blog_channels.py` — `GET/POST/PATCH/DELETE /blog-channels` (DELETE 는 `-> Response` 직접 반환 — `-> None` + status_code=204 충돌 회피)
+- [x] `web/api/main.py` — 라우터 등록
+- [x] `tests/test_blog_channel/test_model.py` (3건) + `tests/test_batch/test_csv_parser.py` blog_resolver 회귀 (2건)
+- [x] `bash .claude/hooks/build-check.sh` 그린 확인 (1309 passed, 사전 morpheme fail 4건은 환경 의존성)
+- [x] **Supabase 운영 DB 마이그레이션 적용 완료 (2026-05-08)**
 
-### Phase 2 — 프론트엔드 채널 관리 + 단일 발행 UI
+### Phase 2 — 프론트엔드 채널 관리 + 단일 발행 UI ✅ 완료 (2026-05-07, commit `8e2f27c`)
 
-- [ ] `web/frontend/src/lib/api.ts` — `BlogChannel` 타입 + `listBlogChannels/createBlogChannel/updateBlogChannel/deleteBlogChannel` 함수 + `Publication.blog_channel_id`
-- [ ] `web/frontend/src/lib/swr.ts` — `K.blogChannels` 키 추가
-- [ ] `web/frontend/src/app/blogs/page.tsx` — 블로그 채널 CRUD 페이지 (운영 OS 신규 메뉴)
-- [ ] `web/frontend/src/app/blogs/loading.tsx` — Skeleton
-- [ ] `web/frontend/src/components/NavBar.tsx` — "블로그" 메뉴 추가 (Settings 그룹 또는 단일)
-- [ ] `web/frontend/src/components/PublicationForm.tsx` — `blog_channel_id` 셀렉트 추가 (default = is_default 채널)
-- [ ] `web/frontend/src/components/PublicationActionRow.tsx` — 행에 채널 별칭 표시
-- [ ] `web/frontend/src/lib/api.ts` — `createPublication/updatePublication` 시그니처에 `blog_channel_id` 추가
-- [ ] vitest: `PublicationForm.test.tsx` 채널 셀렉트 케이스 추가
+- [x] `web/frontend/src/lib/api.ts` — `BlogChannel` 타입 + `listBlogChannels/createBlogChannel/updateBlogChannel/deleteBlogChannel` 함수 + `Publication.blog_channel_id`
+- [x] `web/frontend/src/lib/swr.ts` — `K.blogChannels` 키 + `fetchOps.blogChannels` 헬퍼
+- [x] `web/frontend/src/app/blogs/page.tsx` — 채널 CRUD + Dialog 폼 (별칭/blog_id/홈페이지/메모/기본 채널, blog_id 입력 시 homepage 자동 채움)
+- [x] `web/frontend/src/app/blogs/loading.tsx` — Skeleton
+- [x] `web/frontend/src/components/NavBar.tsx` — "관리" matches 에 `/blogs` 포함 + `/usage` 페이지 진입 링크
+- [x] `web/frontend/src/components/PublicationForm.tsx` — 채널 셀렉트 + default 자동 선택 + "+ 채널 관리" 링크
+- [x] `web/frontend/src/components/PublicationActionRow.tsx` — `@채널명` 배지 + tooltip 채널 정보
+- [x] `web/frontend/src/lib/api.ts` — `createPublication/updatePublication` 시그니처에 `blog_channel_id` 추가
+- [x] vitest: `PublicationForm.test.tsx` 채널 셀렉트 옵션·default 자동 선택·미등록 케이스 (+2건, 6/6)
 
-### Phase 3 — 배치 CSV + 검수 큐 인라인
+### Phase 3 — 배치 CSV + 검수 큐 ✅ 완료 (2026-05-07, commit `e80941b`)
 
-- [ ] `web/frontend/src/components/BatchUploadForm.tsx` — `blog` 컬럼 안내 (CSV 가이드 갱신)
-- [ ] `web/frontend/src/components/BulkRegisterDialog.tsx` — `blog` 컬럼 매핑 옵션
-- [ ] `web/frontend/src/components/QueueTable.tsx` — `blog_channel_id` 컬럼 표시 (별칭)
-- [ ] `web/frontend/src/components/QueueItemDrawer.tsx` — 미지정 항목에 인라인 셀렉트
-- [ ] vitest: `QueueTable` 채널 표시 + `BulkRegisterDialog` 매핑 케이스
+- [x] `web/frontend/src/components/BatchUploadForm.tsx` — `blog` 컬럼 안내 + `/blogs` 진입 링크
+- [x] `web/frontend/src/components/BulkRegisterDialog.tsx` — "이번 등록의 블로그 채널" 일괄 셀렉트 (모든 row 같은 채널)
+- [x] `web/frontend/src/components/QueueTable.tsx` — "블로그" 컬럼 추가 (별칭 + tooltip + 삭제된 채널 처리, dedupe 30초)
+- [x] **운영 절차** — Drawer 의 PublicationForm 셀렉트가 인라인 매핑 처리 (별도 row 인라인 셀렉트는 OUT-OF-SCOPE)
+- [x] vitest 143/143, tsc 0 error, build 성공, 백엔드 pytest 228/228
 
 ### 운영 절차
 

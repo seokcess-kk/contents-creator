@@ -877,3 +877,110 @@ APIError: Could not find the 'job_id' column of 'generated_contents'
 - **graceful fallback 유무**: `_save_generated_to_supabase` 가 `try/except` 로 감싸 fail 시 logger.warning 만 (파이프라인 중단 X) — 정상 동작. UI 가 Supabase 데이터 의존하면 외부 진입 불가하지만 결과 자체는 로컬 보존됨
 - **e2e 검증의 가치**: 정적 코드 검증으로 못 잡는 **운영 환경 의존성** (Storage key 제약, schema 적용 여부) 을 1회 키워드로 자연 발견 가능
 
+---
+
+## 도메인 격리 유지 + DI 패턴 — `csv_parser.blog_resolver` (2026-05-07)
+
+**배경**: Blog Channels Phase 1 구현 시 `domain/batch/csv_parser.py` 가 CSV 의 `blog` 컬럼 raw 텍스트(별칭 또는 네이버 blog_id) 를 `blog_channel_id` 로 변환해야 했다. 단순한 해결책은 `from domain.blog_channel import storage` 를 import 해 lookup 하는 것.
+
+**문제**: `architecture-check.sh` 의 `STAGE_ORDER[batch]=0` (격리 도메인) 위반 — domain 간 직접 import 금지 룰. 격리 룰을 우회해 만들면 6개월 뒤 다른 도메인 간 import 가 자연스럽게 늘어나면서 dependency hell.
+
+**해결**: **DI 패턴**. `parse_csv` 가 `Callable[[str], str | None]` 타입의 `blog_resolver` 옵션 인자를 받는다. csv_parser 자체는 blog_channel 도메인을 알 필요가 없다.
+
+```python
+# domain/batch/csv_parser.py — 도메인 격리 유지
+BlogResolver = Callable[[str], str | None]
+
+def parse_csv(csv_text, *, batch_id, default_mode, blog_resolver=None):
+    ...
+    blog_channel_id = blog_resolver(blog_raw) if blog_resolver and blog_raw else None
+
+# application/batch_orchestrator.py — 합성 책임
+def _build_blog_resolver() -> csv_parser.BlogResolver | None:
+    channels = blog_channel_storage.list_channels(limit=500)
+    by_name = {c.name.strip().lower(): c.id for c in channels if c.id}
+    by_blog_id = {c.blog_id.strip().lower(): c.id for c in channels if c.id}
+    return lambda raw: by_name.get(raw.strip().lower()) or by_blog_id.get(raw.strip().lower())
+```
+
+**일반화 규칙**:
+- **격리 도메인 (STAGE_ORDER=0) 이 다른 도메인 데이터를 필요로 할 때**: import 대신 함수 인자 (DI) 로 받는다
+- **lookup 캐시는 application 레이어에서 1회 생성** — 매 row DB 호출 회피 (CSV 1000 row × 1 channels 호출 = 1000 round-trip)
+- **resolver = None 폴백**: Supabase 미연결 환경 / cold start 시 raw 무시 + null 저장 → 운영 무영향
+- **architecture-check.sh 의 격리 룰은 건드리지 않는다** — 룰을 비틀기 시작하면 다른 모듈도 따라 비틀린다
+
+**참조**:
+- `domain/batch/csv_parser.py:36~118`
+- `application/batch_orchestrator.py:_build_blog_resolver`
+- `tests/test_batch/test_csv_parser.py:test_blog_resolver_resolves_alias_and_id`
+
+---
+
+## FastAPI 라우트의 `status_code=204` + `-> None` 충돌 (2026-05-07)
+
+**배경**: `web/api/routers/blog_channels.py` 에 DELETE 엔드포인트를 추가:
+
+```python
+@router.delete("/{channel_id}", status_code=204)
+def delete_blog_channel(channel_id: str) -> None:
+    ...
+```
+
+**증상**: 이 라우터를 import 하는 모든 web/api 테스트가 setup error.
+
+```
+AssertionError: Status code 204 must not have a response body
+fastapi/routing.py:507: AssertionError
+```
+
+import 시점에 라우트 등록이 실패해서 `from web.api.main import app` 자체가 raise → 같은 fixture 를 쓰는 N개 테스트가 일제히 ERROR (개별 실행은 PASS — 헷갈림 포인트).
+
+**원인**: FastAPI 가 `-> None` 반환 어노테이션을 "response body = None type" 으로 추론한다. status 204 (No Content) 는 정의상 body 가 없어야 하므로 라우트 등록 시 `assert is_body_allowed_for_status_code(status_code, response_model)` 실패.
+
+**해결**: `Response` 객체를 직접 반환.
+
+```python
+from fastapi import Response
+
+@router.delete("/{channel_id}")  # status_code 제거
+def delete_blog_channel(channel_id: str) -> Response:
+    ...
+    return Response(status_code=204)
+```
+
+**일반화 규칙**:
+- **FastAPI 의 204/304/1xx 등 body-금지 status**: `status_code=204` + `-> None` 조합 금지. `-> Response` + `return Response(status_code=...)`
+- **개별 PASS / 전체 FAIL 패턴**: import 시점 raise 의 전형. 첫 ERROR 테스트의 traceback 에서 import 라인 (`web/api/main.py:18: in <module>`) 을 본다 — 단독 실행 시 같은 import 가 일어나지 않으면 캐시·다른 fixture 가 미리 모듈을 import 했을 가능성. `from web.api.main import app` fixture 를 쓰는 모든 router 테스트가 동시 fail 이면 라우트 등록 실패 의심
+
+**참조**: `web/api/routers/blog_channels.py:delete_blog_channel`
+
+---
+
+## 테스트에서 SWR 캐시 격리 — `SWRConfig provider: () => new Map()` (2026-05-07)
+
+**배경**: `PublicationForm.test.tsx` 에서 SWR 로 `listBlogChannels` 를 호출하는 컴포넌트 테스트 추가. `mockResolvedValueOnce` 로 채널 목록을 다르게 반환하려 했는데 두 번째 케이스가 첫 번째 케이스의 mock 결과를 그대로 받음.
+
+**원인**: SWR 의 글로벌 캐시는 **테스트 모듈 인스턴스 전체에서 공유**된다. 첫 테스트에서 `K.blogChannels` 키로 캐시된 결과가 두 번째 테스트 render 시 즉시 hit → fetcher 미호출 → `mockResolvedValueOnce` 가 소비되지 않음.
+
+**해결**: 각 테스트 wrapper 에서 `SWRConfig` 의 `provider` 를 새 Map 으로 주입.
+
+```typescript
+function withSwr(children: ReactNode) {
+  return (
+    <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>
+      {children}
+    </SWRConfig>
+  );
+}
+
+// 사용
+render(withSwr(<PublicationForm variant="create" />));
+```
+
+**일반화 규칙**:
+- **SWR 의존 컴포넌트의 vitest 테스트**: 항상 `SWRConfig provider: () => new Map()` wrapper 로 감싼다 — 캐시 격리
+- **`dedupingInterval: 0`** 도 함께 — 짧은 시간 안의 동일 키 호출이 합쳐지는 동작 회피 (테스트 setup ↔ act 가 같은 tick 일 수 있음)
+- **`mockResolvedValueOnce` vs `mockResolvedValue`**: SWR 캐시 격리 후에도 fetcher 가 1번만 호출되리란 보장은 없음 (revalidation·focus 등). 안정성 우선이면 `mockResolvedValue` 로 일관 응답 + 케이스별로 다른 응답이 필요할 때만 cache 격리 + Once
+
+**참조**: `web/frontend/src/components/__tests__/PublicationForm.test.tsx:withSwr`
+
