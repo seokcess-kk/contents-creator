@@ -376,3 +376,43 @@ class TestNormalizeMorpheme:
 
         assert _normalize_morpheme("", "다이어트한의원") is False
         assert _normalize_morpheme("다이어트 한의원", "") is False
+
+
+# ── Polish P4 Step 4.3: _check_keyword_repetition 형태소 분기 ─────────────
+
+
+class TestKeywordRepetitionMorphemeBranch:
+    """`_check_keyword_repetition` 의 형태소 변형 추가 검출 분기 회귀.
+
+    exact match 2회 이상 → 기존 error (회귀 0).
+    exact 1회 + 형태소 변형 추가 등장 → 신규 warning (severity=warning 으로 시작).
+    형태소 변형 없음 또는 kiwipiepy 미사용 → 기존 동작 유지.
+    """
+
+    def test_exact_one_plus_morpheme_variant_warning(self):
+        """exact 1회 + 형태소 변형 ("다이어트 한의원") 추가 등장 → warning."""
+        # 26자 — 길이 hard 범위 (20~40) 안.
+        outline = _make_outline(title="다이어트한의원 추천 강남 다이어트 한의원")
+        report = validate_title(outline, primary_keyword="다이어트한의원")
+        assert any(
+            i["field"] == "keyword_repetition_morpheme" and i["severity"] == "warning"
+            for i in report.issues
+        )
+        # error 가 아닌 warning 이므로 passed=True 유지
+        assert report.passed is True
+
+    def test_exact_one_no_morpheme_variant_no_issue(self):
+        """exact 1회 + 형태소 변형 없음 → keyword_repetition* issue 0건."""
+        outline = _make_outline(title="다이어트한의원 추천 가이드 정리 자료 모음")
+        report = validate_title(outline, primary_keyword="다이어트한의원")
+        assert not any(i["field"].startswith("keyword_repetition") for i in report.issues)
+
+    def test_morpheme_branch_skipped_when_kiwi_unavailable(self, monkeypatch):
+        """kiwipiepy 미사용 환경 (mock) — 형태소 분기 자연 skip, 회귀 0."""
+        import domain.generation.title_validator as tv
+
+        monkeypatch.setattr(tv, "_get_kiwi", lambda: None)
+        outline = _make_outline(title="다이어트한의원 추천 강남 다이어트 한의원")
+        report = tv.validate_title(outline, primary_keyword="다이어트한의원")
+        # warning issue 미생성 (kiwi 없으면 형태소 매칭 자체가 False → 분기 진입 X)
+        assert not any(i["field"] == "keyword_repetition_morpheme" for i in report.issues)

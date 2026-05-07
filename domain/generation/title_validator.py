@@ -215,7 +215,18 @@ def _normalize_morpheme(text: str, keyword: str, *, threshold: float = 0.7) -> b
 
 
 def _check_keyword_repetition(title: str, primary_keyword: str | None) -> TitleIssue | None:
-    """주 키워드 정확 매치 2회 이상 시 hard fail. 빈 키워드면 스킵."""
+    """주 키워드 반복 검증.
+
+    - exact match 2회 이상 → error (hard fail, 기존 동작)
+    - exact 1회 + 형태소 변형 (예: "다이어트한의원" + "다이어트 한의원") → warning
+      (Polish P4 — 띄어쓰기 변형까지 포함한 사실상 2회)
+    - 빈 키워드면 스킵.
+
+    형태소 분기는 kiwipiepy 미설치 환경에서는 자연 스킵 (`_normalize_morpheme` 가
+    fallback 으로 False 반환).
+
+    severity=warning 으로 시작 — 운영 1주 후 error 상향 결정 (todo.md 잔존 결정 사항).
+    """
     if not primary_keyword or not primary_keyword.strip():
         return None
     norm_title = _normalize(title)
@@ -230,6 +241,17 @@ def _check_keyword_repetition(title: str, primary_keyword: str | None) -> TitleI
             actual=f"{occurrences}회 등장",
             severity="error",
         )
+    if occurrences == 1:
+        # exact 매치 부분을 마스킹하고 나머지 영역에서 형태소 변형 검사 — 사실상 2회
+        # 검출. _normalize_morpheme 가 keyword 명사 set 의 recall ≥ threshold 일 때 True.
+        title_minus_exact = norm_title.replace(norm_keyword, " ", 1)
+        if _normalize_morpheme(title_minus_exact, primary_keyword):
+            return TitleIssue(
+                field="keyword_repetition_morpheme",
+                expected=f"주 키워드 '{primary_keyword}' 변형 포함 1회 이하",
+                actual="exact 1회 + 형태소 변형 추가 등장",
+                severity="warning",
+            )
     return None
 
 
