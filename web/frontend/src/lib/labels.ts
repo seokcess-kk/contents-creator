@@ -103,6 +103,7 @@ const DIFFICULTY_LABELS: Record<string, string> = {
   high: "난이도 상",
   medium: "난이도 중",
   low: "난이도 하",
+  unknown: "정보 없음",
   // S/A/B/C/D 등급 (별도 분류)
   S: "S등급 (최상)",
   A: "A등급 (상)",
@@ -113,4 +114,14 @@ const DIFFICULTY_LABELS: Record<string, string> = {
 
 export function getDifficultyLabel(grade: string): string {
   return DIFFICULTY_LABELS[grade] ?? grade;
+}
+
+// ── volume bucket ────────────────────────────────────────────────────────────
+// insights 의 검색량 bucket. 숫자 라벨은 그대로 노출, unknown 만 한국어화.
+const VOLUME_LABELS: Record<string, string> = {
+  unknown: "정보 없음",
+};
+
+export function getVolumeLabel(bucket: string): string {
+  return VOLUME_LABELS[bucket] ?? bucket;
 }

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { getInsightsSummary, type InsightsSummary } from "@/lib/api";
 import { DesktopOnlyBanner } from "@/components/ui";
+import { getDifficultyLabel, getVolumeLabel } from "@/lib/labels";
 
 const DIFFICULTY_ORDER = ["low", "medium", "high", "missing", "unknown"];
 const VOLUME_ORDER = ["<100", "100-500", "500-2K", "2K-10K", ">10K", "unknown"];
@@ -78,7 +79,7 @@ export default function InsightsPage() {
                     const b = summary.difficulty_top10[g];
                     return (
                       <tr key={g}>
-                        <td className="py-1 font-medium text-gray-800">{g.toUpperCase()}</td>
+                        <td className="py-1 font-medium text-gray-800">{getDifficultyLabel(g)}</td>
                         <td className="py-1 text-right">{b.total}</td>
                         <td className="py-1 text-right text-green-700">{b.top10}</td>
                         <td className="py-1 text-right">
@@ -110,7 +111,7 @@ export default function InsightsPage() {
                     const b = summary.volume_top10[v];
                     return (
                       <tr key={v}>
-                        <td className="py-1 font-medium text-gray-800">{v}</td>
+                        <td className="py-1 font-medium text-gray-800">{getVolumeLabel(v)}</td>
                         <td className="py-1 text-right">{b.total}</td>
                         <td className="py-1 text-right text-green-700">{b.top10}</td>
                         <td className="py-1 text-right">

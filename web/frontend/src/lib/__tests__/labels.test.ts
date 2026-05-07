@@ -5,6 +5,7 @@ import {
   getDiagnosisLabel,
   getDifficultyLabel,
   getVisibilityLabel,
+  getVolumeLabel,
   getWorkflowLabel,
 } from "@/lib/labels";
 
@@ -84,9 +85,23 @@ describe("getDifficultyLabel", () => {
     ["high", "난이도 상"],
     ["medium", "난이도 중"],
     ["low", "난이도 하"],
+    ["unknown", "정보 없음"],
     ["S", "S등급 (최상)"],
     ["A", "A등급 (상)"],
   ])("%s → %s", (grade, expected) => {
     expect(getDifficultyLabel(grade)).toBe(expected);
   });
+});
+
+describe("getVolumeLabel", () => {
+  it("unknown 은 한국어화", () => {
+    expect(getVolumeLabel("unknown")).toBe("정보 없음");
+  });
+
+  it.each(["<100", "100-500", "500-2K", "2K-10K", ">10K"])(
+    "숫자 bucket %s 은 raw 그대로",
+    (bucket) => {
+      expect(getVolumeLabel(bucket)).toBe(bucket);
+    },
+  );
 });
