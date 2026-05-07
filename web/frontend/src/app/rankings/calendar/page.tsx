@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
+import useSWR from "swr";
 import { getMonthlyCalendar, type RankingCalendar } from "@/lib/api";
 import { CalendarRow, CellLegend } from "@/components/CalendarTable";
+import { K } from "@/lib/swr";
 
 /**
  * 월별 캘린더 — 키워드(행) × 일자(열) 매트릭스.
@@ -14,9 +16,6 @@ export default function RankingCalendarPage() {
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth() + 1); // 1~12
-  const [data, setData] = useState<RankingCalendar | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [compact, setCompact] = useState(true);
 
@@ -28,22 +27,12 @@ export default function RankingCalendarPage() {
     [year, month],
   );
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const cal = await getMonthlyCalendar(monthStr);
-      setData(cal);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "조회 실패");
-    } finally {
-      setLoading(false);
-    }
-  }, [monthStr]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const { data, error, isLoading } = useSWR<RankingCalendar>(
+    K.monthlyCalendar(monthStr),
+    () => getMonthlyCalendar(monthStr),
+  );
+  const loading = isLoading && !data;
+  const errMsg = error instanceof Error ? error.message : null;
 
   function shiftMonth(delta: number) {
     let y = year;
@@ -129,9 +118,9 @@ export default function RankingCalendarPage() {
       <CellLegend />
 
       {loading && <div className="text-sm text-gray-500">로딩 중...</div>}
-      {error && <div className="text-sm text-red-700">{error}</div>}
+      {errMsg && <div className="text-sm text-red-700">{errMsg}</div>}
 
-      {!loading && !error && rows.length === 0 && (
+      {!loading && !errMsg && rows.length === 0 && (
         <div className="text-sm text-gray-500">
           해당 월에 표시할 데이터가 없습니다.
         </div>

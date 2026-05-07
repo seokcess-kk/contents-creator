@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
+import useSWR from "swr";
 import BulkCheckDialog from "@/components/BulkCheckDialog";
 import BulkRegisterDialog from "@/components/BulkRegisterDialog";
 import PublicationForm from "@/components/PublicationForm";
@@ -22,6 +23,7 @@ import {
   type QueueItem,
   type QueueTab,
 } from "@/lib/api";
+import { K } from "@/lib/swr";
 
 const TABS: { key: QueueTab; label: string }[] = [
   { key: "action_required", label: "액션 필요" },
@@ -79,11 +81,7 @@ function sortItems(items: QueueItem[], sortBy: SortKey): QueueItem[] {
 
 export default function OperationsHomePage() {
   const router = useRouter();
-  const [summary, setSummary] = useState<OperationsSummary | null>(null);
   const [tab, setTab] = useState<QueueTab>("action_required");
-  const [items, setItems] = useState<QueueItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkCheckOpen, setBulkCheckOpen] = useState(false);
@@ -95,26 +93,25 @@ export default function OperationsHomePage() {
     if (!isOnboarded()) setWelcomeOpen(true);
   }, []);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [s, q] = await Promise.all([
-        getOperationsSummary(),
-        getOperationsQueue(tab, 200),
-      ]);
-      setSummary(s);
-      setItems(q.items);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "조회 실패");
-    } finally {
-      setLoading(false);
-    }
-  }, [tab]);
+  const summarySwr = useSWR<OperationsSummary>(
+    K.operationsSummary,
+    getOperationsSummary,
+  );
+  const queueSwr = useSWR(K.operationsQueue(tab), () => getOperationsQueue(tab, 200));
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const summary = summarySwr.data ?? null;
+  const items: QueueItem[] = queueSwr.data?.items ?? [];
+  const loading = (summarySwr.isLoading || queueSwr.isLoading) && !summary && items.length === 0;
+  const error =
+    summarySwr.error instanceof Error
+      ? summarySwr.error.message
+      : queueSwr.error instanceof Error
+        ? queueSwr.error.message
+        : null;
+
+  const load = useCallback(async () => {
+    await Promise.all([summarySwr.mutate(), queueSwr.mutate()]);
+  }, [summarySwr, queueSwr]);
 
   const filtered = useMemo(() => {
     const filterLower = filter.trim().toLowerCase();

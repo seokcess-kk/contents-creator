@@ -7,6 +7,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Search } from "lucide-react";
+import useSWR from "swr";
 import PublicationForm from "@/components/PublicationForm";
 import QueueTable from "@/components/QueueTable";
 import QueueItemDrawer from "@/components/QueueItemDrawer";
@@ -18,6 +19,7 @@ import {
   type QueueSource,
   type UnifiedQueueItem,
 } from "@/lib/unifiedQueue";
+import { K } from "@/lib/swr";
 
 type SourceFilter = "all" | QueueSource;
 
@@ -42,33 +44,32 @@ function QueuePageInner() {
   const [source, setSource] = useState<SourceFilter>(initSource);
   const [statuses, setStatuses] = useState<string[]>(initStatuses);
   const [search, setSearch] = useState("");
-  const [items, setItems] = useState<UnifiedQueueItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [drawerItem, setDrawerItem] = useState<UnifiedQueueItem | null>(null);
   const [registerItem, setRegisterItem] = useState<UnifiedQueueItem | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const filters = useMemo(
+    () => ({
+      source: source === "all" ? undefined : source,
+      statuses,
+      batch_id: initBatchId ?? undefined,
+      search: search.trim() || undefined,
+    }),
+    [source, statuses, search, initBatchId],
+  );
+
+  const { data, error, isLoading, mutate: mutateQueue } = useSWR<UnifiedQueueItem[]>(
+    K.unifiedQueue(filters),
+    () => getUnifiedQueue(filters),
+  );
+  const items: UnifiedQueueItem[] = data ?? [];
+  const loading = isLoading && items.length === 0;
+  const errMsg =
+    error instanceof Error ? error.message : error ? "조회 실패" : null;
 
   const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await getUnifiedQueue({
-        source: source === "all" ? undefined : source,
-        statuses,
-        batch_id: initBatchId ?? undefined,
-        search: search.trim() || undefined,
-      });
-      setItems(result);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "조회 실패");
-    } finally {
-      setLoading(false);
-    }
-  }, [source, statuses, search, initBatchId]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+    await mutateQueue();
+  }, [mutateQueue]);
 
   // 외부 redirect 의 ?slug 자동 drawer 진입
   useEffect(() => {
@@ -86,11 +87,12 @@ function QueuePageInner() {
 
   async function handleReview(item: UnifiedQueueItem, action: ReviewAction) {
     if (item.source !== "batch" || !item.batch_id) return;
+    setActionError(null);
     try {
       await reviewItem(item.batch_id, item.id, action);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "검수 처리 실패");
+      setActionError(err instanceof Error ? err.message : "검수 처리 실패");
     }
   }
 
@@ -171,7 +173,9 @@ function QueuePageInner() {
         </div>
       </div>
 
-      {error && <ErrorBanner severity="error" message={error} />}
+      {(errMsg || actionError) && (
+        <ErrorBanner severity="error" message={actionError ?? errMsg ?? ""} />
+      )}
 
       {initBatchId && (
         <div className="text-xs text-gray-700 bg-blue-50 border border-blue-200 rounded px-3 py-2">
