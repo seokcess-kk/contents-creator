@@ -74,6 +74,9 @@ class KeywordBatchItem(BaseModel):
     brand_id: str | None = None
     target_url: str | None = None
     memo: str | None = None
+    # 운영자가 어느 블로그 채널에서 발행할 예정인지 (blog_channels.id FK, nullable).
+    # CSV `blog` 컬럼은 별칭 또는 ID — application 에서 lookup 후 채움.
+    blog_channel_id: str | None = None
 
     # 실행 메타
     status: ItemStatus = "queued"

@@ -33,6 +33,7 @@ from domain.batch.model import (
     KeywordBatchItem,
     NotSupportedYetError,
 )
+from domain.blog_channel import storage as blog_channel_storage
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,33 @@ _PRIMARY_REUSE_STATUSES = frozenset({"succeeded", "ready_to_publish", "needs_rev
 _TERMINAL_STATUSES = frozenset(
     {"succeeded", "failed", "skipped", "ready_to_publish", "needs_review"}
 )
+
+
+def _build_blog_resolver() -> csv_parser.BlogResolver | None:
+    """CSV `blog` 컬럼 → blog_channel_id 변환기.
+
+    list_channels() 1회 호출로 dict 캐시. CSV 매 row 마다 DB 호출 회피.
+    Supabase 미연결 환경 (config/.env 없음) 에서는 None 반환 — csv_parser 가
+    blog_resolver=None 이면 모든 row blog_channel_id=None.
+    """
+    try:
+        channels = blog_channel_storage.list_channels(limit=500)
+    except Exception as exc:
+        logger.warning("blog_resolver.unavailable err=%s — blog_channel_id 미주입", exc)
+        return None
+    by_name: dict[str, str] = {}
+    by_blog_id: dict[str, str] = {}
+    for ch in channels:
+        if ch.id is None:
+            continue
+        by_name[ch.name.strip().lower()] = ch.id
+        by_blog_id[ch.blog_id.strip().lower()] = ch.id
+
+    def resolve(raw: str) -> str | None:
+        key = raw.strip().lower()
+        return by_name.get(key) or by_blog_id.get(key)
+
+    return resolve
 
 
 def enqueue_from_csv(
@@ -96,8 +124,12 @@ def enqueue_from_csv(
             f"지원되지 않는 mode: {mode!r} (allowed: now / overnight / auto)"
         )
 
+    blog_resolver = _build_blog_resolver()
     parsed_items, skipped, failed = csv_parser.parse_csv(
-        csv_text, batch_id="pending", default_mode=mode
+        csv_text,
+        batch_id="pending",
+        default_mode=mode,
+        blog_resolver=blog_resolver,
     )
 
     batch = KeywordBatch(

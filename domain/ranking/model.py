@@ -40,6 +40,9 @@ class Publication(BaseModel):
     priority_score: float | None = None
     republishing_started_at: datetime | None = None
     keyword_difficulty_snapshot_id: str | None = None
+    # 운영자가 어느 블로그 채널에서 발행했는지 (blog_channels.id FK, nullable).
+    # 미지정 채널은 null — 기존 데이터 무손실.
+    blog_channel_id: str | None = None
 
 
 class RankingSnapshot(BaseModel):

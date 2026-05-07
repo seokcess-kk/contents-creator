@@ -76,11 +76,13 @@ def register_publication(
     job_id: str | None = None,
     published_at: datetime | None = None,
     parent_publication_id: str | None = None,
+    blog_channel_id: str | None = None,
 ) -> Publication:
     """URL 등록. 동일 url 재호출은 기존 row 반환 (멱등).
 
     url=None: draft publication (재발행 임시 등). visibility=not_measured / workflow=draft.
     url=str: 정식 등록 — 네이버 블로그 URL 만 허용 (측정 매칭 정합성 보장).
+    blog_channel_id: 운영자가 어느 블로그 채널에서 발행했는지 (nullable FK).
 
     Raises:
         ValueError: url 이 네이버 블로그 포스트 URL 형식이 아님.
@@ -95,6 +97,7 @@ def register_publication(
             parent_publication_id=parent_publication_id,
             visibility_status="not_measured",
             workflow_status="draft",
+            blog_channel_id=blog_channel_id,
         )
         return storage.insert_publication(publication)
 
@@ -111,6 +114,7 @@ def register_publication(
         parent_publication_id=parent_publication_id,
         visibility_status="not_measured",
         workflow_status="active",
+        blog_channel_id=blog_channel_id,
     )
     try:
         inserted = storage.insert_publication(publication)

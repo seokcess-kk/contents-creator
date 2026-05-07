@@ -341,6 +341,8 @@ def _publication_to_payload(p: Publication) -> dict[str, Any]:
         payload["republishing_started_at"] = p.republishing_started_at.isoformat()
     if p.keyword_difficulty_snapshot_id is not None:
         payload["keyword_difficulty_snapshot_id"] = p.keyword_difficulty_snapshot_id
+    if p.blog_channel_id is not None:
+        payload["blog_channel_id"] = p.blog_channel_id
     return payload
 
 
@@ -374,6 +376,7 @@ def _row_to_publication(row: dict[str, Any]) -> Publication:
         priority_score=row.get("priority_score"),
         republishing_started_at=row.get("republishing_started_at"),
         keyword_difficulty_snapshot_id=row.get("keyword_difficulty_snapshot_id"),
+        blog_channel_id=row.get("blog_channel_id"),
     )
 
 

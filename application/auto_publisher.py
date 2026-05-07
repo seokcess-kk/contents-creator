@@ -116,6 +116,7 @@ def auto_publish_ready_items(batch_id: str) -> dict[str, Any]:
                 url=item.target_url,
                 slug=None,
                 job_id=item.job_id,
+                blog_channel_id=item.blog_channel_id,
             )
         except (ValueError, RankingDuplicateUrlError) as exc:
             failed += 1

@@ -2,7 +2,7 @@
 
 지원 컬럼 (SPEC-BATCH §3 Phase 1 입력):
     keyword (필수), operation, priority, cluster_id, cluster_role,
-    intent, region, brand_id, target_url, memo
+    intent, region, brand_id, target_url, memo, blog (별칭 또는 네이버 blog_id)
 
 검증 규칙:
 - keyword: 비어 있으면 failed
@@ -11,6 +11,11 @@
 - mode: CSV 컬럼 X — batch 단위로 받음 (item.mode 는 batch.mode 상속)
 - cluster_role: invalid 값은 default 'member' 폴백
 - 중복 keyword: 같은 batch 안에서는 첫 row 만 created, 나머지는 skipped
+- blog: blog_resolver 가 주어지면 호출 (lookup). 미일치 시 blog_channel_id=None + warning
+
+도메인 격리 원칙상 csv_parser 는 다른 도메인 (blog_channel) 을 import 하지
+않는다. blog 별칭/ID → blog_channel_id 변환은 application 레이어가 주입하는
+`blog_resolver: Callable[[str], str | None]` 로 처리한다.
 """
 
 from __future__ import annotations
@@ -18,6 +23,7 @@ from __future__ import annotations
 import csv
 import io
 import logging
+from collections.abc import Callable
 from typing import Any
 
 from domain.batch.model import (
@@ -25,6 +31,9 @@ from domain.batch.model import (
     KeywordBatchItem,
     Operation,
 )
+
+BlogResolver = Callable[[str], str | None]
+"""blog 별칭/ID → blog_channel_id 또는 None. 미일치 시 None 반환."""
 
 logger = logging.getLogger(__name__)
 
@@ -38,10 +47,14 @@ def parse_csv(
     *,
     batch_id: str = "pending",
     default_mode: str = "now",
+    blog_resolver: BlogResolver | None = None,
 ) -> tuple[list[KeywordBatchItem], list[dict[str, str]], list[dict[str, str]]]:
     """CSV 문자열을 파싱해 (created_items, skipped, failed) 반환.
 
     batch_id 가 'pending' 이면 storage 가 batch insert 후 채움.
+
+    blog_resolver: CSV `blog` 컬럼 raw 텍스트(별칭 또는 네이버 blog_id) → blog_channel_id
+    변환 함수. 미주입 시 모든 row 의 blog_channel_id=None.
     """
     created: list[KeywordBatchItem] = []
     skipped: list[dict[str, str]] = []
@@ -57,7 +70,12 @@ def parse_csv(
         raise ValueError(f"필수 컬럼 누락: {', '.join(missing)}")
 
     for idx, row in enumerate(reader, start=2):  # 2 = 헤더 다음 줄
-        item, reason = _parse_row(row, batch_id=batch_id, default_mode=default_mode)
+        item, reason = _parse_row(
+            row,
+            batch_id=batch_id,
+            default_mode=default_mode,
+            blog_resolver=blog_resolver,
+        )
         if item is None:
             failed.append({"row": str(idx), "reason": reason or "unknown"})
             continue
@@ -78,7 +96,11 @@ def parse_csv(
 
 
 def _parse_row(
-    row: dict[str, Any], *, batch_id: str, default_mode: str
+    row: dict[str, Any],
+    *,
+    batch_id: str,
+    default_mode: str,
+    blog_resolver: BlogResolver | None = None,
 ) -> tuple[KeywordBatchItem | None, str | None]:
     """단일 CSV row → KeywordBatchItem. 실패 시 (None, reason)."""
     keyword = (row.get("keyword") or "").strip()
@@ -97,6 +119,17 @@ def _parse_row(
     if not 1 <= priority <= 9:
         priority = 5
 
+    blog_raw = _strip_or_none(row.get("blog"))
+    blog_channel_id: str | None = None
+    if blog_raw and blog_resolver is not None:
+        blog_channel_id = blog_resolver(blog_raw)
+        if blog_channel_id is None:
+            logger.warning(
+                "csv_parser.blog_alias_unmatched keyword=%s blog=%r — blog_channel_id=null",
+                keyword,
+                blog_raw,
+            )
+
     return (
         KeywordBatchItem(
             batch_id=batch_id,
@@ -111,6 +144,7 @@ def _parse_row(
             brand_id=_strip_or_none(row.get("brand_id")),
             target_url=_strip_or_none(row.get("target_url")),
             memo=_strip_or_none(row.get("memo")),
+            blog_channel_id=blog_channel_id,
         ),
         None,
     )

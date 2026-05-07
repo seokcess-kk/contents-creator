@@ -98,3 +98,27 @@ def test_default_mode_propagates_to_items() -> None:
     csv_text = "keyword\nkw1\nkw2\n"
     created, _, _ = parse_csv(csv_text, batch_id="b-1", default_mode="overnight")
     assert all(it.mode == "overnight" for it in created)
+
+
+def test_blog_resolver_resolves_alias_and_id() -> None:
+    """blog 컬럼이 별칭 또는 네이버 blog_id 와 매칭되면 blog_channel_id 채움."""
+    fake_table = {"메인블로그": "ch-1", "myblog123": "ch-2"}
+
+    def resolver(raw: str) -> str | None:
+        return fake_table.get(raw.strip().lower())
+
+    csv_text = "keyword,blog\nkw1,메인블로그\nkw2,myblog123\nkw3,unknown_alias\nkw4,\n"
+    created, _, _ = parse_csv(csv_text, batch_id="b-1", blog_resolver=resolver)
+    assert created[0].blog_channel_id == "ch-1"
+    assert created[1].blog_channel_id == "ch-2"
+    # 미일치는 None + warning (테스트는 None 검증만)
+    assert created[2].blog_channel_id is None
+    # 빈 문자열은 lookup 자체 skip
+    assert created[3].blog_channel_id is None
+
+
+def test_blog_resolver_none_means_no_lookup() -> None:
+    """blog_resolver=None 이면 blog 컬럼이 있어도 blog_channel_id=None."""
+    csv_text = "keyword,blog\nkw1,메인블로그\n"
+    created, _, _ = parse_csv(csv_text, batch_id="b-1", blog_resolver=None)
+    assert created[0].blog_channel_id is None

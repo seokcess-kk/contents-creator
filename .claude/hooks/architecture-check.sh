@@ -46,6 +46,10 @@ declare -A STAGE_ORDER=(
   # batch 는 키워드 배치 운영 격리 도메인 (SPEC-BATCH.md). 다른 도메인 import 금지.
   # CSV 파싱·storage·모델만 책임. 단일 흐름 호출은 application/batch_orchestrator 가 수행.
   [batch]=0
+  # blog_channel 은 운영자가 보유한 네이버 블로그 채널 메타 격리 도메인.
+  # publications/keyword_batch_items 가 nullable FK 로 참조하지만 본 도메인은
+  # 다른 도메인 import 금지. CRUD 만 책임, 합성은 application 레이어.
+  [blog_channel]=0
 )
 
 violations=0

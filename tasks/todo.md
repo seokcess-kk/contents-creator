@@ -2498,6 +2498,84 @@ UX Refactor P1~P6 에서 산발적으로 적용한 색상/spacing/typography 변
 - **Visual regression 테스트 (Percy / Chromatic)** — manual 검증 우선, 도구 도입 OUT-OF-SCOPE
 - **모바일 native 앱** — 웹 반응형 한정
 
+## 🆕 Blog Channels — 블로그 지정 발행 + URL 입력 (2026-05-07 신규)
+
+### 배경
+
+운영자가 보유한 **여러 네이버 블로그 채널** 을 시스템에 등록해 두고, 발행 시
+어느 채널에 올렸는지 명시 + 그 글의 URL 입력. 발행 자체는 수동 (현재 방식
+유지) — 자동 업로드 X.
+
+### 사용자 결정 (2026-05-07)
+
+- 블로그 모델: **여러 채널 등록 + 선택** (단순 prefix 보관 X, brand_profiles 재사용 X)
+- 발행: **수동 + URL 입력만** (Selenium/네이버 API X)
+- UI: **PublicationForm (단일) + CSV 업로드 컬럼 + 검수 큐 인라인 셀렉트** 모두
+
+### 설계 골자
+
+| 계층 | 신규 자산 |
+|---|---|
+| DB | `blog_channels` 테이블 + `publications.blog_channel_id` + `keyword_batch_items.blog_channel_id` |
+| Domain | `domain/blog_channel/` (격리, model + storage) |
+| Application | (별도 합성 함수 불필요 — orchestrator 가 channel_id 그대로 전달) |
+| Web API | `web/api/routers/blog_channels.py` — CRUD |
+| Frontend | `lib/api.ts` 확장 + `PublicationForm` 셀렉트 + `/blogs` 페이지 + 검수 큐 |
+
+### Phase 1 — 백엔드 (DB + 도메인 + API)
+
+- [ ] `config/schema.sql` — `blog_channels` 테이블 신설
+  - id (uuid), name (별칭), blog_id (네이버 ID — `myblog123`), homepage_url, memo, is_default (bool), created_at, updated_at
+  - unique(name), unique(blog_id)
+- [ ] `config/schema.sql` — `publications` + `keyword_batch_items` 에 `blog_channel_id uuid references blog_channels(id) on delete set null` 추가
+- [ ] `domain/blog_channel/__init__.py` + `model.py` — `BlogChannel` Pydantic
+- [ ] `domain/blog_channel/storage.py` — Supabase CRUD (`list_channels`, `get_channel`, `create_channel`, `update_channel`, `delete_channel`, `find_channel_by_name`)
+- [ ] `.claude/hooks/architecture-check.sh` — `STAGE_ORDER[blog_channel]=0` 격리 도메인 등록
+- [ ] `domain/ranking/model.py` — `Publication.blog_channel_id: str | None = None` 추가
+- [ ] `domain/ranking/storage.py` — insert/select 시 blog_channel_id 매핑
+- [ ] `domain/batch/model.py` — `KeywordBatchItem.blog_channel_id: str | None = None`
+- [ ] `domain/batch/storage.py` — payload 변환에 blog_channel_id 추가
+- [ ] `domain/batch/csv_parser.py` — `blog` 컬럼 매핑 (별칭 또는 채널 ID 문자열로 받음, application 에서 lookup)
+- [ ] `application/batch_orchestrator.py` — CSV `blog` 별칭 → `blog_channel_id` lookup (없으면 warning + null)
+- [ ] `application/auto_publisher.py` — `register_publication` 호출 시 `blog_channel_id` 전파
+- [ ] `application/ranking_orchestrator.py` — `register_publication(blog_channel_id=...)` 인자 추가
+- [ ] `web/api/routers/blog_channels.py` — `GET/POST/PATCH/DELETE /blog-channels`
+- [ ] `web/api/main.py` — 라우터 등록
+- [ ] `tests/test_blog_channel/test_storage.py` (Supabase mock) + `tests/test_application/test_blog_channel_lookup.py`
+- [ ] `bash .claude/hooks/build-check.sh` 그린 확인
+
+### Phase 2 — 프론트엔드 채널 관리 + 단일 발행 UI
+
+- [ ] `web/frontend/src/lib/api.ts` — `BlogChannel` 타입 + `listBlogChannels/createBlogChannel/updateBlogChannel/deleteBlogChannel` 함수 + `Publication.blog_channel_id`
+- [ ] `web/frontend/src/lib/swr.ts` — `K.blogChannels` 키 추가
+- [ ] `web/frontend/src/app/blogs/page.tsx` — 블로그 채널 CRUD 페이지 (운영 OS 신규 메뉴)
+- [ ] `web/frontend/src/app/blogs/loading.tsx` — Skeleton
+- [ ] `web/frontend/src/components/NavBar.tsx` — "블로그" 메뉴 추가 (Settings 그룹 또는 단일)
+- [ ] `web/frontend/src/components/PublicationForm.tsx` — `blog_channel_id` 셀렉트 추가 (default = is_default 채널)
+- [ ] `web/frontend/src/components/PublicationActionRow.tsx` — 행에 채널 별칭 표시
+- [ ] `web/frontend/src/lib/api.ts` — `createPublication/updatePublication` 시그니처에 `blog_channel_id` 추가
+- [ ] vitest: `PublicationForm.test.tsx` 채널 셀렉트 케이스 추가
+
+### Phase 3 — 배치 CSV + 검수 큐 인라인
+
+- [ ] `web/frontend/src/components/BatchUploadForm.tsx` — `blog` 컬럼 안내 (CSV 가이드 갱신)
+- [ ] `web/frontend/src/components/BulkRegisterDialog.tsx` — `blog` 컬럼 매핑 옵션
+- [ ] `web/frontend/src/components/QueueTable.tsx` — `blog_channel_id` 컬럼 표시 (별칭)
+- [ ] `web/frontend/src/components/QueueItemDrawer.tsx` — 미지정 항목에 인라인 셀렉트
+- [ ] vitest: `QueueTable` 채널 표시 + `BulkRegisterDialog` 매핑 케이스
+
+### 운영 절차
+
+- 신규 운영자 첫 진입 시 `/blogs` 에서 최소 1개 채널 등록 권장 (이후 PublicationForm default 작동)
+- 미지정 채널은 `null` 로 저장 — 기존 데이터 무손실 (마이그레이션 우려 없음)
+- CSV 의 `blog` 컬럼은 채널 별칭(`name`) 또는 네이버 blog_id 둘 다 인식 (application lookup 단일 출처)
+
+### 결정 게이트
+
+- Phase 1 완료 후 사용자 확인 → Phase 2 착수
+- Phase 2 완료 후 사용자 확인 → Phase 3 착수
+- 단계별 commit + push, main 직커밋 (테스트 그린 시)
+
 ## 참조
 
 - UX Refactor 6 Phase plan (본 todo.md 1511~ 라인)

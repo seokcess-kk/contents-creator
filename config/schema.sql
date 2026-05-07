@@ -623,6 +623,43 @@ create index if not exists idx_keyword_batch_items_cluster
 
 
 -- ============================================================
+-- blog_channels (2026-05-07) — 운영자가 보유한 네이버 블로그 채널 목록
+--
+-- 운영자가 여러 채널을 등록해 두고 발행 시 어떤 채널에 올렸는지 명시.
+-- publications / keyword_batch_items 가 nullable FK 로 참조한다 (미지정 허용).
+-- 발행 자체는 수동(외부) — 본 테이블은 단순 메타 + 추적용.
+-- ============================================================
+create table if not exists blog_channels (
+    id uuid primary key default gen_random_uuid(),
+    -- 별칭 (운영자가 부르는 이름. UI 셀렉트 라벨)
+    name text not null unique,
+    -- 네이버 블로그 ID. e.g., "myblog123" (https://blog.naver.com/myblog123)
+    blog_id text not null unique,
+    -- 홈페이지 URL — blog_id 로부터 도출하지만 명시 저장 (다른 도메인 대비)
+    homepage_url text not null,
+    memo text,
+    is_default boolean not null default false,
+    created_at timestamptz default now(),
+    updated_at timestamptz default now()
+);
+
+create index if not exists idx_blog_channels_default
+    on blog_channels (is_default) where is_default = true;
+
+-- publications + keyword_batch_items 에 blog_channel_id FK (nullable)
+alter table publications
+    add column if not exists blog_channel_id uuid references blog_channels(id) on delete set null;
+
+alter table keyword_batch_items
+    add column if not exists blog_channel_id uuid references blog_channels(id) on delete set null;
+
+create index if not exists idx_publications_blog_channel
+    on publications (blog_channel_id);
+create index if not exists idx_keyword_batch_items_blog_channel
+    on keyword_batch_items (blog_channel_id);
+
+
+-- ============================================================
 -- 향후 확장 시 이 파일에 테이블 추가 (Phase 2):
 --   - client_profiles  (클라이언트 프로필, 브랜드와 구분)
 --   - visual_patterns  (비주얼 분석 / VLM)
