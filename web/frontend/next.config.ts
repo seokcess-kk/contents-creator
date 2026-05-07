@@ -16,6 +16,12 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: projectRoot,
   },
+  // 거의 모든 페이지가 lucide-react 사용. 기본 import 는 barrel re-export 라
+  // tree-shake 약해 chunk 가 부풀고 첫 라우트 다운로드가 느려진다.
+  // 이 옵션은 import 를 per-icon 모듈 직지정으로 자동 변환해 chunk 축소.
+  experimental: {
+    optimizePackageImports: ["lucide-react"],
+  },
   async rewrites() {
     return [
       {
