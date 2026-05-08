@@ -2144,7 +2144,7 @@ UX Refactor P1~P6 에서 산발적으로 적용한 색상/spacing/typography 변
     4. `getStatusToken('workflow', 'held').bg === 'bg-gray-100'`
   - vitest: 모든 (kind, status) 조합이 fallback 이 아닌 의미 토큰으로 매핑되는지 회귀 (P6 enum 추가 시 자동 검출)
 - [x] **Step 1.3 — StatusBadge sweep + contract 검증** ✅ `COLOR_MAP` 인라인 → `getStatusToken()` 위임. 4 클래스 매칭 회귀 0
-- [x] **Step 1.4 — Tailwind 클래스 직접 사용 sweep** ✅ 1.5 결정으로 별도 PR 분리 (운영자 우선순위 낮음)
+- [x] **Step 1.4 — Tailwind 클래스 직접 사용 sweep** ✅ 1.5 결정으로 별도 PR 분리 (운영자 우선순위 낮음). **2026-05-08 재검토**: 70 파일 / 321 위치 (정의·테스트 34 제외 시 ~287). Tier 1 (status badge), Tier 2 (배너/dialog), Tier 3 (grade·차트·brand_card) 분류. 사용자 결정: **연기** — 미래 디자인 시스템 변경 시점에 재검토
 - [x] **Step 1.5 — 미적용 컴포넌트 plan 분리 결정** (자체 결정)
   - **결과**: 287 위치 / 50+ 파일에 색상 클래스 산발 (grep 측정). StatusBadge 외 페이지/컴포넌트의 색상 의미가 다양 (브랜드 카드 / 차트 / 배너 / 툴팁 — enum 기반 매핑 어려움)
   - **결정**: 나머지 sweep 은 별도 PR 로 분리. P1 핵심 가치 (StatusBadge 토큰화 + 의미 토큰 변수 정의) 달성 — 운영자 우선순위 낮음, 후속 PR 에서 일관성 폴리시 작업 시 진행
