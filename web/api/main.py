@@ -6,6 +6,7 @@ uvicorn web.api.main:app --host 0.0.0.0 --port 8000 --reload
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import socket
@@ -17,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from application import notifier
 from config.settings import settings
+from web.api import job_store
 from web.api.job_manager import JobManager
 from web.api.routers import (
     batches,
@@ -82,19 +84,50 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         ranking_scheduler = start_scheduler()
         logger.info("ranking.scheduler.in_process_enabled — local dev mode")
 
-    # Phase J1.4 — 백엔드 재시작 감지 알림. in-memory JobManager 가 휘발하면 진행 중
-    # job 상태가 사라지므로, Slack webhook 이 설정돼 있으면 매 cold start 마다 1회 push.
-    # webhook 미설정 시 notifier.send_text 가 noop. RENDER_INSTANCE_ID 가 있으면
-    # 인스턴스 식별, 없으면 hostname 폴백.
+    # Phase J1.4 + J2 PR4 — 백엔드 재시작 감지 알림 (orphaned 카운트 통합).
+    # in-memory JobManager 가 휘발하면 진행 중 job 상태가 사라지므로 Slack 으로 1회
+    # push. webhook 미설정 시 notifier.send_text 가 noop. flag on 이면 자기
+    # instance 의 stale running 모두 orphaned 로 마킹하고 그 결과를 같은 메시지에
+    # 묶어 알림 dedupe (J1.4 단독 + J2.5 단독으로 2건 발송 회피).
     instance_id = os.environ.get("RENDER_INSTANCE_ID") or socket.gethostname()
     logger.info("startup.restart_detected instance=%s", instance_id)
+    orphaned_count = 0
+    if settings.job_persistence_enabled:
+        try:
+            orphaned_count = job_store.mark_running_as_orphaned(instance_id=instance_id)
+            if orphaned_count > 0:
+                logger.warning(
+                    "startup.mark_orphaned instance=%s count=%d", instance_id, orphaned_count
+                )
+        except Exception:
+            logger.exception("startup.mark_orphaned_failed")
     try:
-        notifier.send_text(f":arrows_clockwise: *백엔드 재시작 감지* — instance={instance_id}")
+        if orphaned_count > 0:
+            notifier.send_text(
+                f":arrows_clockwise: *백엔드 재시작 감지* — instance={instance_id} / "
+                f"orphaned={orphaned_count}"
+            )
+        else:
+            notifier.send_text(f":arrows_clockwise: *백엔드 재시작 감지* — instance={instance_id}")
     except Exception:
         logger.exception("startup.restart_notify_failed")
 
+    # Phase J2 PR4 — 5분 주기 sweep. flag on 일 때만 task 시작. shutdown 시 cancel.
+    sweep_task: asyncio.Task[None] | None = None
+    if settings.job_persistence_enabled:
+        sweep_task = asyncio.create_task(_orphaned_sweep_loop(), name="job-orphaned-sweep")
+        logger.info(
+            "startup.orphaned_sweep_started interval=%ss grace=%ss",
+            settings.job_sweep_interval_seconds,
+            settings.job_orphaned_grace_seconds,
+        )
+
     logger.info("Contents Creator API started")
     yield
+    if sweep_task is not None:
+        sweep_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await sweep_task
     job_manager.shutdown()
     # 배치 worker pool 도 정리 — 진행 중 worker 는 wait=False 로 즉시 종료.
     # 진행 중 item 은 DB 에 'running' 으로 남고, 다음 startup 시 stuck 회수가 처리.
@@ -106,6 +139,39 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         stop_scheduler(ranking_scheduler)
     logger.info("Contents Creator API stopped")
+
+
+async def _orphaned_sweep_loop() -> None:
+    """Phase J2 PR4 — settings.job_sweep_interval_seconds 마다 stale heartbeat
+    조회 후 orphaned 마킹. count > 0 시 notifier 알림.
+
+    주의: lifespan 내에서만 시작되므로 설정값은 startup 시점 snapshot 이지만,
+    매 tick 마다 settings 재평가 — 운영 중 flag 가 false 로 토글되면 자연 종료.
+    Supabase 장애 시 mark_stale_running_as_orphaned 가 0 반환 (graceful) →
+    sweep 자체는 계속 동작.
+    """
+    while True:
+        interval = max(60, int(settings.job_sweep_interval_seconds))
+        await asyncio.sleep(interval)
+        if not settings.job_persistence_enabled:
+            logger.info("orphaned_sweep_loop exiting (flag turned off)")
+            return
+        try:
+            count = job_store.mark_stale_running_as_orphaned(
+                grace_seconds=settings.job_orphaned_grace_seconds,
+            )
+        except Exception:
+            logger.exception("orphaned_sweep.mark_failed")
+            continue
+        if count > 0:
+            logger.warning("orphaned_sweep.marked count=%d", count)
+            try:
+                notifier.send_text(
+                    f":mag: *orphaned sweep* — {count} job(s) marked orphaned "
+                    f"(stale heartbeat > {settings.job_orphaned_grace_seconds}s)"
+                )
+            except Exception:
+                logger.exception("orphaned_sweep.notify_failed")
 
 
 app = FastAPI(

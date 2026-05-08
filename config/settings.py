@@ -243,6 +243,13 @@ class Settings(BaseSettings):
         default=300,
         description="last_heartbeat 만료 grace (초). 이 시간 동안 갱신 없으면 orphaned",
     )
+    # 5분 주기 sweep 으로 stale heartbeat 모두 orphaned 마킹. flag on 일 때만 시작.
+    # 운영 부하 ↓ 위해 짧게 줄이지 않는다 — 본 파일의 grace 가 정확도, sweep 간격
+    # 은 검출 지연. 운영자가 빠른 검출을 원하면 60s 까지 단축 가능.
+    job_sweep_interval_seconds: int = Field(
+        default=300,
+        description="orphaned sweep 주기 (초). flag on 시 lifespan 에서 asyncio.create_task",
+    )
 
 
 settings = Settings()
