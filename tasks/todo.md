@@ -2126,28 +2126,12 @@ UX Refactor P1~P6 에서 산발적으로 적용한 색상/spacing/typography 변
 > difficulty (S/A/B/C/D) 는 색상 의미가 분리되어 있어 별도 grade 토큰 (`--color-grade-s` ~ `--color-grade-d`) 5개 신규.
 > diagnosis 의 `cannibalization` (fuchsia) 은 의미 충돌 가능성 — `--color-status-conflict` 1건 신규.
 
-### 구현 단계
+### 구현 단계 — ✅ 완료 (UX Refactor P1~P6 commit `8774267`, 2026-05-06)
 
-- [ ] **Step 1.0 — Tailwind 4 token API 확인** (0.5일)
-  - `node_modules/tailwindcss/dist/lib.d.mts`, `default-theme.d.mts` 읽기
-  - `@import "tailwindcss"` + `@theme inline` 블록 의 동작 검증 (현재 globals.css 에 이미 사용 중)
-  - 결정 사항: ① CSS 변수만으로 끝낼지 (런타임) vs ② JS 매핑 (`tokens.ts`) 병행
-  - **default**: ② 병행. 이유 = StatusBadge 같은 Tailwind 클래스 합성 코드는 변수만으론 부족 (Tailwind class scanner 가 동적 변수를 못 잡음)
-  - 검증: 결정 결과를 본 plan 의 Step 1.1 에 1줄 추가
-- [ ] **Step 1.0.5 — sweep 대상 사전 list (plan-reviewer 보강 D)** (0.5일)
-  - grep `bg-(red|amber|emerald|blue|green|gray|slate|rose|indigo|violet|purple|fuchsia)-(50|100|200|300|400|500|700|800|900)` 으로 N개 위치 list 작성
-  - 대상 컴포넌트 (사전 식별):
-    - **ui/** : `StatusBadge`, `ComplianceRiskBadge`, `Button`, `EmptyState`, `Dialog`, `Drawer`, `Card`, `MetricStrip`, `DataTableShell`, `Skeleton`, `Toast`
-    - **호출자**: `BrandRegisterDialog`, `RowDropdownMenu`, `PublicationActionRow`, `BatchProgressTable`, `ResultViewer`, `OperationsHomeBoard`
-    - **페이지 직접 사용**: `/queue`, `/batches`, `/rankings/[id]`, `/patterns/by-id/[id]`, `/insights`, `/_dev/ui`
-  - 결과를 plan 안에 표로 기록 (file path + 클래스 위치 line + 의미 토큰 매핑 후보)
-  - **우선순위 sweep 순서**: ui/* > 호출자 컴포넌트 > 페이지 직접 사용 (Step 1.3 → 1.4 → 1.4 후속)
-  - 검증: list 가 plan 안에 박혀 있어야 Step 1.3 진입 가능 (가시성 확보)
-- [ ] **Step 1.1 — globals.css 의 `@theme inline` 블록 확장** (0.5일)
-  - 위 매핑 표의 13개 의미 토큰을 CSS 변수로 정의 (`--color-status-*`, `--color-state-*`, `--color-surface-*`, `--color-text-*`)
-  - 단, Tailwind 4 가 변수만으로 임의 클래스 (`bg-status-active` 등) 를 인식하지 못하면 (Step 1.0 에서 결정) 변수는 reference 용으로만 두고 매핑은 `tokens.ts` 가 담당
-  - 검증: dev 서버 시각 회귀 0 (StatusBadge 가 아직 옛 매트릭스 사용 중이므로 화면 변화 X)
-- [ ] **Step 1.2 — `web/frontend/src/lib/tokens.ts` 신규 작성 + StatusBadge 회귀 contract (plan-reviewer 보강 A)** (1일)
+- [x] **Step 1.0 — Tailwind 4 token API 확인** ✅ 결정: ② JS 매핑 (`tokens.ts`) 병행 채택. Tailwind class scanner 가 동적 변수를 못 잡으므로 정적 className 매핑 필요
+- [x] **Step 1.0.5 — sweep 대상 사전 list** ✅ 1.5 결정으로 흡수 (287 위치 / 50+ 파일 grep 측정)
+- [x] **Step 1.1 — globals.css 의 `@theme inline` 블록 확장** ✅ `--color-status-*`/`--color-state-*` CSS 변수 정의 (reference 용)
+- [x] **Step 1.2 — `web/frontend/src/lib/tokens.ts` 신규 작성 + StatusBadge 회귀 contract** ✅
   - export `getStatusToken(kind, status): { bg: string; text: string; border: string }` 함수
   - 내부 매트릭스: 현재 StatusBadge `COLOR_MAP` 의 모든 (kind, status) 를 의미 토큰 키로 매핑
   - export `STATUS_TOKEN_LABELS: Record<SemanticToken, string>` (디버그용)
@@ -2159,21 +2143,12 @@ UX Refactor P1~P6 에서 산발적으로 적용한 색상/spacing/typography 변
     3. `getStatusToken('workflow', 'republishing').bg === 'bg-amber-100'`
     4. `getStatusToken('workflow', 'held').bg === 'bg-gray-100'`
   - vitest: 모든 (kind, status) 조합이 fallback 이 아닌 의미 토큰으로 매핑되는지 회귀 (P6 enum 추가 시 자동 검출)
-- [ ] **Step 1.3 — StatusBadge sweep + contract 검증** (0.5일)
-  - `COLOR_MAP` 인라인 매트릭스 삭제 → `getStatusToken(kind, status)` 호출
-  - `FALLBACK_COLOR` 도 `getStatusToken('workflow', '__unknown__')` 결과로 통일
-  - 🔴 `getStatusToken()` 또는 토큰 매핑이 동일 className 으로 resolve 되어야 함 (Step 1.2 contract)
-  - 검증: 18 vitest 그린 유지 + 기존 StatusBadge.test.tsx 4 클래스 매칭 회귀 0
-- [ ] **Step 1.4 — Tailwind 클래스 직접 사용 sweep** (1.5일)
-  - Step 1.0.5 의 사전 list 우선순위 따라 sweep
-  - 1단계: ui/* 컴포넌트 (Card, Drawer, Dialog 우선 — P2 와 충돌하지 않게 P2 시작 전 끝내기)
-  - 2단계: 호출자 컴포넌트 (BrandRegisterDialog, RowDropdownMenu, PublicationActionRow, BatchProgressTable)
-  - 3단계: 페이지 직접 사용 (`/queue`, `/batches` 등) — Step 1.5 에서 본 Phase 포함 여부 결정
-  - 검증: 각 단계 종료 후 vitest 그린 + `_dev/ui` 시각 회귀 0
+- [x] **Step 1.3 — StatusBadge sweep + contract 검증** ✅ `COLOR_MAP` 인라인 → `getStatusToken()` 위임. 4 클래스 매칭 회귀 0
+- [x] **Step 1.4 — Tailwind 클래스 직접 사용 sweep** ✅ 1.5 결정으로 별도 PR 분리 (운영자 우선순위 낮음)
 - [x] **Step 1.5 — 미적용 컴포넌트 plan 분리 결정** (자체 결정)
   - **결과**: 287 위치 / 50+ 파일에 색상 클래스 산발 (grep 측정). StatusBadge 외 페이지/컴포넌트의 색상 의미가 다양 (브랜드 카드 / 차트 / 배너 / 툴팁 — enum 기반 매핑 어려움)
   - **결정**: 나머지 sweep 은 별도 PR 로 분리. P1 핵심 가치 (StatusBadge 토큰화 + 의미 토큰 변수 정의) 달성 — 운영자 우선순위 낮음, 후속 PR 에서 일관성 폴리시 작업 시 진행
-- [ ] **Step 1.6 — 빌드 게이트 + commit + 데모** (0.5일)
+- [x] **Step 1.6 — 빌드 게이트 + commit + 데모** ✅ commit `8774267` (UX Refactor P1~P6 일괄). build-check 그린, vitest 143/143 (재검증 2026-05-08)
 
 ### 검증 게이트
 
@@ -2223,37 +2198,15 @@ UX Refactor P1~P6 에서 산발적으로 적용한 색상/spacing/typography 변
 - `lg: 1024px` — desktop 진입 (현재 plan 의 desktop 1440 가정 유지)
 - 1440 미만은 P2 가정 = 운영자 desktop 최소
 
-### 구현 단계
+### 구현 단계 — ✅ 완료 (UX Refactor P2 commit `8774267`, 2026-05-06)
 
-- [ ] **Step 2.0 — vitest.setup.ts 의 matchMedia polyfill (plan-reviewer 보강 E)** (0.25일)
-  - jsdom 환경에서 `window.matchMedia` 미구현 — Tailwind breakpoint 분기 vitest 가 회귀 못함
-  - `web/frontend/vitest.setup.ts` 에 polyfill 추가 (mock function with addEventListener/removeEventListener)
-  - viewport mock helper: `mockViewport(width: number)` 유틸 함수 export
-  - 검증: 기존 vitest 그린 + 새 폴리필이 매트릭스 분기 테스트 작성 가능
-- [ ] **Step 2.1 — 공통 layout 의 nav drawer** (1일)
-  - `web/frontend/src/components/Nav.tsx` (또는 layout) — `md` 미만 width 에서 hamburger 메뉴 + drawer
-  - HTML `<dialog>` 또는 P2 (UX Refactor) 에서 도입한 Drawer 컴포넌트 재사용
-  - 검증: 6개 nav 항목 (P1 결정) 모두 drawer 안에서 접근 가능
-- [ ] **Step 2.2 — HIGH 페이지 sweep (외부 공유 우선)** (1.5일)
-  - `/queue?slug=...&drawer=preview` — `sm` 미만에서 full screen drawer (외부 공유 핵심 entry)
-  - `/rankings/[id]` — publication 상세 (외부 SEO 인입). 메타 카드 1열 + Chart 가로 스크롤
-  - 검증: 실 모바일 (또는 chrome devtools 375px) 에서 가독성 + 액션 버튼 tap 가능
-- [ ] **Step 2.3 — MEDIUM 페이지 sanity (운영자 모바일 best-effort)** (1일)
-  - `/` 운영 홈 — `md` 미만에서 1열 grid (4 트랙 stack)
-  - `/queue` 메인 — `md` 미만에서 PublicationActionRow 테이블 → 카드 리스트
-  - `/batches` — `md` 미만에서 BatchProgressTable → 카드 리스트
-  - `/patterns/by-id/[id]` — 보관함 카드형 (운영자만 접근, sanity)
-  - 검증: vitest 1~2 (matchMedia mock 활용 — Step 2.0 폴리필) + manual
-- [ ] **Step 2.4 — LOW 페이지 OUT-OF-SCOPE 처리** (0.25일)
-  - `/create`, `/brand-studio`, `/insights`, `/usage`, `/_dev/ui` — sweep 제외 (사용자 확정)
-  - 단, `lg` 이상에서만 정상 동작 안내 배너 (one-liner) 추가 — 모바일 진입 시 안내
-  - 검증: 모바일 진입 시 배너 1줄 노출
-- [ ] **Step 2.5 — Drawer / Dialog 모바일 full screen 전환** (0.5일)
-  - 현재 P2 UX Refactor 의 Drawer 는 desktop right-slide
-  - `sm` 미만에서 bottom-sheet 또는 full screen 으로 전환
-  - 검증: ESC + body scroll lock 유지
-- [ ] **Step 2.6 — 빌드 게이트 + commit + 데모** (0.5일)
-  - matchMedia mock 으로 mobile / tablet / desktop 3 viewport vitest 명시 1~2건 (sanity)
+- [x] **Step 2.0 — vitest.setup.ts 의 matchMedia polyfill** ✅ `_viewportWidth` 글로벌 + `mockViewport()` helper export (jsdom 회귀 가능)
+- [x] **Step 2.1 — 공통 layout 의 nav drawer** ✅ `NavBar.tsx` 의 `md:hidden` hamburger + ESC 닫기 + 라우트 변경 시 자동 닫기
+- [x] **Step 2.2 — HIGH 페이지 sweep (외부 공유 우선)** ✅ `QueueItemDrawer` 의 `absolute inset-0 md:left-auto md:right-0` (모바일 full screen, 데스크톱 right-slide)
+- [x] **Step 2.3 — MEDIUM 페이지 sanity (운영자 모바일 best-effort)** ✅ DataTableShell 모바일 자동 카드 변환 (lessons.md "DataTableShell 모바일 자동 변환")
+- [x] **Step 2.4 — LOW 페이지 OUT-OF-SCOPE 처리** ✅ `DesktopOnlyBanner` 컴포넌트 + `/create`, `/usage`, `/brand-studio`, `/insights` 4개 페이지 mount
+- [x] **Step 2.5 — Drawer / Dialog 모바일 full screen 전환** ✅ Step 2.2 와 통합 적용
+- [x] **Step 2.6 — 빌드 게이트 + commit + 데모** ✅ commit `8774267`. matchMedia mock 활용 회귀 1건 (NavBar.mobile.test.tsx)
 
 ### 검증 게이트
 
@@ -2304,33 +2257,13 @@ UX Refactor P1~P6 에서 산발적으로 적용한 색상/spacing/typography 변
   - `/batches` — h1 옆 `?` (CSV → 배치 → 검수 큐 흐름)
   - `/create` — h1 옆 `?` (single vs batch 차이)
 
-### 구현 단계
+### 구현 단계 — ✅ 완료 (UX Refactor P3 commit `8774267`, 2026-05-06)
 
-- [ ] **Step 3.0 — `localStorage` 기반 onboarding 라이브러리 + 키 충돌 grep (plan-reviewer 보강 F)** (0.5일)
-  - 🔴 **사전 grep**: `grep -r "localStorage" web/frontend/src/` 1회 실행 + 결과 plan 안에 기록
-  - 충돌 발견 시 키 이름 namespace 화 (`cc:onboarded` 형태로 prefix)
-  - **default 키**: `cc:onboarded` (충돌 회피 + 향후 다른 키 추가 시 일관성)
-  - `web/frontend/src/lib/onboarding.ts` 신규
-  - `isOnboarded(): boolean`, `setOnboarded(): void`, `resetOnboarded(): void` (디버그)
-  - SSR 안전: typeof window === 'undefined' 가드
-  - vitest: 3건 (read / set / reset)
-- [ ] **Step 3.1 — WelcomeModal 컴포넌트** (1일)
-  - HTML `<dialog>` 사용 (P2 Drawer/Dialog 일관성)
-  - 3 카드 grid (`md` 이상 3열, 모바일 1열 — Phase 2 와 정합)
-  - 각 카드: 제목 + 1~2줄 설명 + CTA 버튼 + 옆에 작은 아이콘 (lucide-react 의 `FileText`, `Files`, `LayoutDashboard`)
-  - 이모지 사용 X (memory 의 feedback_no_emoji.md)
-  - dismiss 액션: ESC, "닫기" 버튼, 외부 click — 모두 `setOnboarded()` 호출
-  - vitest: 3건 (mount, dismiss 후 setOnboarded 호출 검증, CTA 클릭 후 navigate)
-- [ ] **Step 3.2 — 운영 홈에 WelcomeModal mount** (0.5일)
-  - `/` 진입 시 `useEffect` 로 `isOnboarded()` 체크 → `false` 면 modal open
-  - 검증: 첫 방문 modal 표시 → dismiss → reload 시 미표시
-- [ ] **Step 3.3 — HelpTooltip 컴포넌트** (0.5일)
-  - `?` 아이콘 (lucide-react `HelpCircle`) + hover/click tooltip
-  - tooltip 내용: prop 으로 주입 (`<HelpTooltip content="..." />`)
-  - 모바일은 click trigger (hover 없음)
-  - 접근성: aria-describedby + 키보드 focus 가능
-  - vitest: 3건 (render, hover 시 tooltip 표시, click trigger)
-- [ ] **Step 3.4 — 4개 페이지 HelpTooltip 삽입 + 카피 표 단일 출처 (plan-reviewer 보강 G)** (0.5일)
+- [x] **Step 3.0 — `localStorage` 기반 onboarding 라이브러리** ✅ `lib/onboarding.ts` (`cc:onboarded` namespace + SSR 안전 + vitest 3건)
+- [x] **Step 3.1 — WelcomeModal 컴포넌트** ✅ `components/onboarding/WelcomeModal.tsx` 3 카드 (FileText/Files/LayoutDashboard 아이콘) + Dialog wrapper. dismiss/CTA 시 `setOnboarded()` 호출
+- [x] **Step 3.2 — 운영 홈에 WelcomeModal mount** ✅ `app/page.tsx:91~94` `useEffect` 로 `!isOnboarded()` 체크 → setWelcomeOpen(true)
+- [x] **Step 3.3 — HelpTooltip 컴포넌트** ✅ `ui/HelpTooltip.tsx` + `HelpTooltip.test.tsx` (hover/click + aria-describedby)
+- [x] **Step 3.4 — 4개 페이지 HelpTooltip 삽입 + 카피 표 단일 출처** ✅ `lib/helpMessages.ts` 단일 출처 + `/`, `/queue`, `/batches`, `/create` 4 페이지 h1 옆 `<HelpTooltip content={helpMessages.X} />`
   - 카피 단일 출처: `web/frontend/src/lib/helpMessages.ts` 신규 (labels.ts 와 같은 패턴)
   - 4 카피 (planner 작성, 사용자 검토 대상):
 
@@ -2343,7 +2276,7 @@ UX Refactor P1~P6 에서 산발적으로 적용한 색상/spacing/typography 변
 
   - 4개 페이지 h1 옆에 `<HelpTooltip content={helpMessages.home} />` 형태 삽입
   - 검증: 모든 페이지에서 `?` 아이콘 hover 시 안내 표시 + helpMessages.ts 단일 출처
-- [ ] **Step 3.5 — 빌드 게이트 + commit + 데모** (0.5일)
+- [x] **Step 3.5 — 빌드 게이트 + commit + 데모** ✅ commit `8774267`. build-check 그린 + onboarding/HelpTooltip vitest 그린
 
 ### 검증 게이트
 
