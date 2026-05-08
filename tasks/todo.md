@@ -1586,8 +1586,21 @@ UX Refactor P1~P6 에서 산발적으로 적용한 색상/spacing/typography 변
 
 ## 🔮 Phase J 후속 (별도 todo 진입 시 분해)
 
-- **Phase J3 — Worker 분리**: API stateless + Render Background Worker. Postgres `FOR UPDATE SKIP LOCKED` 큐 (SPEC-BATCH `claim_item_for_dispatch` 패턴 재사용)
-- **Phase J4 — Playwright 격리**: 브랜드 카드 렌더만 별도 서비스 (Vercel Sandbox 또는 Browserless). API/Worker 메모리 200~300MB 절감
+> **2026-05-08 J2 종료 시점 검토 결과 (J3 검토 세션)** — J3 / J4 / J5 모두 1주 모니터링 데이터가 누적되어야 우선순위 정함. J2 staging 활성화 + 1주 데이터 (latency p99 / orphaned 빈도 / job_type 별 메모리 피크) 후 결정 게이트.
+>
+> **재검토 일자**: 2026-05-15 (J2 staging 활성 후 1주)
+
+- **Phase J3 — Worker 분리**: API stateless + Render Background Worker. Postgres `FOR UPDATE SKIP LOCKED` 큐 (SPEC-BATCH `claim_item_for_dispatch` 패턴 재사용). 비용 ~$7/mo, 운영 복잡도 ↑. **착수 조건**: 1주 데이터에서 API process 가 OOM 또는 응답성 한계로 확인되고, 단일 job_type 이 아닌 여러 job_type 에서 메모리 피크가 분산된 경우
+- **Phase J4 — Playwright 격리**: 브랜드 카드 렌더만 별도 서비스 (Vercel Sandbox 또는 Browserless). API/Worker 메모리 200~300MB 절감. **착수 조건**: 1주 데이터에서 brand_card_render 가 OOM 트리거의 주범으로 확인 (2026-05-08 사고의 직접 원인이라 가설 우세). 비용 저렴, 복잡도 중. **J3 보다 ROI 높을 가능성 ↑**
 - **Phase J5 — Durable workflow**: Inngest 또는 Temporal. 의료법 fixer/이미지 재시도/약한 섹션 보강을 step 단위 체크포인트화. 도입 시점은 J2~J4 안정화 + 운영 데이터 누적 후 trade-off 평가
+
+### 1주 모니터링 체크리스트 (사용자 작업)
+- [ ] Render Dashboard env: `JOB_PERSISTENCE_ENABLED=true` 활성화 (PR1~PR5 commit 후 schema 마이그레이션 적용 완료)
+- [ ] 1주간 관찰:
+  - [ ] DB write latency: `_submit` 의 동기 insert_job p99 < 200ms
+  - [ ] Supabase row growth: `progress_events` 테이블 크기 → 7일 retention cron 필요 시점 판단
+  - [ ] orphaned 발생 빈도: 컨테이너 재시작 빈도 + 이번 환경에서 grace 5분 적정성
+  - [ ] job_type 별 메모리 피크 (Render metrics): pipeline / generate / brand_card_render / ranking_bulk_check 별 RAM peak
+- [ ] 2026-05-15 결정 게이트: J3 vs J4 우선순위 / 보류 / 통합 진행
 
 
