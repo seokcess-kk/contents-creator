@@ -3,6 +3,46 @@
 > 사용자 교정이나 반복 실수 발견 시 이 파일에 기록.
 > 세션 시작 시 이 파일을 리뷰. 반복 패턴 발견 시 `CLAUDE.md` 에 규칙으로 승격.
 
+## 카테고리 인덱스
+
+> 본문은 시간순. 빠른 탐색용 카테고리 매핑 (2026-05-08 추가).
+
+### Compliance / 의료법
+- [SEO 원고 파이프라인 교훈](#seo-원고-파이프라인-교훈-2026-04-16) — 2026-04-16
+
+### Build / Test / CI
+- [vitest fake timer + waitFor 비호환 + Response 1회 read 함정](#vitest-fake-timer--waitfor-비호환--response-1회-read-함정-2026-05-08) — 2026-05-08
+- [build-check.sh 의 pytest 는 system python — venv 와 의존 동기화 필수](#build-checksh-의-pytest-는-system-python-사용--venv-와-의존-동기화-필수-2026-05-08) — 2026-05-08
+- [Windows cp949 콘솔 + Python 한글 처리 — Polish P4](#windows-cp949-콘솔--python-한글-처리--polish-p4-2026-05-06) — 2026-05-06
+- [테스트에서 SWR 캐시 격리 — `SWRConfig provider: () => new Map()`](#테스트에서-swr-캐시-격리--swrconfig-provider---new-map-2026-05-07) — 2026-05-07
+
+### Deploy / Infrastructure
+- [In-memory JobManager 휘발 + 폴링 retry-bound 패턴](#in-memory-jobmanager-휘발--폴링-retry-bound-패턴-2026-05-08) — 2026-05-08
+- [Vercel 함수 페이로드 4.5MB 한계 — Presigned URL 우회](#vercel-함수-페이로드-45mb-한계--presigned-url-우회-2026-04-30) — 2026-04-30
+- [In-process APScheduler + 단일 컨테이너 = cron 누락 함정](#in-process-apscheduler--단일-컨테이너--cron-누락-함정-2026-05-03) — 2026-05-03
+- [save_usage_to_supabase silent failure + 자동 검증](#save_usage_to_supabase-silent-failure--자동-검증-2026-05-03) — 2026-05-03
+- [Mutating endpoint 에 외부 retry 거는 패턴 = lock 충돌 폭발](#mutating-endpoint-에-외부-retry-거는-패턴--lock-충돌-폭발-2026-05-04) — 2026-05-04
+- [실측 e2e 발견 — Supabase Storage 한글 key](#실측-e2e-발견--supabase-storage-한글-key-2026-05-06) — 2026-05-06
+- [실측 e2e 발견 — schema migration 적용 필수](#실측-e2e-발견--schema-migration-적용-필수-2026-05-06) — 2026-05-06
+
+### UX / Frontend
+- [디자인 토큰 sweep ROI — UX Refactor 후속](#디자인-토큰-sweep-roi--ux-refactor-후속-2026-05-06) — 2026-05-06
+- [React 컴포넌트 prop 타입 확장 — Polish P3](#react-컴포넌트-prop-타입-확장--polish-p3-2026-05-06) — 2026-05-06
+- [DataTableShell 모바일 자동 변환 + vitest 텍스트 매칭 충돌](#datatableshell-모바일-자동-변환--vitest-텍스트-매칭-충돌--polish-p2-2026-05-06) — 2026-05-06
+
+### Domain / Architecture
+- [도메인 격리 유지 + DI 패턴 — `csv_parser.blog_resolver`](#도메인-격리-유지--di-패턴--csv_parserblog_resolver-2026-05-07) — 2026-05-07
+- [FastAPI 라우트의 `status_code=204` + `-> None` 충돌](#fastapi-라우트의-status_code204---none-충돌-2026-05-07) — 2026-05-07
+- [키워드 난이도 분석 속도 — Phase F 후속 튜닝](#키워드-난이도-분석-속도--phase-f-후속-튜닝-2026-05-04) — 2026-05-04
+- [설계 결정](#설계-결정) — Phase 0.5/0.6 초기 결정 모음
+
+### Operations / Process
+- [Phase B9 마감 — todo.md 정합성 회복 패턴](#phase-b9-마감--todomd-정합성-회복-패턴-2026-04-29) — 2026-04-29
+- [실수 패턴](#실수-패턴) — 일반 패턴 모음
+- [실측 결과 (Phase 0.5)](#실측-결과-phase-05) / [Phase 0.6 (브랜드 카드)](#실측-결과-phase-06--브랜드-카드-트랙) — 부트스트랩 시점 검증 데이터 (참고용 보존)
+
+---
+
 ## SEO 원고 파이프라인 교훈 (2026-04-16)
 
 ### [SEO-1] 분석 데이터가 프롬프트에 전달되지 않는 패턴
@@ -1008,4 +1048,83 @@ render(withSwr(<PublicationForm variant="create" />));
 **참조**:
 - `domain/generation/title_validator.py:_get_kiwi` (singleton + ImportError sticky)
 - `.claude/hooks/build-check.sh:64` (`pytest -q` 시스템 호출)
+
+---
+
+## In-memory JobManager 휘발 + 폴링 retry-bound 패턴 (2026-05-08)
+
+**사고**: `/api/jobs/5886b339a0a1` 폴링이 502→503→404 100회 이상 누적. 사용자 브라우저가 분당 20회씩 의미 없는 트래픽 생성 + 진행 분실 사실 인지 불가.
+
+**근본 원인**: `web/api/job_manager.JobManager._jobs` 가 **in-memory dict**. Render starter plan 512MB RAM 에서 Gemini base64 + Playwright 메모리 피크가 OOM 트리거 → 컨테이너 재시작 → dict 휘발. `GET /api/jobs/{id}` 가 영구적으로 404 반환하는데 frontend 폴링은 무한 반복.
+
+**Phase J1 봉합 (구조 무변경 출혈만 차단)**:
+1. **Frontend 폴링 retry-bound** (`lib/useJobPolling`) — 404 누적 ≥3 또는 5xx 누적 ≥3 시 `aborted=true` 로 즉시 중단 + ErrorBanner 안내. 단발 4xx (401/403 등) 는 카운터 누적 X — 일시적/영구적 구분
+2. **ApiError 클래스** — fetchJson 이 status 를 throw 한다. retry-bound 카운터가 status 분기 가능하게
+3. **재시작 알림** (`web/api/main.py` startup) — `notifier.send_text` 로 cold start 1회 push. RENDER_INSTANCE_ID 또는 hostname 식별, webhook 미설정 시 noop
+4. **운영 env 동시성 하향** — `IMAGE_PARALLEL_WORKERS=2` / `BRIGHTDATA_CONCURRENT_LIMIT=3` / `BATCH_MAX_WORKERS=1` 로 메모리 피크 자체 축소
+
+**Phase J2 구조적 해결 (보류, 운영 1주 후 결정)**: in-memory dict 를 캐시로 강등, Supabase `jobs` 테이블이 정본. 컨테이너 재시작 후 `status=orphaned` 로 자연 종결.
+
+**일반화 규칙**:
+- **in-memory state 가 정본인 endpoint** = 컨테이너 재시작 시 영구 404 함정. 재시작에 무방비한 코드는 `progress_log` jsonb 누적, `_jobs` dict, `republish_jobs` 만 in-memory 등 — Supabase write-through 또는 명시적 `orphaned` 종결 상태 필요
+- **클라이언트 폴링은 항상 retry-bound 가져야 한다** — 무한 폴링은 백엔드 사고 시 트래픽 폭주 + 사용자 인지 차단의 이중 출혈. 카운터 + 영구 종결 (aborted) + 사용자 안내 동선 (결과 보관함 fallback) 셋이 묶여야 의미 있음
+- **status 별 분기 카운터**: 일시적 (5xx) 와 영구적 (404) 을 같은 카운터로 누적하지 말 것. 200 OK 시 둘 다 reset, 영구 종결은 둘 중 하나만 임계 도달해도 발동
+- **재시작 알림은 webhook noop 패턴** — `notifier.send_text` 가 webhook 없으면 즉시 return. dev 환경에서 수동 켜고 끌 수 있음. 토글 자체를 코드에 넣을 필요 X
+- **plan 명은 dashboard ↔ render.yaml ↔ 마케팅 페이지 모두 다를 수 있음** — Render 의 경우 marketing 은 Standard 표기, dashboard 노출은 workspace tier 에 따라 다름. plan 변경 시 `render.yaml` enum 값 (`free`/`starter`/`standard`/`pro`/...) 과 dashboard 옵션을 양쪽 확인
+
+**참조**:
+- `web/frontend/src/lib/useJobPolling.ts` (retry-bound hook)
+- `web/frontend/src/lib/api.ts:ApiError` (status 노출)
+- `web/api/main.py:lifespan` (재시작 알림)
+- `tasks/todo.md` Phase J1/J2 섹션
+
+---
+
+## vitest fake timer + waitFor 비호환 + Response 1회 read 함정 (2026-05-08)
+
+**배경**: useJobPolling hook 회귀 테스트 작성 중 (`lib/__tests__/useJobPolling.test.tsx`) 첫 시도 5/5 fail.
+
+**함정 1 — fake timer + `waitFor`**: `vi.useFakeTimers()` 사용 중 `@testing-library/react` 의 `waitFor` 는 내부 setTimeout polling 으로 조건을 기다리는데, fake timer 환경에서는 `setTimeout` 이 advance 안 되면 영원히 대기 → "Test timed out in 5000ms" 로 fail.
+
+**해결**: `waitFor` 제거. `vi.advanceTimersByTimeAsync(ms)` 가 microtask 까지 처리하므로, 그 직후 `expect(result.current.X)` 직접 검증.
+
+```ts
+async function tick(ms: number) {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+}
+await tick(0);    // initial poll (microtask flush)
+await tick(1000); // interval 1회
+expect(result.current.aborted).toBe(true);
+```
+
+**함정 2 — Response 객체 1회 read 제한**: `mockResolvedValue(new Response(...))` 처럼 같은 Response 인스턴스를 반복 반환하면 두 번째 호출에서 `Body is unusable: Body has already been read` 에러. Web Streams 의 ReadableStream 은 1회 consume.
+
+**해결**: `mockImplementation(() => Promise.resolve(new Response(...)))` 로 매 호출마다 새 Response 생성하는 factory 패턴.
+
+```ts
+function errorResponseFactory(status: number, text: string) {
+  return () => Promise.resolve(new Response(text, { status }));
+}
+const fetchMock = vi.fn<typeof fetch>().mockImplementation(errorResponseFactory(404, "x"));
+```
+
+**시퀀스가 필요한 경우** — `mockResolvedValueOnce` 대신 index 카운터 + factory:
+
+```ts
+const sequence = [errorResponseFactory(404, "x"), jsonResponseFactory(running)];
+let i = 0;
+const fetchMock = vi.fn().mockImplementation(() => sequence[Math.min(i++, sequence.length - 1)]());
+```
+
+**일반화 규칙**:
+- **`vi.useFakeTimers()` + `waitFor` 금지** — `advanceTimersByTimeAsync` 후 직접 `expect`. 두 API 는 같은 setTimeout queue 에서 동작이 충돌
+- **`mockResolvedValue` 는 같은 객체 반복 반환** — Response/Stream/AbortController 등 1회용 객체는 `mockImplementation(factory)` 로 매번 새로 생성
+- **fetch mock 의 시퀀스 전환** — `mockResolvedValueOnce` 체이닝 대신 factory + 카운터 패턴이 디버깅 쉽고 Response read 함정도 같이 해결
+- **act + advanceTimersByTimeAsync 한 묶음**: helper `tick(ms)` 로 빼두면 테스트 가독성 ↑
+
+**참조**:
+- `web/frontend/src/lib/__tests__/useJobPolling.test.tsx` (5/5 통과 버전)
+- `web/frontend/src/lib/useJobPolling.ts` (테스트 대상)
 

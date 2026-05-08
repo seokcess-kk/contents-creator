@@ -1765,16 +1765,17 @@ UX Refactor P1~P6 에서 산발적으로 적용한 색상/spacing/typography 변
 - [ ] ~~`useJobProgress` WebSocket 도 동일 N회 reconnect 후 중단 + 동일 안내~~ — 현재 `useJobProgress` 가 reconnect 자체를 안 가지고 있어 N=1 (단발 onerror 종료) 상태. 폴링 retry-bound 가 동시 트리거하면 ErrorBanner 가 동일 안내를 한다. WS reconnect 도입 자체는 범위 밖이라 J2 또는 별도 차수로 이연
 - [x] vitest — 404 3회 mock → 폴링 중단 + onError 호출 검증 — `lib/__tests__/useJobPolling.test.tsx` 5/5 (404·502 누적 / 카운터 reset / terminal 자연 종결 / 401 누적 미발동)
 
-### J1.2 운영 env 동시성 하향 (Render Dashboard, 코드 변경 0)
-- [ ] **사용자 작업** — `IMAGE_PARALLEL_WORKERS=2` (기본 5 → Gemini 병렬 base64 메모리 절감)
-- [ ] **사용자 작업** — `BRIGHTDATA_CONCURRENT_LIMIT=3` (기본 5)
-- [ ] **사용자 작업** — `BATCH_MAX_WORKERS=1` (기본 2)
+### J1.2 운영 env 동시성 하향 (Render Dashboard, 코드 변경 0) ✅ (2026-05-08)
+- [x] `IMAGE_PARALLEL_WORKERS=2` (기본 5 → Gemini 병렬 base64 메모리 절감) — 사용자 Render Dashboard 적용
+- [x] `BRIGHTDATA_CONCURRENT_LIMIT=3` (기본 5) — 사용자 Render Dashboard 적용
+- [x] `BATCH_MAX_WORKERS=1` (기본 2) — 사용자 Render Dashboard 적용
 - [x] `config/.env.example` 주석에 운영 권장값 기록 — Phase J1.2 헤더 + 3개 키 권장값 코멘트 추가
 
-### J1.3 Render Service Instance 업그레이드
-- [ ] **사용자 작업** — `render.yaml:7` `plan: starter` → `plan: standard` (RAM 512MB→2GB, CPU 0.5→1.0, +$18/mo)
-- [ ] **사용자 작업** — 업그레이드 후 24시간 메모리 그래프 모니터링 (피크 사용량 < 1.5GB 확인)
-- [ ] commit msg 에 비용 차이 명시 — render.yaml 변경 commit 시점에 사용자가 기록
+### J1.3 Render Service Instance 업그레이드 — Standard 미노출, Starter 유지 (2026-05-08)
+- [x] **사용자 결정** — Render Dashboard 에서 Standard plan 미노출 (workspace tier 또는 region 제약으로 추정). 사용자가 Starter 로 plan 업데이트 처리. `render.yaml` 변경 0건. RAM 512MB 그대로 유지 — J1.2 env 동시성 하향과 J1.4 재시작 알림으로 메모리 피크 자체를 줄이는 방향
+- [x] ~~업그레이드 후 24시간 메모리 그래프 모니터링~~ — 업그레이드 미수행이므로 J1.5 의 1주 502/404 빈도 모니터링으로 대체
+- [x] ~~commit msg 에 비용 차이 명시~~ — N/A
+- 후속 검토: 1주 모니터링 결과 메모리 피크가 여전히 OOM 트리거하면 (1) Standard 노출 회복 경로 (workspace upgrade) 또는 (2) Phase J2 영속화로 in-memory 의존 자체 제거 — 둘 중 비용 효율적인 쪽 선택
 
 ### J1.4 재시작 알림 (notifier 재사용) ✅ (2026-05-08)
 - [x] `web/api/main.py` startup hook 에 "재시작 감지" 로직 — `RENDER_INSTANCE_ID` 또는 hostname 식별 → `notifier.send_text(":arrows_clockwise: *백엔드 재시작 감지* — instance=...")` 1회 발송. logger.info 도 동시 기록
