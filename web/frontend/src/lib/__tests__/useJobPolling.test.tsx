@@ -132,6 +132,30 @@ describe("useJobPolling — Phase J1.1", () => {
     expect(fetchMock.mock.calls.length).toBe(callsBeforeIdle);
   });
 
+  // Phase J2 PR3 — DB fallback 으로 200 OK + status=orphaned 가 오면 terminal 로
+  // 인식해 폴링 자연 중단. aborted (404 retry-bound) 와 별개 동선.
+  it("status=orphaned 도 terminal 로 인식해 자연 중단", async () => {
+    const orphanedJob = {
+      ...RUNNING_JOB,
+      status: "orphaned",
+      error: "container restart — in-memory state lost",
+    };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockImplementation(jsonResponseFactory(orphanedJob));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useJobPolling("abc", { intervalMs: 1000 }));
+    await tick(0);
+
+    expect(result.current.job?.status).toBe("orphaned");
+    expect(result.current.aborted).toBe(false); // 404 retry-bound 와 다른 자연 종결
+
+    const callsBeforeIdle = fetchMock.mock.calls.length;
+    await tick(5000);
+    expect(fetchMock.mock.calls.length).toBe(callsBeforeIdle);
+  });
+
   it("4xx 비-404 (예: 401) 는 retry-bound 미발동 — 카운터 누적 X", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()

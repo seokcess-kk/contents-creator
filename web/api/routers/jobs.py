@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from datetime import datetime
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from config.settings import settings
+from web.api import job_store
 from web.api.auth import require_api_key
 from web.api.schemas import (
     AnalyzeRequest,
@@ -45,6 +48,42 @@ def _job_to_response(job: Job) -> JobResponse:
     )
 
 
+def _parse_dt(value: Any) -> datetime | None:
+    """Supabase row 의 ISO8601 timestamp 문자열을 datetime 으로 변환."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        # Postgres timestamptz: "2026-05-08T12:00:00+00:00" 또는 "...Z"
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    return None
+
+
+def _row_to_response(row: dict[str, Any]) -> JobResponse:
+    """Phase J2 PR3 — DB row → JobResponse. in-memory miss 시 fallback 응답.
+
+    progress 는 빈 list (PR3 범위 밖). progress_events 테이블에서 재생하는 동선은
+    후속 PR 또는 별도 endpoint 로 분리.
+    """
+    return JobResponse(
+        id=str(row.get("id", "")),
+        type=str(row.get("type", "")),
+        keyword=str(row.get("keyword") or ""),
+        status=str(row.get("status", "orphaned")),
+        created_at=_parse_dt(row.get("created_at")) or datetime.now(),
+        started_at=_parse_dt(row.get("started_at")),
+        finished_at=_parse_dt(row.get("finished_at")),
+        params=row.get("params") or {},
+        result=row.get("result"),
+        error=row.get("error"),
+        progress=[],
+    )
+
+
 @router.post("/pipeline", status_code=202)
 def submit_pipeline(req: PipelineRequest) -> JobSubmitResponse:
     job = _get_manager().submit_pipeline(req.model_dump())
@@ -77,9 +116,16 @@ def list_jobs() -> list[JobResponse]:
 @router.get("/{job_id}")
 def get_job(job_id: str) -> JobResponse:
     job = _get_manager().get_job(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
-    return _job_to_response(job)
+    if job is not None:
+        return _job_to_response(job)
+    # Phase J2 PR3 — in-memory miss + flag on → DB fallback. orphaned 도 정상
+    # 200 OK 로 응답. 클라이언트 (`useJobPolling`) 가 orphaned 를 terminal 로
+    # 인식해 retry-bound 와 별개로 자연 종결.
+    if settings.job_persistence_enabled:
+        row = job_store.get_job(job_id)
+        if row is not None:
+            return _row_to_response(row)
+    raise HTTPException(status_code=404, detail="Job not found")
 
 
 @router.get("/{job_id}/ws-token")

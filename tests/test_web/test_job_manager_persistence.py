@@ -150,6 +150,10 @@ class TestFlagOnRunSucceeded:
         monkeypatch.setattr(
             "web.api.job_manager.job_store.insert_job", MagicMock(return_value=True)
         )
+        # PR3 — emit 가 progress_events 호출 시도하므로 mock 필요 (실제 DB 회피)
+        monkeypatch.setattr(
+            "web.api.job_manager.job_store.append_progress_event", MagicMock(return_value=True)
+        )
         update_mock = MagicMock(return_value=True)
         monkeypatch.setattr("web.api.job_manager.job_store.update_job_status", update_mock)
 
@@ -170,6 +174,9 @@ class TestFlagOnRunFailed:
         monkeypatch.setattr("config.settings.settings.job_persistence_enabled", True)
         monkeypatch.setattr(
             "web.api.job_manager.job_store.insert_job", MagicMock(return_value=True)
+        )
+        monkeypatch.setattr(
+            "web.api.job_manager.job_store.append_progress_event", MagicMock(return_value=True)
         )
         update_mock = MagicMock(return_value=True)
         monkeypatch.setattr("web.api.job_manager.job_store.update_job_status", update_mock)
@@ -235,3 +242,76 @@ class TestFlagOnPersistFailureGraceful:
 
         # DB 업데이트가 매번 실패해도 in-memory 는 정상 종결
         assert terminal == "succeeded"
+
+
+# ── Phase J2 PR3 — heartbeat thread ────────────────────────────────────
+
+
+class TestHeartbeatThread:
+    def test_flag_off_thread_not_started(
+        self, manager: JobManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("config.settings.settings.job_persistence_enabled", False)
+        update_mock = MagicMock(return_value=True)
+        monkeypatch.setattr("web.api.job_manager.job_store.update_heartbeat", update_mock)
+
+        with patch("web.api.job_manager.run_analyze_only", return_value=_ok_analyze()):
+            job = manager.submit_analyze({"keyword": "kw"})
+            _wait_until_terminal(manager, job.id)
+
+        # flag off → thread 미시작 → update_heartbeat 호출 0
+        assert manager._heartbeat_thread is None
+        assert update_mock.call_count == 0
+
+    def test_flag_on_thread_lazily_started(
+        self, manager: JobManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("config.settings.settings.job_persistence_enabled", True)
+        # 짧은 interval — heartbeat tick 가 빠르게 발생
+        monkeypatch.setattr("config.settings.settings.job_heartbeat_seconds", 5)
+        monkeypatch.setattr(
+            "web.api.job_manager.job_store.insert_job", MagicMock(return_value=True)
+        )
+        monkeypatch.setattr(
+            "web.api.job_manager.job_store.update_job_status", MagicMock(return_value=True)
+        )
+        update_mock = MagicMock(return_value=True)
+        monkeypatch.setattr("web.api.job_manager.job_store.update_heartbeat", update_mock)
+
+        with patch("web.api.job_manager.run_analyze_only", return_value=_ok_analyze()):
+            job = manager.submit_analyze({"keyword": "kw"})
+            _wait_until_terminal(manager, job.id)
+
+        # flag on → thread 1회 시작
+        assert manager._heartbeat_thread is not None
+        assert manager._heartbeat_thread.is_alive()
+        # job 이 빠르게 종결돼서 heartbeat tick 안 발생할 수 있음 — 호출 횟수
+        # 자체는 검증 안 하고, thread 가 살아있다는 사실만 확인 (tick interval=5
+        # 인데 job 종결이 그보다 빠르면 0회. 운영에서는 long-running job 만
+        # tick 받음)
+
+    def test_shutdown_stops_thread(
+        self, manager: JobManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("config.settings.settings.job_persistence_enabled", True)
+        monkeypatch.setattr("config.settings.settings.job_heartbeat_seconds", 5)
+        monkeypatch.setattr(
+            "web.api.job_manager.job_store.insert_job", MagicMock(return_value=True)
+        )
+        monkeypatch.setattr(
+            "web.api.job_manager.job_store.update_job_status", MagicMock(return_value=True)
+        )
+        monkeypatch.setattr(
+            "web.api.job_manager.job_store.update_heartbeat", MagicMock(return_value=True)
+        )
+
+        with patch("web.api.job_manager.run_analyze_only", return_value=_ok_analyze()):
+            job = manager.submit_analyze({"keyword": "kw"})
+            _wait_until_terminal(manager, job.id)
+
+        thread = manager._heartbeat_thread
+        assert thread is not None and thread.is_alive()
+        manager.shutdown()
+        # stop event + join 으로 1초 안에 종료
+        thread.join(timeout=2.0)
+        assert not thread.is_alive()

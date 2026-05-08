@@ -8,12 +8,18 @@ import { ApiError, getJob } from "./api";
 // `GET /api/jobs/{id}` 가 영구적으로 404 를 돌려준다. 이 때 폴링을 무한 반복하면
 // 사용자 브라우저가 분당 20회씩 의미 없는 트래픽을 만들고, 진행 분실 사실도 인지 못 한다.
 // 누적 카운터로 N 회 반복 시 폴링을 영구 중단하고 `aborted=true` 로 ErrorBanner 트리거.
+//
+// Phase J2 PR3 — JOB_PERSISTENCE_ENABLED=true 환경에서는 `GET /api/jobs/{id}` 가
+// in-memory miss 시 DB fallback 으로 200 OK + status="orphaned" 를 반환한다.
+// orphaned 는 "컨테이너 재시작으로 진행 분실, DB 만 정본" 의 자연 종결 상태이므로
+// terminal 로 인식해 폴링을 깨끗이 멈춘다 (404 누적 retry-bound 와는 별개 동선).
 
 const TERMINAL_STATUSES = new Set([
   "succeeded",
   "failed",
   "cancelled",
   "timed_out",
+  "orphaned",
 ]);
 
 interface UseJobPollingOptions {

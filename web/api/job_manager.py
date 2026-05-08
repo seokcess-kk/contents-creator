@@ -94,8 +94,25 @@ class JobEventBus:
             subs.remove(queue)
 
     def emit(self, job_id: str, event: dict[str, Any]) -> None:
-        """Thread-safe. Worker 스레드에서 호출."""
+        """Thread-safe. Worker 스레드에서 호출.
+
+        Phase J2 PR3 — flag on 시 progress_events 테이블에도 fire-and-forget append.
+        seq 는 history 누적 길이로 자동 부여 (이전 emit 수 == 새 event 의 seq).
+        WebSocketProgressReporter 는 본 메서드만 호출하므로 격리 깨지지 않음 —
+        DB write 책임은 JobEventBus 내부에 한정.
+        """
+        seq = len(self._history[job_id])
         self._history[job_id].append(event)
+        if settings.job_persistence_enabled:
+            try:
+                job_store.append_progress_event(job_id, seq, event)
+            except Exception:
+                logger.warning(
+                    "job_store.append_progress_event exception job_id=%s seq=%s",
+                    job_id,
+                    seq,
+                    exc_info=True,
+                )
         if self._loop is None:
             return
         for q in self._subscribers.get(job_id, []):
@@ -113,6 +130,10 @@ class JobManager:
         self._executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
         self.event_bus = JobEventBus()
         self._on_finished_hooks: list[Callable[[Job], None]] = []
+        # Phase J2 PR3 — heartbeat daemon thread. lazy 시작 (첫 _submit 에서 flag
+        # on 일 때만). flag off 면 영구 미시작. shutdown 시 stop event 로 정리.
+        self._heartbeat_stop = threading.Event()
+        self._heartbeat_thread: threading.Thread | None = None
 
     def register_on_finished(self, hook: Callable[[Job], None]) -> None:
         """job 종료(succeeded/failed/cancelled/timed_out) 시 호출되는 훅 등록.
@@ -179,10 +200,41 @@ class JobManager:
                 )
             except Exception:
                 logger.warning("job_store.insert_job exception job_id=%s", job_id, exc_info=True)
+            self._ensure_heartbeat_thread()
         self._jobs[job_id] = job
         job.future = self._executor.submit(self._run_job, job)
         self._arm_timeout(job)
         return job
+
+    # Phase J2 PR3 — heartbeat daemon thread lazy 시작.
+    # flag off 면 영구 미시작 (이 메서드가 호출 안 됨). flag on 첫 진입 시 1회
+    # 만 시작. 이후 _submit 들은 thread 가 이미 있어 noop.
+    def _ensure_heartbeat_thread(self) -> None:
+        if self._heartbeat_thread is not None and self._heartbeat_thread.is_alive():
+            return
+        thread = threading.Thread(target=self._heartbeat_loop, name="job-heartbeat", daemon=True)
+        thread.start()
+        self._heartbeat_thread = thread
+
+    def _heartbeat_loop(self) -> None:
+        """settings.job_heartbeat_seconds 마다 running job 모두 update_heartbeat.
+
+        stop event 로 종료 (shutdown). 매 tick 마다 flag 재확인 — 운영 중 flag 가
+        false 로 토글되면 thread 가 자연 종료 (운영 데이터 누적 후 안정화 단계).
+        """
+        interval = max(5, int(settings.job_heartbeat_seconds))
+        while not self._heartbeat_stop.wait(interval):
+            if not settings.job_persistence_enabled:
+                logger.info("heartbeat thread exiting (flag turned off)")
+                return
+            running_ids = [j.id for j in self._jobs.values() if j.status == "running"]
+            for job_id in running_ids:
+                try:
+                    job_store.update_heartbeat(job_id)
+                except Exception:
+                    logger.warning(
+                        "job_store.update_heartbeat exception job_id=%s", job_id, exc_info=True
+                    )
 
     # Phase J2 — DB write 단일 진입점. flag off 시 즉시 return.
     # 4지점 (`_run_job` running/succeeded/failed, `_arm_timeout` timed_out,
@@ -391,4 +443,9 @@ class JobManager:
         raise ValueError(msg)
 
     def shutdown(self) -> None:
+        # Phase J2 PR3 — heartbeat thread 정리. stop event 신호 후 join 짧게 시도.
+        # daemon=True 라 프로세스 종료 시 자동 정리되지만 명시적 join 으로 깨끗하게.
+        self._heartbeat_stop.set()
+        if self._heartbeat_thread is not None and self._heartbeat_thread.is_alive():
+            self._heartbeat_thread.join(timeout=1.0)
         self._executor.shutdown(wait=False)

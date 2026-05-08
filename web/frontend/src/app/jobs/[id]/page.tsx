@@ -37,6 +37,30 @@ export default function JobDetailPage({
     );
   }
 
+  // Phase J2 PR3 — 백엔드 DB 가 정본인 환경에서, 컨테이너 재시작으로 in-memory
+  // 진행 상태가 분실됐을 때의 자연 종결. retry-bound (404 누적, 위) 와 달리
+  // DB 가 200 OK + status=orphaned 로 응답하므로 ErrorBanner 만 표시 + 결과
+  // 보관함 동선 안내. 재실행 권장.
+  if (job?.status === "orphaned") {
+    return (
+      <div className="space-y-4">
+        <ErrorBanner
+          severity="warning"
+          title="컨테이너 재시작으로 진행이 종결됐습니다"
+          message="백엔드가 재시작돼 진행 중이던 작업이 자동으로 'orphaned' 처리됐습니다. 결과 보관함에서 부분 결과를 확인하거나 같은 키워드로 재실행해 주세요."
+        />
+        <div className="flex gap-4 text-sm">
+          <Link href="/queue" className="text-blue-700 hover:underline font-medium">
+            결과 보관함
+          </Link>
+          <Link href="/" className="text-blue-700 hover:underline font-medium">
+            대시보드
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   if (error && !job) {
     return (
       <div className="space-y-4">
