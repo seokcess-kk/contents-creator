@@ -12,68 +12,10 @@
 - Phase U0~U12 UI 압축 + 브랜드 카드 + 외부 검토 P0/P1 (2026-04-27 ~ 04-28) — commit 8774267 등
 - Phase B7~B19 Batch Pipeline 후속 PR (2026-05-04 ~ 05-05) — SPEC-BATCH.md
 
-## 🧪 Phase 0.5 — SEO 트랙 착수 전 실측 (블로킹)
+## ⏸ 사용자 샘플 대기 — Phase 0.6 잔여 (BC-3/BC-4)
 
-### [Pre-1] 개발 환경 준비 ✅ 완료 (2026-04-29)
-- [x] `python -m venv .venv` 후 활성화 (기존 venv 재사용) — 2026-04-16
-- [x] `pip install -e ".[dev]"` 실행 성공 확인 — 신규 의존성 6종(playwright/jinja2/python-docx/pypdf/pdfplumber/pillow) 포함 — 2026-04-16
-- [x] `bash .claude/hooks/build-check.sh` 그린 확인 — 874 passed, coverage 75.65% (`web` extra 동반 설치 후) — 2026-04-29
-- [x] Supabase 프로젝트 생성 + `config/schema.sql` v3 적용 — 13개 테이블 전부 적용 확인 (pattern_cards/generated_contents/brand_profiles/brand_assets/brand_media_assets/brand_cards/api_usage/publications/ranking_snapshots/serp_top10_snapshots/visibility_diagnoses/republish_jobs/publication_actions) — 2026-04-29
-
-### [B3] 네이버 스마트에디터 HTML 호환성 실측 ✅ 완료 (2026-04-15)
-- [x] 샘플 HTML 생성 (`dev/active/naver-compat-test.html`) — 화이트리스트 모든 태그 + Q&A + 통계 포함
-- [x] 브라우저 렌더링 → 네이버 스마트에디터 ONE 붙여넣기 테스트
-- [x] 화이트리스트 모든 태그 보존 확인 (h2, h3, p, strong, em, hr, ul, ol, li, blockquote, table, thead, tbody, tr, th, td)
-- [x] **중첩 ul/ol 은 네이버 에디터가 평탄화/소실시킴** — 생성 단계에서 중첩 금지 규칙 추가
-- [x] `SPEC-SEO-TEXT.md` §3 [9], `generation` 스킬, `composer/CLAUDE.md` 에 중첩 리스트 차단 규칙 반영
-- [x] `tasks/lessons.md` B3 섹션에 결과 기록
-
-### [C1] Bright Data Web Unlocker iframe 실측 ✅ 완료 (2026-04-15)
-- [x] Bright Data 가입 + API 키 발급
-- [x] Web Unlocker zone 생성 (`naver_web_unlockers`, Korea, JS rendering ON)
-- [x] `config/.env` 에 `BRIGHT_DATA_API_KEY`, `BRIGHT_DATA_WEB_UNLOCKER_ZONE` 반영
-- [x] 네이버 검색 페이지 fetch 검증 — SERP 정상 반환 (871KB, 207회 `blog.naver.com` 매칭)
-- [x] 블로그 포스트 URL 실측 — **모바일 `m.blog.naver.com` 은 단일 호출로 본문 OK** (130KB, `se-main-container` 등 본문 컨테이너 모두 존재), 데스크톱 `blog.naver.com` 은 iframe 껍데기(3KB)만 반환
-- [x] **결정: `page_scraper.py` 는 URL 을 `m.blog.naver.com` 으로 정규화 후 단일 호출**. 2단계 호출 불필요
-- [x] URL 필터 정규식 확정: `https?://(?:m\.)?blog\.naver\.com/[a-zA-Z0-9_-]+/\d{9,}` (`/clip/` 배제)
-- [x] `tasks/lessons.md` C1 섹션에 실측 데이터 기록
-- [x] `SPEC-SEO-TEXT.md` §3 [2] 및 crawling 스킬 업데이트
-
-### [C3] Claude Code 훅 환경 변수 실측 ✅ 완료 (2026-04-15)
-- [x] Claude Code 훅은 JSON 을 **stdin** 으로 전달 (환경 변수 아님) — claude-code-guide 확인
-- [x] `post-edit-lint.sh` 가 Python 으로 stdin JSON 파싱하도록 수정 (`.tool_input.file_path`)
-- [x] `settings.json` command 필드에서 `$CLAUDE_FILE_PATH` 제거, `bash .claude/hooks/post-edit-lint.sh` 로 단순화
-- [x] 진단 로그 `dev/active/hook-debug.log` 추가 + `.gitignore` 에 등록
-- [x] 4개 파일 Edit 테스트 → 로그에 절대 경로 정상 기록 확인
-- [ ] _선택_: `domain/generation/body_writer.py` 에 일부러 `intro_text` 추가해 R1 차단 실증 (파일 존재 안 해서 Phase 1 진입 시 겸사겸사 확인)
-
-### [Pre-2] 환경 변수 전체 완결 ✅ 완료 (2026-04-16)
-- [x] `config/.env` 에 다음 키 모두 채움:
-  - `BRIGHT_DATA_API_KEY`, `BRIGHT_DATA_WEB_UNLOCKER_ZONE`
-  - `ANTHROPIC_API_KEY`
-  - `GEMINI_API_KEY` (Google AI Studio, Gemini 3.1 Flash Image + Nano Banana)
-  - `SUPABASE_URL`, `SUPABASE_KEY`
-- [x] `python -c "from config.settings import settings; print(settings.bright_data_api_key is not None)"` 로 로드 확인 — bright_data/anthropic/gemini/supabase_url/supabase_key 5종 모두 True — 2026-04-29
-
----
-
-## 🎨 Phase 0.6 — 브랜드 카드 착수 전 실측 (블로킹)
-
-> SPEC-BRAND-CARD.md §15-2 실측 체크리스트. SEO 트랙 `[B3]` 와 네임스페이스 충돌 방지를 위해 **`[BC-*]` 접두사** 사용.
-
-### [BC-1] Playwright 설치 + Chromium headless 렌더 실측 ✅ 완료 (2026-04-16)
-- [x] `playwright install chromium` — Windows `~/AppData/Local/ms-playwright/chromium-1208/` 정상 설치
-- [x] 샘플 HTML (`dev/active/bc-tests/bc1-sample.html`) 작성 — 1080 가로, 4 블록
-- [x] `page.goto(file://)` → `page.screenshot(full_page=True)` 정상 동작
-- [x] 출력 PNG 1080×1601, `body.scrollHeight === png.height` 일치
-- [x] `tasks/lessons.md` BC-1 섹션 기록
-
-### [BC-2] 한국어 웹폰트 임베딩 (Pretendard) ✅ 완료 (2026-04-16)
-- [x] Pretendard Variable woff2 2MB 다운로드 (jsdelivr `orioncactus/pretendard@v1.3.9`, OFL) → `assets/fonts/Pretendard-Regular.woff2`
-- [x] `@font-face` 임베딩 + Playwright 렌더
-- [x] `document.fonts.size === 1`, `getComputedStyle fontFamily === Pretendard` 확인
-- [x] 한글 렌더 깨짐 0건 (히어로 72px + 본문 22px + 카드 24px 혼합)
-- [x] `tasks/lessons.md` BC-2 섹션 기록
+> 2026-05-08 정밀 정리 — Phase 0.5 SEO 실측 + Phase 0.6 브랜드 카드 실측 완료 항목은 archive 이관.
+> BC-3 PDF / BC-4 docx 만 사용자 샘플 대기. 상세는 `tasks/_archive/todo-2026-q2.md` 참조.
 
 ### [BC-3] PDF 파싱 실측 (pypdf → pdfplumber fallback) ⏸ 사용자 샘플 대기
 - [x] 의존성 설치 완료: pypdf 6.10.2, pdfplumber 0.11.9
@@ -90,189 +32,47 @@
 - [ ] 텍스트 순서·표 내용 정확 추출 확인
 - [ ] 결과를 `tasks/lessons.md` BC-4 섹션에 기록
 
-### [BC-5] 로고 자동 추출 셀렉터 세트 실측 ✅ 완료 (2026-04-29)
-- [x] 로컬 fixture 7/7 통과 (`dev/active/bc-tests/bc5_logo.py`)
-- [x] 폴백 셀렉터 5단 순서 확정: `link[rel=icon]` → `meta[og:image]` → `header img[alt*=logo]` → `[class*=logo] img` → `img[src*=logo]`
-- [x] 우선순위 정확 (case6 link + og:image 공존 → link 선택)
-- [x] 실존 한의원 홈페이지 **7곳 실측 7/7 성공** (daeatdiet 5지점 + serea + liting). 모두 1단 `link[rel=apple-touch-icon]` 매칭. lessons.md BC-5 Phase 2 표 기록 — 2026-04-29
-- [x] `tasks/lessons.md` BC-5 섹션 기록
-
-### [BC-6] Gemini Nano Banana 이미지 생성 실측 ✅ 완료 (2026-04-16)
-- [x] `google-genai==1.73.1` SDK 로 1회 호출 성공
-- [x] 모델명 확정: `gemini-2.5-flash-image` (정식 이름, preview 없음)
-- [x] 응답시간 9.27초, 1.15MB PNG, `finish_reason=STOP`
-- [x] 이미지 품질 확인: 프롬프트 지시(beige/forest green, flat, no text) 정확 반영
-- [x] SHA256 캐시 키 일관성 확인
-- [x] 경고 기록: `GOOGLE_API_KEY` 가 `GEMINI_API_KEY` 보다 우선 (SDK 동작)
-- [ ] **추후**: 의료 키워드 5종 safety filter 차단율 별도 스트레스 테스트 (이번 실측은 안전 프롬프트만)
-- [x] `tasks/lessons.md` BC-6 섹션 기록
-
-### [BC-7] Playwright 분할 로직 현실성 점검 ✅ 완료 (2026-04-16)
-- [x] 10400px HTML 샘플 (`bc7-long.html`) 생성, 6 블록
-- [x] `page.evaluate()` 로 블록 y좌표 추출: `[0, 1800, 3600, 5400, 7200, 9000, 10400]`
-- [x] 그리디 분할: y=0~7200 + y=7200~10400 (2조각)
-- [x] Pillow 크롭 → `bc7-01a.png`(450KB) + `bc7-01b.png`(199KB)
-- [x] 블록 중간 절단 0건, 합계 = 원본 총 높이 확인
-- [x] **SPEC §2-4 보완 필요 발견**: 마지막 조각은 4000px 미만 예외 허용 명시 (현재 3200px 생성). Phase B7 진입 시 SPEC 반영
-- [x] `tasks/lessons.md` BC-7 섹션 기록
 
 ---
 
-<!-- archived to tasks/_archive/todo-2026-q2.md (Phase 1 + Phase 2 실측 + Phase 2~8 SEO 트랙) -->
+## 🎨 Phase B1~B9 브랜드 카드 잔여 — 운영 안정 후 검토
 
-## 🎨 Phase B1~B9 — 브랜드 카드 트랙 (SPEC-BRAND-CARD.md §5)
+> 2026-05-08 정밀 정리 — 메인 구현 완료, archive 이관. 후속 잔여만 보존.
 
-> SEO 트랙과 완전 격리. `domain/brand_card/` 는 `domain/compliance/rules.py` 만 예외적 import.
-> 2026-04-29 갱신 — 본 섹션 체크박스도 stale 이었음. 실제로는 Phase B1~B8 핵심이 거의 모두 구현·검증됨.
-> SPEC 명명과 실제 파일명이 통합·재구성된 부분이 있어 매핑을 함께 표기. 진짜 잔여는 Phase B7 분할/메타 일부 + Phase B9 전체.
-
-### Phase B1 — 도메인 스켈레톤 + 모델 ✅ (2026-04-29 stale 정리)
-- [x] `domain/brand_card/model.py` — 모든 모델 (`BrandProfile`/`BrandAssets`/`MediaAsset`/`BlockId` Enum 등) 구현
-- [x] `domain/brand_card/storage.py` — Supabase CRUD (SPEC 의 `repository.py` 와 동치, 명명만 storage 로 통합)
-- [x] `domain/brand_card/CLAUDE.md` — 도메인 규칙 + BRAND_LENIENT 9 매핑 표 (Phase 5 완료 갱신 반영)
-- [x] `tests/test_brand_card/test_model.py` + `test_storage.py`
 - [ ] **잔여**: `block_rules.py` 별도 파일로 분리되지 않음 — `model.py` 안의 `BlockId` Enum 외에 `BLOCK_MEDIA_MAPPING` 상수 명시적 정의 부재. 향후 §3-2-1 정합 검증 시 추가 검토
-
-### Phase B2 — 브랜드 소스 로딩 + 자산 추출 ([B1][B2][B3]) ✅ (2026-04-29 stale 정리)
-- [x] `domain/brand_card/source_parser.py` — 홈페이지/txt/docx/pdf 수집 + BS4 전처리 + 로고 추출 (SPEC `source_loader.py` 와 동치)
-- [x] `domain/brand_card/asset_merge.py` — Sonnet 자산 추출 + user_input + llm_extracted 머지 (SPEC 의 `asset_extractor` + `asset_merger` 통합)
-- [x] `tests/test_brand_card/test_source_parser.py`, `test_asset_merge.py`
 - [ ] **잔여**: `prompt_builder.py` 단일 진입점 미구현 — LLM 프롬프트가 `plan_generator.py` + `compliance.py` 에 분산. 단일 진입점 통합 필요 여부는 운영 안정 후 재검토
 - [ ] **잔여**: `application/stage_runner.py` 의 `run_stage_brand_source_loading`/`run_stage_brand_asset_extraction` 미구현 — `application/brand_card_orchestrator.py` 가 도메인을 직접 호출. Phase B9 통합 시 일괄 정리
-
-### Phase B3 — 카드 기획 ([B4] + [B4-v]) ✅ (2026-04-29 stale 정리)
-- [x] `domain/brand_card/plan_generator.py` — Opus 호출, BRAND_LENIENT 사전 주입, available_media 전달 (SPEC `card_planner.py` 와 동치)
-- [x] `tests/test_brand_card/test_plan_generator.py`
 - [ ] **잔여**: `card_plan_validator.validate_card_plan()` 별도 함수 미구현 — Pydantic `model_validator` 로 분산 검증. 명시적 [B4] 재호출 피드백 생성 로직 추가 검토 필요
 - [ ] **잔여**: `application/stage_runner.run_stage_card_planning` 미구현 — Phase B9 통합 시 일괄 정리
-
-### Phase B4 — 이미지 슬롯 생성 ([B5]) ✅ (2026-04-29 stale 정리)
-- [x] `domain/brand_card/image_prefetch.py` — Gemini Nano Banana 호출, sha256 캐시, fallback_text 분기 (SPEC `image_generator.py` 와 동치)
-- [x] `tests/test_brand_card/test_image_prefetch.py`
 - [ ] **잔여**: `application/stage_runner.run_stage_image_slot_generation` 미구현 — `brand_card_orchestrator._prefetch_ai_images` 가 인라인 처리. Phase B9 통합 시 정리
-
-### Phase B5 — 템플릿 시스템 + HTML 합성 ([B6]) ✅ (2026-04-29 stale 정리)
-- [x] `domain/brand_card/templates/` 4종 — `clinic_trust`, `diet_empathy`, `local_info`, `process_guide` (각 `card.html.j2` + `style.css` + `meta.json`)
-- [x] `domain/brand_card/template_registry.py` — meta.json 로드
-- [x] `domain/brand_card/renderer.py` — Jinja2 합성 + Playwright (SPEC `html_renderer.py` + `playwright_renderer.py` 통합)
-- [x] `tests/test_brand_card/test_renderer.py`, `test_template_registry.py`
 - [ ] **잔여**: 5번째 템플릿 미구현 — SPEC §B5 는 5종 명시. 운영 키워드 다양성 확인 후 추가 여부 결정
 - [ ] **잔여**: `application/stage_runner.run_stage_card_html_render` 미구현 — Phase B9 통합 시 정리
-
-### Phase B6 — 브랜드 카드 컴플라이언스 ([B7]) ✅ (2026-04-29 완료)
-- [x] Phase 5 (SEO 컴플라이언스) 완료 — `CompliancePolicy.BRAND_LENIENT` 프로필 정의 + R3 게이트 회귀 테스트 통과
-- [x] `domain/brand_card/compliance.py` — `CompliancePolicy.BRAND_LENIENT` 호출, 블록 카피 교체 fixer
-- [x] `tests/test_brand_card/test_compliance.py` + `test_brand_lenient_coverage.py`
 - [ ] **잔여**: `application/stage_runner.run_stage_card_compliance` 미구현 — Phase B9 통합 시 정리
-
-### Phase B7 — Playwright 렌더링 ([B8]) ✅ (2026-04-29 stale 정리)
-- [x] `domain/brand_card/renderer.py` — sync Chromium 세션, 폰트 로드 대기, `page.evaluate` overflow 검출, `page.screenshot` (clip)
-- [x] `tests/test_brand_card/test_renderer.py`
+- [ ] **잔여**: 실 키워드 + 실 브랜드로 `run_full_package` 끝까지 통과시키는 통합 E2E 테스트 — Bright Data/Anthropic/Gemini/Supabase 실호출 필요. 운영 진입 시점에 별도 진행
 - [ ] **P1 잔여 (B9 와 통합)**: `application/stage_runner.run_stage_card_screenshot` — Phase B9 의 stage_runner 통합 작업에 흡수
 
-> **2026-04-29 재분류**: 9000px 자동 분할 + PNG tEXt 메타 + hard max 18000 variant 분류 3건은 SPEC v2 (`§2 P1 제외`, `§3` 1080×1350/1920 인스타 카드 사이즈) 에 따라 P1 영역 아님. 아래 "📦 P2 이후 — long-form 확장 트랙" 섹션으로 이동.
-
-### Phase B8 — 패키지 정리 + manifest ([B9]) ✅ (2026-04-29 stale 정리)
-- [x] `domain/brand_card/manifest.py` — cards-manifest.json 생성 (SPEC `manifest_builder.py` 와 동치)
-- [x] `application/brand_card_orchestrator.render_card_set` — SPEC `orchestrator.run_brand_card_only` 와 동치
-- [x] `tests/test_brand_card/test_manifest.py`
-
-### Phase B9 — 합류 + 통합 (`run_full_package`) ✅ 완료 (2026-04-29)
-- [x] `application/orchestrator.run_full_package` — ThreadPoolExecutor(max_workers=2) 병렬 실행, 한쪽 실패가 다른 쪽을 종료시키지 않으며 결과 보존
-- [x] `application/orchestrator.run_brand_card_only` — auto_approve 분기 (draft 게이트 vs [B12] 일괄)
-- [x] `application/models.py` 에 `PackageResult`, `BrandCardResult` 추가
-- [x] `scripts/register_brand.py`, `scripts/generate_cards.py`, `scripts/run_full_package.py`, `scripts/remove_media.py` CLI 래퍼 4종
-- [x] 단위 테스트 7건 (`tests/test_application/test_orchestrator.py::TestRunBrandCardOnly`, `::TestRunFullPackage`) — draft/auto_approve, 0개 plan, 예외, 양쪽 성공/부분 성공/양쪽 실패 분기
+### 선택 항목 (운영 안정 후 검토)
 - [ ] **선택**: `.claude/skills/brand-card/` 스킬 + `.claude/agents/domain/brand-card-guardian.md` 에이전트 — 도메인 일관성 가디언, 운영 안정 후 추가 검토
-- [ ] **잔여**: 실 키워드 + 실 브랜드로 `run_full_package` 끝까지 통과시키는 통합 E2E 테스트 — Bright Data/Anthropic/Gemini/Supabase 실호출 필요. 운영 진입 시점에 별도 진행
 
 ---
 
-## 🔍 Phase K1~K6 — 키워드 노출 난이도 분석 (2026-04-29 착수)
+## 🔍 Phase K6/K7 잔여 — 사용자 작업 + 수동 검증
 
-> 새 키워드 등록 전 SERP 1페이지 구성을 분석해 블로그 진입 난이도를 자동 판정하는 도구.
-> 정기 수집 X, 사용자 수동 트리거. 단일/대량 분석 가능. 별도 `/keywords` 페이지.
-> 등급 산출 공식 (대화 기반 합의):
-> - `B`=블로그 슬롯 (VIEW+인플루언서+블로그통합), `D`=도배 카드 (광고+플레이스+쇼핑+위젯), `T`=총 카드
-> - 점수 = `D × 1.5 - B × 3` (낮을수록 유리)
-> - 등급: `T<8 OR B==0` → 미노출 / `B≤2 AND D/T≥0.5` → 상 / `B≥5` → 하 / 그 외 → 중
-
-### Phase K1 — 도메인 + 파서 골격 ✅ 완료 (2026-04-29)
-- [x] K1.1 `domain/keyword_difficulty/__init__.py` + `CLAUDE.md`
-- [x] K1.2 `model.py` — `SerpSection` Enum (10종), `SerpComposition`, `DifficultyGrade` Enum, `KeywordDifficulty`
-- [x] K1.3 `parser.py` — 네이버 SERP HTML → SerpComposition (sc_new 섹션 분류 + URL 패턴 카드 카운트)
-- [x] K1.4 `scorer.py` — `score = D × 1.5 - B × 3`, 4단계 등급 (MISSING/HIGH/MEDIUM/LOW)
-- [x] K1.5 `tests/test_keyword_difficulty/` (test_parser + test_scorer 22 tests)
-- [x] K1.6 `architecture-check.sh` `[keyword_difficulty]=0` 등록
-
-### Phase K2 — PoC 실측 ✅ 완료 (2026-04-29)
-- [x] K2.1 fixture HTML 8개 fetch 완료 (다이어트약/다이어트보조제/다이어트운동/살빼는방법/천안다이어트한의원/부평다이어트한의원/BMI계산하기/감비정)
-- [x] K2.2 파서 결과 검증 — 등급이 합리적으로 매핑 (광역 정보성 → low/medium, 광고도배+블로그4슬롯 → medium, 롱테일 → low)
-- [x] K2.3 네이버 SERP 구조 (React 디자인 시스템 + 동적 해시 클래스) 대응 휴리스틱 적용
-- [x] K2.4 `tasks/lessons.md` K2 섹션에 셀렉터 + PoC 결과 + 한계점(위젯 식별 강화 / 광고 가중치 / 인플루언서 분리) 기록
-
-### Phase K3 — Supabase + storage + application ✅ 코드 완료, ⏸ Supabase 스키마 적용 대기
-- [x] K3.1 `config/schema.sql` 13번 섹션에 `keyword_difficulty_snapshots` 테이블 SQL 추가
-- [x] K3.1.b Supabase 대시보드 SQL Editor 적용 완료 — 2026-04-29 (rows=0 확인)
-- [x] K3.2 `domain/keyword_difficulty/storage.py` — `insert_snapshot`, `get_latest`, `list_recent`, `list_by_grade`, `list_keyword_history`
-- [x] K3.3 `application/keyword_difficulty_orchestrator.py` — `analyze_keyword`, `batch_analyze_keywords` (ThreadPool max=3, 1초 rate limit)
-- [x] K3.4 단위 테스트 (mock Bright Data + Supabase) — 7건 통과
-
-### Phase K4 — CLI ✅ 완료
-- [x] K4.1 `scripts/analyze_keyword_difficulty.py` — `--keyword` 또는 `--file`, `--no-persist`, 결과 표 출력
-- [ ] K4.2 ~~`tests/test_scripts/test_keyword_difficulty_cli.py`~~ — argparse 단위 테스트는 실 SERP 호출이 필요해 skip
-
-### Phase K5 — Web UI ✅ 완료
-- [x] K5.1+K5.2 `web/api/routers/keyword_difficulty.py` — 4 엔드포인트 (analyze/batch/snapshots/list) + Pydantic 스키마 인라인 정의
-- [x] K5.3 `web/api/main.py` 에 라우터 등록 (`/api/keyword-difficulty/*`)
-- [x] K5.4 frontend `types/index.ts` (`DifficultyGrade`, `KeywordDifficulty`) + `lib/api.ts` 4 함수
-- [x] K5.5 `web/frontend/src/app/keywords/page.tsx` — 단일/대량 입력 + 등급 필터 + 검색 + 정렬 표
-- [x] K5.6 nav 에 `/keywords` 링크 추가
+> 2026-05-08 정밀 정리 — K1~K5 + K7 코드 완료 archive 이관. 검증·사용자 작업만 보존.
 
 ### Phase K6 — 검증 + 커밋
-- [x] K6.1 `bash .claude/hooks/build-check.sh` 그린 — 952 passed, 75.49% cov
 - [ ] K6.2 수동 smoke (Supabase 스키마 적용 후) — 단일 분석 + 10개 대량 → /keywords 페이지에서 등급 표시 확인
 - [ ] K6.3 commit + push
 
-### Phase K7 — 네이버 검색광고 API 통합 (월 검색량 표시) ✅ 코드 완료, ⏸ 사용자 작업 2건
-- [x] K7.1 `domain/keyword_difficulty/naver_ad_client.py` — HMAC SHA256 서명 + `get_search_volume(keyword)` (실패 시 None)
-- [x] K7.2 `model.py` 에 `SearchVolume` + `KeywordDifficulty.search_volume`
-- [x] K7.3 `config/settings.py` 에 `naver_ad_api_key/secret_key/customer_id` 3개 추가
-- [x] K7.4 `application/keyword_difficulty_orchestrator.analyze_keyword` — SERP + 검색량 순차 호출 (병렬은 contextvars 격리로 usage 추적 누락)
-- [x] K7.5 `config/schema.sql` 에 `monthly_pc_search/monthly_mobile_search/monthly_total_search/competition_idx` 칼럼 추가 (idempotent ALTER 포함)
+### Phase K7 — 네이버 검색광고 API 통합 (사용자 작업 2건)
 - [ ] K7.5.b **사용자 작업**: Supabase SQL Editor 에서 ALTER TABLE 실행 (또는 schema.sql 13번 섹션 재실행 — IF NOT EXISTS 라 안전)
-- [x] K7.6 `storage.py` insert/조회 갱신
-- [x] K7.7 `web/api/routers/keyword_difficulty.py` 응답 4 필드 추가
-- [x] K7.8 Frontend `/keywords` 페이지 — "월 검색량" / "PC / 모바일" / "경쟁" 3 컬럼 추가
-- [x] K7.9 `naver_ad_client` 가 `record_usage(provider="naver_searchad", model="keywordstool")` 자동 호출
-- [x] K7.10 단위 테스트 — `test_naver_ad_client.py` 14건 (HMAC 서명 / 응답 파싱 / 인증 누락 / HTTP 에러 / 네트워크 예외)
 - [ ] K7.11 **사용자 작업**: Render 환경 변수 추가 — `NAVER_AD_API_KEY`, `NAVER_AD_SECRET_KEY`, `NAVER_AD_CUSTOMER_ID`
 
 ---
 
-## ⚡ Phase F1~F5 — 키워드 분석 속도 개선 (2026-04-29 착수)
+## ⚡ Phase F5 — 모바일 SERP 전환 (PoC 대기)
 
-> 현재 단일 6~12초 / 배치 50개 약 200초. 사용자 결정: 1~5번 모두 순차 적용.
-
-### Phase F1 — 배치 병렬도 상향 ✅ 완료 (2026-04-29)
-- [x] F1.1 `_BATCH_DEFAULT_PARALLEL` 3 → 8, `_BATCH_RATE_LIMIT_SEC` 1.0 → 0.3
-- [x] F1.2 `_BatchRequest.parallel` 상한 5 → 10, 기본 8
-
-### Phase F2 — 단일 분석 검색량 병렬화 ✅ 완료 (2026-04-29)
-- [x] F2.1 `analyze_keyword` 가 `run_in_isolated_usage_ctx` + ThreadPool(2) 로 SERP + 검색량 병렬 호출. 워커 usage 를 부모로 머지해 추적 보존
-- [x] F2.2 캐시 hit 시 검색량만 단일 호출 (격리 ctx 불필요)
-
-### Phase F3 — SERP 캐싱 ✅ 완료 (2026-04-29)
-- [x] F3.1 `domain/keyword_difficulty/cache.py` — TTL 30분 LRU, 스레드 안전 (`threading.Lock`), max 256 entries
-- [x] F3.2 orchestrator 가 캐시 hit 시 Bright Data 호출 우회. record_usage 안 됨
-- [x] F3.3 단위 테스트 8건 (TTL 만료 / LRU evict / hits·misses / clear)
-
-### Phase F4 — 사용자 체감 개선 ✅ 완료 (2026-04-29)
-> Backend 진짜 비동기(job_manager) 대신 Frontend 청크 분할 채택. 인프라 추가 없이 체감 개선 동등.
-- [x] F4.1 `/keywords` 페이지 — 50개 입력을 8개 청크로 분할 후 순차 호출
-- [x] F4.2 청크 완료 시점에 부분 결과 즉시 표 갱신 (`reload()` 청크별 호출)
-- [x] F4.3 진행률 바 표시 (`done / total`) — 완료마다 시각화
-- [x] F4.4 단일 분석은 동기 유지 (병렬화로 6~10초 내 응답)
+> 2026-05-08 정밀 정리 — F1~F4 완료 archive 이관. F5 PoC 만 잔존.
 
 ### Phase F5 — 모바일 SERP 전환 (파서 재작성 — 신중) ⏸ PoC 대기
 - [ ] F5.1 `m.search.naver.com` SERP HTML fetch + 구조 분석 (PoC fixture 8개)
@@ -287,19 +87,9 @@
 
 ---
 
-## ☁️ Phase D1~D5 — 클라우드 배포 (Vercel + Render, 2026-04-29 착수)
+## ☁️ Phase D2~D5 — 클라우드 배포 잔여 (사용자 작업)
 
-> 노트북 의존성 0. 어디서든 `*.vercel.app` 접속 시 항상 응답.
-> Frontend = Vercel Hobby (free), Backend = Render Starter ($7/월), DB/Storage = Supabase (이미).
-> 자동 도메인으로 시작 → 안정화 후 커스텀 도메인 검토.
-
-### Phase D1 — 백엔드 컨테이너 + Storage ✅ (대부분 사전 구현됨)
-- [x] `Dockerfile` — Python 3.11 + Playwright Chromium + 의존성 캐시 레이어 (이전 작업)
-- [x] `render.yaml` — `plan: starter` 로 변경 (always-on)
-- [x] `domain/storage/supabase_storage.py` — `upload_bytes`, `get_signed_url` (이전 작업)
-- [x] `application/stage_runner.py` — output 저장 시 Supabase Storage 동시 업로드 (이전 작업)
-- [x] `web/api/routers/results.py` — 조회 시 signed URL 리다이렉트 (이전 작업)
-- [x] `config/settings.py` — `cors_origins`, `admin_api_key`, `storage_bucket` (이전 작업)
+> 2026-05-08 정밀 정리 — D1 백엔드 컨테이너 archive 이관. D2~D5 사용자 작업만 잔존.
 
 ### Phase D2 — 사용자 작업: Supabase Storage 버킷
 - [ ] D2.1 Supabase 대시보드 → Storage → New Bucket → name: `results`, **Private**
@@ -336,6 +126,9 @@
 - [ ] D5.3 SEO 파이프라인 1건 실행 → output → Supabase Storage 업로드 + Signed URL 조회 확인
 - [ ] D5.4 Render Metrics 탭에서 Memory 사용량 모니터링 (480MB+ 상시면 Standard 업그레이드)
 - [ ] D5.5 비용 모니터링 알림 — Anthropic/Bright Data/Gemini 대시보드에서 일·월 한도 설정
+
+---
+
 
 ---
 
@@ -478,78 +271,7 @@
 
 ---
 
-## 📦 Phase B1~B6 — Batch Pipeline MVP (Phase 1, 3~4일 예상)
-
-### B1 — Supabase 마이그레이션 + 도메인 모델
-
-- [ ] B1.1 `config/schema.sql` 끝에 `keyword_batches` 테이블 SQL 추가 (SPEC-BATCH §4)
-- [ ] B1.2 같은 파일에 `keyword_batch_items` 테이블 SQL 추가 + 인덱스 4개
-- [ ] B1.3 Supabase 대시보드 SQL Editor 에 적용 + `select count(*) from keyword_batch_items` 확인 (둘 다 0)
-- [ ] B1.4 `domain/batch/__init__.py` + `model.py` (Pydantic: `KeywordBatch`, `KeywordBatchItem`, `BatchEnqueueResult`)
-- [ ] B1.5 `domain/batch/csv_parser.py` — CSV → list[KeywordBatchItem] 변환 + 검증 (필수 컬럼 누락, 중복 키워드, 형식 오류 분류)
-- [ ] B1.6 `domain/batch/storage.py` — Supabase CRUD (`insert_batch`, `insert_items`, `get_batch`, `list_items`, `update_item_status`, `update_item_result`)
-- [ ] B1.7 `domain/batch/CLAUDE.md` — 격리 규칙, 30/300줄, Pydantic 반환
-- [ ] B1.8 `architecture-check.sh` 의 `STAGE_ORDER` 에 `[batch]=0` 추가
-- [ ] B1.9 `tests/test_batch/test_csv_parser.py` (5건+) + `tests/test_batch/test_storage.py` (mock 기반 5건+)
-
-### B2 — Application: BatchJobManager + Orchestrator
-
-- [ ] B2.1 `application/batch_job_manager.py` — `JobManager` 패턴 참고 + 별도 thread pool. `BATCH_MAX_WORKERS` env 로딩
-- [ ] B2.2 `application/batch_orchestrator.py`:
-  - `enqueue_from_csv(csv_path, mode, ...) -> BatchEnqueueResult`
-  - `dispatch_item(item_id) -> None` (operation 분기 → `run_analyze_only/run_generate_only/run_pipeline`)
-  - `retry_item(item_id) -> None` (max_retries 체크)
-  - `cancel_batch(batch_id) -> int` (남은 queued 개수 반환)
-- [ ] B2.3 mode 검증: `now` 만 200, `overnight`/`auto` 는 `NotSupportedYetError` raise (router 가 400)
-- [ ] B2.4 `domain/crawler/brightdata_client.py` 에 module-level `Semaphore` 추가 — semaphore.acquire/release 가 `_fetch_with_retry` 진입/종료에 감김. **단일 프로세스 안전망** 주석 명시
-- [ ] B2.5 `tests/test_application/test_batch_orchestrator.py` (10건+) — operation 분기 / retry / cancel / NotSupportedYet
-- [ ] B2.6 `tests/test_application/test_batch_job_manager.py` (5건+) — worker 큐 동작, MAX_WORKERS 한도, exception isolation
-
-### B3 — Web API + WebSocket 진행 보고
-
-- [ ] B3.1 `web/api/routers/batches.py`:
-  - `POST /batches` — multipart CSV 또는 JSON. mode=now 만 200, 그 외 400
-  - `GET /batches?limit=20`
-  - `GET /batches/{id}`
-  - `GET /batches/{id}/items?status=...&limit=...`
-  - `POST /batches/{id}/cancel`
-  - `POST /batches/{id}/items/{item_id}/retry`
-- [ ] B3.2 `web/api/main.py` 에 router 등록 (lifespan 변경 없음)
-- [ ] B3.3 X-API-Key 인증 (`require_api_key` Depends 사용)
-- [ ] B3.4 `tests/test_web/test_batches_api.py` (8건+) — 인증/모드 검증/CSV 파싱/cancel/retry
-
-### B4 — CLI
-
-- [ ] B4.1 `scripts/run_batch.py` — argparse:
-  - `--csv <path>` `--mode now` `--max-workers N` `--name "..."`
-  - `--status <batch_id>`
-  - `--retry-item <item_id>`
-- [ ] B4.2 BatchEnqueueResult 를 사람이 읽기 좋게 출력 (created N / skipped M / failed K + error 샘플)
-- [ ] B4.3 `--status` 는 batch + 진행 요약 + 최근 5 실패 item 표시
-
-### B5 — Frontend (Next.js)
-
-- [ ] B5.1 `web/frontend/src/lib/api.ts` 에 `createBatch`, `listBatches`, `getBatch`, `getBatchItems`, `cancelBatch`, `retryBatchItem` 6 함수 추가
-- [ ] B5.2 `BatchUploadForm.tsx` — CSV file input + textarea(붙여넣기) + mode 라디오 (now 만 활성, overnight/auto 는 disabled + tooltip "Phase 3 예정") + operation default `analyze`
-- [ ] B5.3 `BatchProgressTable.tsx` — 5초 poll 로 batch 상태 + 카운터 (succeeded/failed/skipped/needs_review) 갱신
-- [ ] B5.4 `app/batches/page.tsx` — 배치 목록 (recent 20)
-- [ ] B5.5 `app/batches/[id]/page.tsx` — 단건 dashboard (BatchProgressTable + item 리스트 + 일괄 액션)
-- [ ] B5.6 navigation 에 "배치" 탭 추가
-
-### B6 — 검증 + 문서
-
-- [ ] B6.1 단일 흐름 보호 체크리스트 (SPEC-BATCH §8) 모두 그린
-  - `tests/test_application/test_orchestrator.py` 그린
-  - `python scripts/run_pipeline.py --keyword "테스트키워드"` smoke pass
-  - 단일 `POST /api/jobs` 응답 시간 회귀 없음
-- [ ] B6.2 `bash .claude/hooks/build-check.sh` 그린 (ruff/format/architecture/pyright/pytest 0 에러)
-- [ ] B6.3 `architecture-check.sh` 가 `domain/batch → 다른 도메인` 차단 검증
-- [ ] B6.4 운영 smoke — CSV 5건 (`tests/fixtures/batch/keywords_5.csv`) → 즉시 모드 → 5건 모두 succeeded 또는 needs_review 까지 도달
-- [ ] B6.5 운영 smoke 100건 (별도 fixture, opt-in) — 6~8h 안에 완주 + 단일 호출 영향 0
-- [ ] B6.6 `tasks/lessons.md` 에 "Phase 1 BatchJobManager + semaphore 운영 패턴" 기록
-- [ ] B6.7 루트 `CLAUDE.md` "변경 이력" 1줄 추가 — `2026-05-04: 키워드 배치 운영 시스템 (Batch Pipeline) Phase 1 추가`
-
----
+<!-- archived to tasks/_archive/todo-2026-q2.md (Phase B1~B6 Batch Pipeline MVP — stale 체크박스, 후속 PR B7~B19 로 완료 검증) -->
 
 ## ⚠️ 위험 요소 (Risk Register — Phase 1)
 
@@ -1788,63 +1510,85 @@ UX Refactor P1~P6 에서 산발적으로 적용한 색상/spacing/typography 변
 
 ---
 
-## 💾 Phase J2 — Job 상태 Supabase 영속화 (Phase J1 완료 후, 2~3주)
+## 💾 Phase J2 — Job 상태 Supabase 영속화 (2026-05-08 착수, 5 PR)
 
-> in-memory dict 를 정본에서 제거하고 **Supabase 가 단일 출처**, in-memory 는 캐시로 강등. 컨테이너 재시작 후에도 `GET /api/jobs/{id}` 가 200 OK + `status=orphaned` 같은 의미있는 종결을 반환. SPEC-BATCH 의 `domain/batch/storage.py` 와 동일한 single-source-of-truth 정신. **`application/orchestrator.run_pipeline` 시그니처 무변경** (단일 흐름 보호).
+> in-memory dict 를 정본에서 제거하고 **Supabase 가 단일 출처**, in-memory 는 캐시로 강등. 컨테이너 재시작 후에도 `GET /api/jobs/{id}` 가 200 OK + `status=orphaned` 같은 의미있는 종결을 반환. SPEC-BATCH 의 `domain/batch/storage.py` 와 동일한 single-source-of-truth 정신. **`application/orchestrator.run_pipeline` / `run_analyze_only` / `run_generate_only` 시그니처 무변경** (단일 흐름 보호).
+>
+> **rollout**: feature flag `JOB_PERSISTENCE_ENABLED` (default false) 로 PR 마다 단계 활성화. 5 PR 분할로 partial state 가 운영 안전하도록 설계 (plan-reviewer 2026-05-08 권장). PR2 후 staging 에서 flag on → DB 채워지는지 관찰 → PR3 진행.
 
-### J2.1 schema — jobs 테이블
-- [ ] `config/schema.sql` 에 `jobs` 테이블 추가:
-  - `id text PRIMARY KEY` (12-hex uuid prefix)
-  - `type text` (pipeline|analyze|generate|validate|brand_card_render|ranking_bulk_check)
-  - `status text` (pending|running|succeeded|failed|cancelled|timed_out|**orphaned**)
-  - `params jsonb`, `result jsonb`, `error text`
+### J2.0 feature flag 동작 분기 (전 PR 공통 약속)
+- [ ] `JOB_PERSISTENCE_ENABLED=false` (default) — J2.3~J2.5 모든 신규 경로 noop, in-memory 100% fallback. PR2 이후 모든 신규 코드는 이 flag 분기 통과 후에만 DB 접근
+- [ ] `JOB_PERSISTENCE_ENABLED=true` — write-through 활성. flag off → on 전환 시 누락된 in-flight job 은 다음 컨테이너 cycle 에서 orphaned 마킹 (자연 손실)
+- [ ] **graceful degrade**: Supabase write/read 실패 시 `logger.warning` 흡수 + in-memory only 로 자동 강등. 본 흐름 차단 금지 (notifier 패턴 그대로)
+- [ ] **fire-and-forget 정책**: `_submit` 의 `insert_job` 만 동기 (transactional 보장). status update / heartbeat / progress_event 는 모두 fire-and-forget + 실패 logger.warning. submit 응답 latency 추가 ~100ms 만 허용
+
+### PR1 — J2.1+J2.2 schema + storage + flag 인프라
+- [ ] `config/schema.sql` 에 `jobs` 테이블 추가 (idempotent `create table if not exists`):
+  - `id text PRIMARY KEY` (12-hex uuid prefix), `type text`, `status text` (pending|running|succeeded|failed|cancelled|timed_out|**orphaned**)
+  - `keyword text`, `params jsonb`, `result jsonb`, `error text`
   - `created_at timestamptz`, `started_at`, `finished_at`, `last_heartbeat`
-  - `instance_id text` (Render hostname — 누가 잡고 있는지)
-- [ ] index: `(status, last_heartbeat)` — orphaned sweep 용
-- [ ] `progress_events` 별도 테이블 신설 — `(job_id text, seq int, event jsonb, created_at)`. jobs.progress_log jsonb 누적 폭주 회피
+  - `instance_id text` (Render hostname / RENDER_INSTANCE_ID 식별)
+- [ ] index: `idx_jobs_status_heartbeat (status, last_heartbeat)` — orphaned sweep 용
+- [ ] `progress_events` 별도 테이블 — `(job_id text, seq int, event jsonb, created_at timestamptz)`. PK `(job_id, seq)`. jobs.progress_log jsonb 누적 폭주 회피
+- [ ] **schema 마이그레이션 절차** — schema.sql 하단 가이드: Supabase Dashboard SQL Editor 에 본 파일 전체 붙여넣기 1회. idempotent 라 기존 테이블 영향 없음
+- [ ] `web/api/job_store.py` 신규 — `insert_job` / `get_job` / `update_job_status` / `update_heartbeat` / `append_progress_event` / `list_orphaned_jobs` / `mark_running_as_orphaned(instance_id)`. `domain/batch/storage.py` 스타일 복제
+- [ ] `config/settings.py` — `job_persistence_enabled: bool = False` + `job_heartbeat_seconds: int = 30` + `job_orphaned_grace_seconds: int = 300` (5분)
+- [ ] `config/.env.example` 주석 — flag + grace 설명
+- [ ] `tests/test_web/test_job_store.py` — CRUD + orphaned 마킹 쿼리 (Supabase mock)
+- [ ] commit `feat(ops): Phase J2 PR1 — jobs schema + job_store + JOB_PERSISTENCE_ENABLED flag`
 
-### J2.2 storage layer 신규
-- [ ] `web/api/job_store.py` — Supabase CRUD (`insert_job`/`get_job`/`update_job_status`/`update_heartbeat`/`append_progress_event`/`list_orphaned_jobs`)
-- [ ] `domain/batch/storage.py` 코드 스타일 그대로 복제 (격리 도메인 정신)
+### PR2 — J2.3 일부 (write-through: insert + status update 4지점)
+- [ ] `JobManager._submit` — in-memory dict 에 넣기 직전 `job_store.insert_job` (transactional). flag off 시 noop
+- [ ] `JobManager._run_job` — `running` / `succeeded` / `failed` 전환 시 `update_job_status` (fire-and-forget)
+- [ ] `JobManager._arm_timeout._check` (`timed_out` 마킹, job_manager.py:172) — `update_job_status` 호출
+- [ ] `JobManager.cancel_job` — `cancelled` 마킹 시 `update_job_status` 호출
+- [ ] **헬퍼 추출**: `_persist_status(job, status, error=None)` — DB 갱신 단일 진입점. graceful degrade 책임. 4지점이 동일 패턴
+- [ ] `tests/test_web/test_job_manager_persistence.py` — flag on/off 분기 + submit→insert / status 전환 4종 / Supabase 장애 mock (graceful degrade 검증)
+- [ ] commit `feat(ops): Phase J2 PR2 — JobManager write-through (insert + status 4지점)`
 
-### J2.3 JobManager write-through 전환
-- [ ] `_submit` — in-memory dict 에 넣기 직전 `job_store.insert_job` (transactional)
-- [ ] `_run_job` — status 전환 (`running`/`succeeded`/`failed`/`timed_out`/`cancelled`) 마다 `update_job_status`
-- [ ] 30초 daemon thread 로 `update_heartbeat` 갱신
-- [ ] `event_bus.emit` → `append_progress_event` (별도 테이블, fire-and-forget)
+### PR3 — J2.3 잔여 + J2.4 (heartbeat + progress_events + GET fallback)
+- [ ] 30초 daemon thread 로 running job 의 `update_heartbeat` 갱신. job 종료 시 thread 해제. flag off 시 thread 미시작
+- [ ] `event_bus.emit` 가 `append_progress_event` 도 호출 — fire-and-forget. **`WebSocketProgressReporter` 는 DB write 직접 안 함** (격리 유지). job_manager 측 hook 패턴: `event_bus.subscribe_persist(job_id)` 또는 `emit` 내부에서 분기
+- [ ] `web/api/routers/jobs.py:get_job` — in-memory miss 시 `job_store.get_job` fallback. orphaned 도 200 OK 로 응답
+- [ ] 클라이언트 `useJobPolling` 은 `status=orphaned` 를 terminal 로 인식 (J1.1 의 TERMINAL_STATUSES 에 추가)
+- [ ] `tests/test_web/test_progress_persistence.py` — emit → progress_events row 쌓임. fire-and-forget 실패 graceful
+- [ ] `tests/test_web/test_get_job_fallback.py` — in-memory miss → DB fallback 200
+- [ ] commit `feat(ops): Phase J2 PR3 — heartbeat + progress_events + GET fallback`
 
-### J2.4 GET /api/jobs/{id} DB fallback
-- [ ] `web/api/routers/jobs.py` — in-memory `get_job` 결과가 None 이면 `job_store.get_job` 조회 후 200 OK
-- [ ] 클라이언트는 `status=orphaned` 도 정상 종결로 인식 (Phase J1 의 retry-bound 와 별개로 자연 종결)
+### PR4 — J2.5 startup + 5min sweep + 알림 dedupe
+- [ ] `web/api/main.py` startup — `mark_running_as_orphaned(instance_id)` 호출 (자기 instance 의 running 모두 orphaned). flag off 시 skip
+- [ ] 5분 주기 sweep — APScheduler 또는 asyncio.create_task 루프. `status=running AND last_heartbeat < now() - {grace_seconds}` → orphaned. 첫 24h 는 grace 15분 (보수), 이후 5분으로 단축 (운영 데이터 후)
+- [ ] **알림 dedupe** — J1.4 재시작 알림과 J2.5 startup orphaned 알림이 같은 startup 에서 발송. 단일 메시지로 통합: `notifier.send_text("재시작 감지 instance=X / orphaned=N")`. orphaned=0 이면 J1.4 형식 그대로
+- [ ] `tests/test_web/test_orphaned_sweep.py` — last_heartbeat 만료 시 자동 orphaned. instance_id 별 mark_running_as_orphaned
+- [ ] commit `feat(ops): Phase J2 PR4 — startup + 5min sweep + 알림 dedupe`
 
-### J2.5 startup + 주기 sweep
-- [ ] `web/api/main.py` startup — 자기 instance_id 의 `status=running` job 을 모두 `orphaned` 마킹 (자기 컨테이너가 죽었다 살아난 것)
-- [ ] 5분 주기 sweep — `status=running AND last_heartbeat < now() - 5min` → `orphaned` (다른 인스턴스가 죽은 경우)
-- [ ] sweep 결과 알림 (notifier) — orphaned > 0 시 1회 발송
+### PR5 — J2.6 결과 영속화 (비-pipeline 포함)
+- [ ] `_run_job` 의 `job.result = result.model_dump(mode="json")` 후 DB `result` 컬럼 동기화
+- [ ] **비-pipeline job 결과 직렬화 명시**:
+  - `pipeline` / `generate`: `output/{slug}/{ts}/` 경로 + Supabase Storage URL (만약 업로드되어 있다면)
+  - `analyze`: pattern_card_id (DB 참조)
+  - `validate`: ComplianceReport jsonb 그대로
+  - `brand_card_render`: RenderedCardSet 의 manifest 경로 + 이미지 URL 리스트
+  - `ranking_bulk_check`: RankingCheckSummary jsonb (snapshot 카운트만, 실 데이터는 ranking_snapshots 참조)
+- [ ] `tests/test_web/test_result_serialization.py` — 6 job_type 별 result 라운드트립 (insert → fetch → 동일)
+- [ ] commit `feat(ops): Phase J2 PR5 — 결과 영속화 + 비-pipeline 직렬화`
 
-### J2.6 결과 경로 영속화
-- [ ] `jobs.result` 에 `output/{slug}/{ts}/` 경로 + Supabase Storage URL 모두 기록
-- [ ] 재시작 후 클라이언트가 결과 다운로드 가능 (현재 휘발성 컨테이너 fs 의존성 제거)
-
-### J2.7 테스트
-- [ ] `tests/test_web/test_job_store.py` — CRUD + orphaned sweep 쿼리
-- [ ] `tests/test_web/test_job_manager_persistence.py` — submit → DB insert 검증, in-memory miss → DB fallback, status 전환마다 update 호출
-- [ ] `tests/test_web/test_orphaned_sweep.py` — last_heartbeat 만료 시 자동 orphaned 마킹
-
-### J2.8 검증 + commit + 운영 검증
+### J2 종료 검증 (PR5 완료 후)
 - [ ] `bash .claude/hooks/build-check.sh` 그린
-- [ ] commit `feat(ops): Phase J2 — Job 상태 Supabase 영속화 + orphaned 자동 종결`
-- [ ] **staging 강제 재시작 테스트**: Render Dashboard 에서 일부러 Manual Deploy → 진행 중 job 이 `orphaned` 로 자연 종결되는지 검증
+- [ ] **staging 강제 재시작 테스트** — Render Dashboard 에서 Manual Deploy → 진행 중 job 이 `orphaned` 로 자연 종결, GET 200 OK 반환되는지 검증
+- [ ] **운영 1주 모니터링** — DB write latency p99 + Supabase row growth + orphaned 발생 빈도 → grace 5분 적정성 판단
 
 ---
 
 ## ⚠️ Phase J 위험 요소
 
-- **DB write 가 응답 latency 추가**: `submit_*` 이 DB insert 후 응답. Supabase ~100ms 추가. 모니터링 필요. 임계 시 fire-and-forget + retry 전환
-- **progress_events 테이블 폭주**: 단계별 이벤트가 분당 수십 건. 7일 retention cron + 인덱스 `(job_id, seq)`. Phase J2.1 의 별도 테이블 분리는 이를 위함
-- **false orphaned**: heartbeat grace 5분. 더 짧으면 정상 job 도 orphaned 처리 위험. 운영 데이터 누적 후 조정
-- **단일 흐름 보호**: `application/orchestrator.run_pipeline` / `run_analyze_only` / `run_generate_only` 시그니처 절대 무변경. 변경 영역은 `web/api/job_manager.py` + 신규 `web/api/job_store.py` + 신규 schema 만
-- **rollout**: J2 는 큰 변경이라 feature flag (`JOB_PERSISTENCE_ENABLED`) 로 단계 도입 — env=false 시 기존 in-memory 동작 그대로
+- **DB write 가 응답 latency 추가**: `submit_*` 만 동기 insert (~100ms). status update / heartbeat / progress_events 는 fire-and-forget + 실패 logger.warning. 임계 초과 시 `_submit` 도 background insert 로 전환
+- **progress_events 테이블 폭주**: 단계별 이벤트가 분당 수십 건. 7일 retention cron + PK `(job_id, seq)` + 인덱스 `(created_at)`. PR3 에서 retention 정책도 같이 결정 (Phase J 후속)
+- **false orphaned**: heartbeat grace 5분. 더 짧으면 정상 job 도 orphaned 처리 위험. PR4 첫 24h grace 15분 → 운영 데이터 누적 후 단축
+- **Supabase 장애 graceful degrade**: 모든 DB call 은 try/except + logger.warning. notifier 패턴 그대로 — 알림 끊겨도 본 흐름 동작 (graceful)
+- **격리 위반 우려 (`WebSocketProgressReporter` ↔ DB)**: reporter 가 DB 직접 write 하면 application 레이어 격리 깨짐. PR3 에서 `event_bus.emit` 내부 hook 으로 처리하거나 job_manager 가 별도 subscribe — reporter 는 이벤트 발행만
+- **단일 흐름 보호**: `application/orchestrator.run_pipeline` / `run_analyze_only` / `run_generate_only` 시그니처 절대 무변경. 변경 영역은 `web/api/job_manager.py` + 신규 `web/api/job_store.py` + 신규 schema + `config/settings.py` flag 만
+- **rollout 단계**: PR2 staging flag on → 1일 관찰 → PR3 / PR4 / PR5 단계 진행. flag off 회귀 테스트 필수 (모든 PR 의 vitest/pytest 에 포함)
 
 ## 🔮 Phase J 후속 (별도 todo 진입 시 분해)
 

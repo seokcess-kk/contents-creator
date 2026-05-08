@@ -660,6 +660,61 @@ create index if not exists idx_keyword_batch_items_blog_channel
 
 
 -- ============================================================
+-- jobs — Phase J2 (2026-05-08): 작업 상태 영속화
+-- ============================================================
+-- in-memory `web/api/job_manager.JobManager._jobs` dict 의 영속 백업.
+-- 컨테이너 재시작 시 `GET /api/jobs/{id}` 가 휘발 (404 100+회 폴링) 사고 대응.
+-- single-source-of-truth: Supabase 가 정본, in-memory 는 캐시.
+-- 컨테이너 재시작 후 status=orphaned 자동 마킹 (J2 PR4).
+-- 적용 방법: 본 파일 전체를 Supabase Dashboard SQL Editor 에 붙여넣기 1회.
+--           idempotent (`create table if not exists`) 라 기존 테이블 영향 없음.
+-- feature flag: `JOB_PERSISTENCE_ENABLED=false` (default) 면 코드가 본 테이블에
+--               write 안 함 — 빈 테이블로 남아도 운영 무영향. PR2 부터 활성화.
+-- ============================================================
+create table if not exists jobs (
+    id text primary key,                              -- 12-hex uuid prefix (job_manager._submit)
+    type text not null,                                -- pipeline|analyze|generate|validate|brand_card_render|ranking_bulk_check
+    status text not null default 'pending',            -- pending|running|succeeded|failed|cancelled|timed_out|orphaned
+    keyword text,                                      -- pipeline/analyze/generate 의 키워드 (검색 용도)
+    params jsonb,                                      -- submit 시점 입력
+    result jsonb,                                      -- model_dump(mode="json") 결과
+    error text,                                        -- 실패 시 메시지
+    created_at timestamptz not null default now(),
+    started_at timestamptz,
+    finished_at timestamptz,
+    last_heartbeat timestamptz,                        -- running 중 30s 마다 갱신, grace 만료 시 orphaned
+    instance_id text                                   -- RENDER_INSTANCE_ID 또는 hostname (어느 컨테이너가 잡고 있는지)
+);
+
+-- orphaned sweep 의 핫 쿼리: status=running AND last_heartbeat < now()-grace
+create index if not exists idx_jobs_status_heartbeat
+    on jobs (status, last_heartbeat);
+
+-- 운영 홈/대시보드 최근 job 정렬용
+create index if not exists idx_jobs_created_at
+    on jobs (created_at desc);
+
+-- ============================================================
+-- progress_events — Phase J2 (2026-05-08)
+-- ============================================================
+-- WebSocket 진행 이벤트의 영속 보관. jobs.progress_log jsonb 누적 폭주 회피로
+-- 별도 테이블 분리. 컨테이너 재시작 후에도 진행 로그 재생 가능.
+-- retention: 운영 데이터 누적 후 cron 으로 7일 retention 적용 (Phase J 후속).
+-- feature flag: `JOB_PERSISTENCE_ENABLED=false` 면 write 안 함.
+-- ============================================================
+create table if not exists progress_events (
+    job_id text not null references jobs(id) on delete cascade,
+    seq int not null,                                  -- emit 순서 (job 내부 0,1,2,...)
+    event jsonb not null,                              -- {type, stage, current, total, detail, ...}
+    created_at timestamptz not null default now(),
+    primary key (job_id, seq)
+);
+
+create index if not exists idx_progress_events_created
+    on progress_events (created_at);
+
+
+-- ============================================================
 -- 향후 확장 시 이 파일에 테이블 추가 (Phase 2):
 --   - client_profiles  (클라이언트 프로필, 브랜드와 구분)
 --   - visual_patterns  (비주얼 분석 / VLM)

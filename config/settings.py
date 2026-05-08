@@ -224,6 +224,26 @@ class Settings(BaseSettings):
         description="overnight 시간대 게이트 무시 (env 즉시 트리거 / 테스트용)",
     )
 
+    # Phase J2 (2026-05-08) — Job 상태 Supabase 영속화. feature flag 로 단계 도입.
+    # default false → 기존 in-memory 동작 그대로. PR2 에서 staging 활성화 후 1주
+    # 모니터링하며 운영 전환. flag 가 false 면 schema/storage 가 있어도 write/read
+    # 안 함 (모든 신규 경로 noop, in-memory 100% fallback).
+    job_persistence_enabled: bool = Field(
+        default=False,
+        description="Supabase jobs 테이블에 작업 상태 write-through. false 면 기존 in-memory 만",
+    )
+    # heartbeat 갱신 주기. 짧을수록 false orphaned 가능성 ↓, DB write 횟수 ↑.
+    # 30s 가 기본값 — 5분 grace 대비 충분히 짧고 분당 2회만 write.
+    job_heartbeat_seconds: int = Field(
+        default=30, description="running job 의 last_heartbeat 갱신 주기 (초)"
+    )
+    # last_heartbeat 가 이 시간 초과되면 sweep 이 orphaned 마킹.
+    # PR4 첫 24h 는 900 (15분) 보수, 운영 데이터 누적 후 300 (5분) 단축 권장.
+    job_orphaned_grace_seconds: int = Field(
+        default=300,
+        description="last_heartbeat 만료 grace (초). 이 시간 동안 갱신 없으면 orphaned",
+    )
+
 
 settings = Settings()
 
