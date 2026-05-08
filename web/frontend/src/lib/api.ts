@@ -28,15 +28,28 @@ function buildHeaders(extra?: HeadersInit): HeadersInit {
   return headers;
 }
 
+// Phase J1.1 — 폴링 hook 이 status 별 누적 카운터를 돌리려면 status 가 필요해서
+// 일반 Error 대신 ApiError 로 던진다. message 포맷은 기존(`API {status}: {text}`)과 동일.
+export class ApiError extends Error {
+  readonly status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+async function throwApiError(res: Response): Promise<never> {
+  const text = await res.text();
+  throw new ApiError(res.status, `API ${res.status}: ${text}`);
+}
+
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${url}`, {
     ...init,
     headers: buildHeaders(init?.headers),
   });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`API ${res.status}: ${text}`);
-  }
+  if (!res.ok) await throwApiError(res);
   return res.json() as Promise<T>;
 }
 
@@ -120,10 +133,7 @@ export async function cancelJob(id: string): Promise<void> {
     method: "DELETE",
     headers: buildHeaders(),
   });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`API ${res.status}: ${text}`);
-  }
+  if (!res.ok) await throwApiError(res);
 }
 
 // WebSocket 연결 직전에 jobId 바운드 단명 토큰을 발급받아 URL 쿼리에 담는다.
@@ -492,10 +502,7 @@ export async function deletePublication(publicationId: string): Promise<void> {
     `${API_BASE}/rankings/publications/${encodeURIComponent(publicationId)}`,
     { method: "DELETE", headers: buildHeaders() },
   );
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`API ${res.status}: ${text}`);
-  }
+  if (!res.ok) await throwApiError(res);
 }
 
 export function listRankingSnapshots(
@@ -652,7 +659,7 @@ export async function createBatchFile(params: {
   }
   // multipart: Content-Type 은 브라우저가 boundary 포함해 자동 설정
   const res = await fetch(`${API_BASE}/batches`, { method: "POST", body: form });
-  if (!res.ok) throw new Error(`API ${res.status}: ${await res.text()}`);
+  if (!res.ok) await throwApiError(res);
   return res.json() as Promise<BatchEnqueueResult>;
 }
 
@@ -907,8 +914,5 @@ export async function deleteBlogChannel(channelId: string): Promise<void> {
     method: "DELETE",
     headers: buildHeaders(),
   });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`API ${res.status}: ${text}`);
-  }
+  if (!res.ok) await throwApiError(res);
 }

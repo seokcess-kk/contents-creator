@@ -7,12 +7,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import socket
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from application import notifier
 from config.settings import settings
 from web.api.job_manager import JobManager
 from web.api.routers import (
@@ -78,6 +81,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         ranking_scheduler = start_scheduler()
         logger.info("ranking.scheduler.in_process_enabled — local dev mode")
+
+    # Phase J1.4 — 백엔드 재시작 감지 알림. in-memory JobManager 가 휘발하면 진행 중
+    # job 상태가 사라지므로, Slack webhook 이 설정돼 있으면 매 cold start 마다 1회 push.
+    # webhook 미설정 시 notifier.send_text 가 noop. RENDER_INSTANCE_ID 가 있으면
+    # 인스턴스 식별, 없으면 hostname 폴백.
+    instance_id = os.environ.get("RENDER_INSTANCE_ID") or socket.gethostname()
+    logger.info("startup.restart_detected instance=%s", instance_id)
+    try:
+        notifier.send_text(f":arrows_clockwise: *백엔드 재시작 감지* — instance={instance_id}")
+    except Exception:
+        logger.exception("startup.restart_notify_failed")
 
     logger.info("Contents Creator API started")
     yield

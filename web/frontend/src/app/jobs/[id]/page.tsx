@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
+import { use } from "react";
 import Link from "next/link";
-import { getJob } from "@/lib/api";
 import { useJobProgress } from "@/lib/useJobProgress";
-import type { Job } from "@/types";
+import { useJobPolling } from "@/lib/useJobPolling";
+import ErrorBanner from "@/components/ui/ErrorBanner";
 import ProgressTracker from "@/components/ProgressTracker";
 import ResultViewer from "@/components/ResultViewer";
 
@@ -14,43 +14,34 @@ export default function JobDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const [job, setJob] = useState<Job | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { job, error, aborted } = useJobPolling(id);
   const { events } = useJobProgress(id);
 
-  // 작업 정보 폴링 — 종료 상태가 되면 자동 중단
-  useEffect(() => {
-    let active = true;
-    let interval: ReturnType<typeof setInterval> | undefined;
-    const TERMINAL = new Set(["succeeded", "failed", "cancelled", "timed_out"]);
-
-    async function poll() {
-      try {
-        const data = await getJob(id);
-        if (!active) return;
-        setJob(data);
-        if (TERMINAL.has(data.status) && interval !== undefined) {
-          clearInterval(interval);
-          interval = undefined;
-        }
-      } catch (err) {
-        if (active) setError(err instanceof Error ? err.message : "불러오기 실패");
-      }
-    }
-
-    poll();
-    interval = setInterval(poll, 3000);
-    return () => {
-      active = false;
-      if (interval !== undefined) clearInterval(interval);
-    };
-  }, [id]);
-
-  if (error) {
+  if (aborted) {
     return (
-      <div className="text-center py-12">
-        <p className="text-red-600 mb-4 font-medium">{error}</p>
-        <Link href="/" className="text-blue-700 hover:underline font-medium">
+      <div className="space-y-4">
+        <ErrorBanner
+          severity="error"
+          title="진행 상태를 더 이상 추적할 수 없습니다"
+          message="백엔드가 재시작되어 메모리상 작업 정보가 분실됐습니다. output/{slug}/{ts}/ 또는 결과 보관함에서 결과를 확인하거나 재실행해 주세요."
+        />
+        <div className="flex gap-4 text-sm">
+          <Link href="/queue" className="text-blue-700 hover:underline font-medium">
+            결과 보관함
+          </Link>
+          <Link href="/" className="text-blue-700 hover:underline font-medium">
+            대시보드
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (error && !job) {
+    return (
+      <div className="space-y-4">
+        <ErrorBanner severity="error" message={error} />
+        <Link href="/" className="text-blue-700 hover:underline font-medium text-sm">
           대시보드로 돌아가기
         </Link>
       </div>
