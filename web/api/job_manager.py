@@ -2,12 +2,18 @@
 
 서버 재시작 시 작업 목록은 초기화되지만 output/ 파일은 유지된다.
 내부 1~3명 사용 기준이므로 DB 저장 없이 in-memory 로 충분하다.
+
+Phase J2 (2026-05-08): `JOB_PERSISTENCE_ENABLED=true` 시 Supabase jobs 테이블
+write-through 가 활성화돼 컨테이너 재시작 후에도 GET /api/jobs/{id} 가 응답
+가능. flag default false → 본 모듈 동작은 기존 in-memory 와 동일.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import socket
 import threading
 import uuid
 from collections import defaultdict
@@ -35,11 +41,18 @@ from application.ranking_bulk_check import bulk_check_rankings
 from config.settings import settings
 from domain.brand_card.model import RenderedCardSet
 from domain.ranking.model import RankingCheckSummary
+from web.api import job_store
 from web.api.ws_reporter import WebSocketProgressReporter
 
 logger = logging.getLogger(__name__)
 
 MAX_WORKERS = 2
+
+# Phase J2 — 컨테이너 식별. RENDER_INSTANCE_ID 가 표준이고, 없으면 hostname.
+# main.py 의 재시작 알림 (J1.4) 과 동일 식별. PR4 startup sweep 의
+# `mark_running_as_orphaned(instance_id=...)` 가 이 값과 매칭되어야 자기
+# 컨테이너의 stale running 만 깨끗이 마킹.
+INSTANCE_ID = os.environ.get("RENDER_INSTANCE_ID") or socket.gethostname()
 
 
 @dataclass
@@ -151,10 +164,57 @@ class JobManager:
             keyword=params.get("keyword", ""),
             params=params,
         )
+        # Phase J2 — flag on 시 in-memory dict put 직전 동기 insert (transactional).
+        # insert 실패해도 in-memory 는 정상 생성 → 사용자 즉시 응답 (graceful).
+        # 이 경우 컨테이너 재시작 시 해당 job 은 영구 분실, 클라이언트는 J1.1
+        # retry-bound 로 종결. flag off 면 noop.
+        if settings.job_persistence_enabled:
+            try:
+                job_store.insert_job(
+                    job_id,
+                    job_type=job_type,
+                    keyword=job.keyword,
+                    params=params,
+                    instance_id=INSTANCE_ID,
+                )
+            except Exception:
+                logger.warning("job_store.insert_job exception job_id=%s", job_id, exc_info=True)
         self._jobs[job_id] = job
         job.future = self._executor.submit(self._run_job, job)
         self._arm_timeout(job)
         return job
+
+    # Phase J2 — DB write 단일 진입점. flag off 시 즉시 return.
+    # 4지점 (`_run_job` running/succeeded/failed, `_arm_timeout` timed_out,
+    # `cancel_job` cancelled) 이 모두 이 helper 호출. graceful degrade 책임.
+    def _persist_status(
+        self,
+        job: Job,
+        status: str,
+        *,
+        error: str | None = None,
+        started_at: datetime | None = None,
+        finished_at: datetime | None = None,
+        result: dict[str, Any] | None = None,
+    ) -> None:
+        if not settings.job_persistence_enabled:
+            return
+        try:
+            job_store.update_job_status(
+                job.id,
+                status,
+                error=error,
+                started_at=started_at,
+                finished_at=finished_at,
+                result=result,
+            )
+        except Exception:
+            logger.warning(
+                "job_store.update_job_status exception job_id=%s status=%s",
+                job.id,
+                status,
+                exc_info=True,
+            )
 
     def _arm_timeout(self, job: Job) -> None:
         """job_timeout_seconds 초 후 여전히 running 이면 timed_out 표시.
@@ -179,6 +239,7 @@ class JobManager:
                     {"type": "pipeline_error", "stage": "timeout", "error": job.error},
                 )
                 self.event_bus.emit(job.id, {"type": "job_status", "status": "timed_out"})
+                self._persist_status(job, "timed_out", error=job.error, finished_at=job.finished_at)
 
         # daemon=True — 서버 종료 시 timeout 대기 없이 즉시 정리.
         timer = threading.Timer(timeout, _check)
@@ -202,11 +263,13 @@ class JobManager:
             job.status = "cancelled"
             job.finished_at = datetime.now(tz=UTC)
             self.event_bus.emit(job.id, {"type": "job_status", "status": "cancelled"})
+            self._persist_status(job, "cancelled", finished_at=job.finished_at)
             return True
         # 이미 실행 중 — soft cancel
         job.status = "cancelled"
         job.finished_at = datetime.now(tz=UTC)
         self.event_bus.emit(job.id, {"type": "job_status", "status": "cancelled"})
+        self._persist_status(job, "cancelled", finished_at=job.finished_at)
         return True
 
     def _run_job(self, job: Job) -> None:
@@ -214,10 +277,12 @@ class JobManager:
             job.status = "cancelled"
             job.finished_at = datetime.now(tz=UTC)
             self.event_bus.emit(job.id, {"type": "job_status", "status": "cancelled"})
+            self._persist_status(job, "cancelled", finished_at=job.finished_at)
             return
         job.status = "running"
         job.started_at = datetime.now(tz=UTC)
         self.event_bus.emit(job.id, {"type": "job_status", "status": "running"})
+        self._persist_status(job, "running", started_at=job.started_at)
 
         reporter = WebSocketProgressReporter(job.id, self.event_bus, job)
 
@@ -241,6 +306,18 @@ class JobManager:
             job_id_var.reset(token)
             job.finished_at = datetime.now(tz=UTC)
             self.event_bus.emit(job.id, {"type": "job_status", "status": job.status})
+            # Phase J2 — terminal 상태만 DB 동기화. timed_out/cancelled 는 위에서 이미
+            # _persist_status 호출됐으므로 여기서는 succeeded/failed 만 다시 갱신.
+            # (timed_out/cancelled 도 다시 보내면 동일 상태 update 라 idempotent 하지만
+            # finished_at 이 약간 미래로 덮일 수 있어 분기 처리)
+            if job.status in ("succeeded", "failed"):
+                self._persist_status(
+                    job,
+                    job.status,
+                    error=job.error,
+                    finished_at=job.finished_at,
+                    result=job.result,
+                )
             for hook in self._on_finished_hooks:
                 try:
                     hook(job)
