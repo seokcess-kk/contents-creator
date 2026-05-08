@@ -1522,61 +1522,55 @@ UX Refactor P1~P6 에서 산발적으로 적용한 색상/spacing/typography 변
 - [ ] **graceful degrade**: Supabase write/read 실패 시 `logger.warning` 흡수 + in-memory only 로 자동 강등. 본 흐름 차단 금지 (notifier 패턴 그대로)
 - [ ] **fire-and-forget 정책**: `_submit` 의 `insert_job` 만 동기 (transactional 보장). status update / heartbeat / progress_event 는 모두 fire-and-forget + 실패 logger.warning. submit 응답 latency 추가 ~100ms 만 허용
 
-### PR1 — J2.1+J2.2 schema + storage + flag 인프라
-- [ ] `config/schema.sql` 에 `jobs` 테이블 추가 (idempotent `create table if not exists`):
-  - `id text PRIMARY KEY` (12-hex uuid prefix), `type text`, `status text` (pending|running|succeeded|failed|cancelled|timed_out|**orphaned**)
-  - `keyword text`, `params jsonb`, `result jsonb`, `error text`
-  - `created_at timestamptz`, `started_at`, `finished_at`, `last_heartbeat`
-  - `instance_id text` (Render hostname / RENDER_INSTANCE_ID 식별)
-- [ ] index: `idx_jobs_status_heartbeat (status, last_heartbeat)` — orphaned sweep 용
-- [ ] `progress_events` 별도 테이블 — `(job_id text, seq int, event jsonb, created_at timestamptz)`. PK `(job_id, seq)`. jobs.progress_log jsonb 누적 폭주 회피
-- [ ] **schema 마이그레이션 절차** — schema.sql 하단 가이드: Supabase Dashboard SQL Editor 에 본 파일 전체 붙여넣기 1회. idempotent 라 기존 테이블 영향 없음
-- [ ] `web/api/job_store.py` 신규 — `insert_job` / `get_job` / `update_job_status` / `update_heartbeat` / `append_progress_event` / `list_orphaned_jobs` / `mark_running_as_orphaned(instance_id)`. `domain/batch/storage.py` 스타일 복제
-- [ ] `config/settings.py` — `job_persistence_enabled: bool = False` + `job_heartbeat_seconds: int = 30` + `job_orphaned_grace_seconds: int = 300` (5분)
-- [ ] `config/.env.example` 주석 — flag + grace 설명
-- [ ] `tests/test_web/test_job_store.py` — CRUD + orphaned 마킹 쿼리 (Supabase mock)
-- [ ] commit `feat(ops): Phase J2 PR1 — jobs schema + job_store + JOB_PERSISTENCE_ENABLED flag`
+### PR1 — J2.1+J2.2 schema + storage + flag 인프라 ✅ (2026-05-08, commit 469497e)
+- [x] `config/schema.sql` 에 `jobs` 테이블 추가 (idempotent) + `progress_events`
+- [x] index `idx_jobs_status_heartbeat`, `idx_jobs_created_at`, `idx_progress_events_created`
+- [x] schema 마이그레이션 절차 — 사용자 Supabase Dashboard SQL Editor 적용 완료
+- [x] `web/api/job_store.py` 신규 — 8 함수 (CRUD + 2종 orphaned 마킹)
+- [x] `config/settings.py` — `job_persistence_enabled` (False) / `job_heartbeat_seconds=30` / `job_orphaned_grace_seconds=300`
+- [x] `config/.env.example` 주석 — flag + grace 가이드
+- [x] `tests/test_web/test_job_store.py` — 20/20 통과
 
-### PR2 — J2.3 일부 (write-through: insert + status update 4지점)
-- [ ] `JobManager._submit` — in-memory dict 에 넣기 직전 `job_store.insert_job` (transactional). flag off 시 noop
-- [ ] `JobManager._run_job` — `running` / `succeeded` / `failed` 전환 시 `update_job_status` (fire-and-forget)
-- [ ] `JobManager._arm_timeout._check` (`timed_out` 마킹, job_manager.py:172) — `update_job_status` 호출
-- [ ] `JobManager.cancel_job` — `cancelled` 마킹 시 `update_job_status` 호출
-- [ ] **헬퍼 추출**: `_persist_status(job, status, error=None)` — DB 갱신 단일 진입점. graceful degrade 책임. 4지점이 동일 패턴
-- [ ] `tests/test_web/test_job_manager_persistence.py` — flag on/off 분기 + submit→insert / status 전환 4종 / Supabase 장애 mock (graceful degrade 검증)
-- [ ] commit `feat(ops): Phase J2 PR2 — JobManager write-through (insert + status 4지점)`
+### PR2 — J2.3 일부 (write-through: insert + status update 4지점) ✅ (2026-05-08, commit cc18299)
+- [x] `JobManager._submit` 동기 insert_job (graceful degrade)
+- [x] `_run_job` running/succeeded/failed + cancel 분기 + finally 분기 — 5지점 _persist_status
+- [x] `_arm_timeout._check` timed_out _persist_status
+- [x] `cancel_job` cancelled _persist_status (future.cancel 성공/실패 양쪽)
+- [x] `_persist_status(job, status, error=None, started_at=None, finished_at=None, result=None)` 헬퍼 단일 진입점
+- [x] `tests/test_web/test_job_manager_persistence.py` — 8/8 (flag on/off + 4지점 + graceful)
+- [x] `INSTANCE_ID` 모듈 상수 (RENDER_INSTANCE_ID 또는 hostname) — PR4 sweep 사전 준비
 
-### PR3 — J2.3 잔여 + J2.4 (heartbeat + progress_events + GET fallback)
-- [ ] 30초 daemon thread 로 running job 의 `update_heartbeat` 갱신. job 종료 시 thread 해제. flag off 시 thread 미시작
-- [ ] `event_bus.emit` 가 `append_progress_event` 도 호출 — fire-and-forget. **`WebSocketProgressReporter` 는 DB write 직접 안 함** (격리 유지). job_manager 측 hook 패턴: `event_bus.subscribe_persist(job_id)` 또는 `emit` 내부에서 분기
-- [ ] `web/api/routers/jobs.py:get_job` — in-memory miss 시 `job_store.get_job` fallback. orphaned 도 200 OK 로 응답
-- [ ] 클라이언트 `useJobPolling` 은 `status=orphaned` 를 terminal 로 인식 (J1.1 의 TERMINAL_STATUSES 에 추가)
-- [ ] `tests/test_web/test_progress_persistence.py` — emit → progress_events row 쌓임. fire-and-forget 실패 graceful
-- [ ] `tests/test_web/test_get_job_fallback.py` — in-memory miss → DB fallback 200
-- [ ] commit `feat(ops): Phase J2 PR3 — heartbeat + progress_events + GET fallback`
+### PR3 — J2.3 잔여 + J2.4 (heartbeat + progress_events + GET fallback) ✅ (2026-05-08, commit 09e9fec)
+- [x] heartbeat daemon thread (lazy 시작 + shutdown stop event + flag 매 tick 재평가)
+- [x] `JobEventBus.emit` 내부에서 append_progress_event (격리 유지 — `WebSocketProgressReporter` 무변경, seq 자동 부여)
+- [x] `web/api/routers/jobs.py:get_job` — in-memory miss + flag on → DB fallback. orphaned 도 200 OK
+- [x] 클라이언트 `useJobPolling.TERMINAL_STATUSES` 에 `orphaned` 추가 + `app/jobs/[id]/page.tsx` 분기 (warning ErrorBanner)
+- [x] `tests/test_web/test_progress_persistence.py` 5/5 + `test_jobs_router.py` 4/4 + heartbeat 회귀 +3
+- [x] `useJobPolling.test.tsx` orphaned terminal 회귀 +1
 
-### PR4 — J2.5 startup + 5min sweep + 알림 dedupe
-- [ ] `web/api/main.py` startup — `mark_running_as_orphaned(instance_id)` 호출 (자기 instance 의 running 모두 orphaned). flag off 시 skip
-- [ ] 5분 주기 sweep — APScheduler 또는 asyncio.create_task 루프. `status=running AND last_heartbeat < now() - {grace_seconds}` → orphaned. 첫 24h 는 grace 15분 (보수), 이후 5분으로 단축 (운영 데이터 후)
-- [ ] **알림 dedupe** — J1.4 재시작 알림과 J2.5 startup orphaned 알림이 같은 startup 에서 발송. 단일 메시지로 통합: `notifier.send_text("재시작 감지 instance=X / orphaned=N")`. orphaned=0 이면 J1.4 형식 그대로
-- [ ] `tests/test_web/test_orphaned_sweep.py` — last_heartbeat 만료 시 자동 orphaned. instance_id 별 mark_running_as_orphaned
-- [ ] commit `feat(ops): Phase J2 PR4 — startup + 5min sweep + 알림 dedupe`
+### PR4 — J2.5 startup + 5min sweep + 알림 dedupe ✅ (2026-05-08, commit 5076722)
+- [x] `web/api/main.py` startup — `mark_running_as_orphaned(instance_id)` + count 회수
+- [x] 5분 주기 sweep — `asyncio.create_task(_orphaned_sweep_loop)`. tick 마다 settings 재평가, Supabase 장애 graceful continue
+- [x] 알림 dedupe — orphaned > 0 시 통합 메시지 (`재시작 감지 instance=X / orphaned=N`), 0 시 J1.4 형식 그대로
+- [x] sweep tick count > 0 시 별도 알림 (`:mag: orphaned sweep — N job(s)`)
+- [x] `config/settings.py` — `job_sweep_interval_seconds=300` 추가
+- [x] shutdown 에 sweep_task.cancel + suppress(CancelledError)
+- [x] `tests/test_web/test_orphaned_sweep.py` 7/7 (startup 3 + sweep loop 4)
 
-### PR5 — J2.6 결과 영속화 (비-pipeline 포함)
-- [ ] `_run_job` 의 `job.result = result.model_dump(mode="json")` 후 DB `result` 컬럼 동기화
-- [ ] **비-pipeline job 결과 직렬화 명시**:
-  - `pipeline` / `generate`: `output/{slug}/{ts}/` 경로 + Supabase Storage URL (만약 업로드되어 있다면)
-  - `analyze`: pattern_card_id (DB 참조)
-  - `validate`: ComplianceReport jsonb 그대로
-  - `brand_card_render`: RenderedCardSet 의 manifest 경로 + 이미지 URL 리스트
-  - `ranking_bulk_check`: RankingCheckSummary jsonb (snapshot 카운트만, 실 데이터는 ranking_snapshots 참조)
-- [ ] `tests/test_web/test_result_serialization.py` — 6 job_type 별 result 라운드트립 (insert → fetch → 동일)
-- [ ] commit `feat(ops): Phase J2 PR5 — 결과 영속화 + 비-pipeline 직렬화`
+### PR5 — J2.6 결과 영속화 (비-pipeline 포함) ✅ (2026-05-08)
+- [x] `_run_job` 의 `result=job.result` 전달은 PR2 에서 이미 구현 — PR5 는 6 job_type 별 직렬화 회귀 검증
+- [x] 6 job_type model_dump(mode="json") JSON round-trip 검증:
+  - `pipeline` / `analyze` / `generate` / `validate` (application/models) — Path → str / datetime → ISO 정상
+  - `brand_card_render` (RenderedCardSet + nested RenderedBrandCard) — manifest_path/png_path/created_at 모두 친화
+  - `ranking_bulk_check` (RankingCheckSummary) — primitive only, 직렬화 안전
+- [x] `tests/test_web/test_result_serialization.py` 8/8 — 6 모델 round-trip + _persist_status succeeded/failed result kwarg 검증
+- [x] **추가 코드 0** — PR2 의 `_persist_status(result=...)` 가 6 job_type 모두 커버. 직렬화 보강 불필요
+- [x] commit `feat(ops): Phase J2 PR5 — 결과 영속화 + 비-pipeline 직렬화 회귀`
 
 ### J2 종료 검증 (PR5 완료 후)
-- [ ] `bash .claude/hooks/build-check.sh` 그린
-- [ ] **staging 강제 재시작 테스트** — Render Dashboard 에서 Manual Deploy → 진행 중 job 이 `orphaned` 로 자연 종결, GET 200 OK 반환되는지 검증
-- [ ] **운영 1주 모니터링** — DB write latency p99 + Supabase row growth + orphaned 발생 빈도 → grace 5분 적정성 판단
+- [x] `pytest tests/test_web` 208/208 ✅, ruff/format/pyright 그린
+- [ ] **사용자 작업** — staging 강제 재시작 테스트: Render Dashboard 에서 `JOB_PERSISTENCE_ENABLED=true` 토글 + Manual Deploy → orphaned 마킹 / GET 200 OK / 통합 알림 검증
+- [ ] **사용자 작업** — 운영 1주 모니터링: DB write latency p99 + Supabase row growth + orphaned 발생 빈도 → grace 5분 적정성 판단 → Phase J3 (Worker 분리) 착수 결정
 
 ---
 
