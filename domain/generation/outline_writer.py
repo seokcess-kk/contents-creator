@@ -152,7 +152,11 @@ def _invoke(
         max_tokens = 8192
         tool_choice: dict[str, Any] = {"type": "auto"}
     else:
-        max_tokens = 4096
+        # outline 응답은 title + intro + sections + image_prompts(5-8개 영문 prompt)
+        # + keyword_plan + suggested_tags 가 합쳐져 4096 토큰 한도를 자주 초과한다.
+        # 한도 초과 시 응답 후반부 필드 (image_prompts, keyword_plan) 가 잘려 누락되어
+        # _assert_required_fields 가 raise — 이게 [6] 단계 silent failure 의 진짜 원인.
+        max_tokens = 8192
         tool_choice = {"type": "tool", "name": tool_schema["name"]}
 
     response = messages_create_with_retry(
@@ -171,6 +175,13 @@ def _invoke(
         messages=messages,
         **extra_kwargs,
     )
+    if getattr(response, "stop_reason", None) == "max_tokens":
+        logger.warning(
+            "outline response truncated by max_tokens (limit=%d output_tokens=%d) — "
+            "응답 후반부 필드가 잘렸을 가능성. max_tokens 상향 검토 필요",
+            max_tokens,
+            response.usage.output_tokens,
+        )
     record_usage(
         ApiUsage(
             provider="anthropic",
