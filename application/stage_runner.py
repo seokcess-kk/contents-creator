@@ -48,12 +48,16 @@ class ComposeStageResult(NamedTuple):
     pattern_card_id: str | None
 
 
-def _ascii_safe_slug(name: str) -> str:
+def ascii_safe_slug(name: str) -> str:
     """비-ASCII 문자 (한글 등) 포함 시 SHA1 short hash 로 변환.
 
     Supabase Storage 의 key 가 ASCII-safe 여야 하므로 (InvalidKey 에러 회피),
     한글 키워드를 그대로 path 에 넣을 수 없다. 영문/숫자/하이픈/밑줄/점만으로
     구성된 이름은 그대로 보존, 그 외는 `kw-{hash12}` 형식으로 변환.
+
+    이 함수는 업로드(stage_runner._storage_prefix) 와 응답 fallback(web/api
+    routers/results.get_image) 의 단일 출처. 두 곳의 key 변환 정책이 일치해야
+    한글 slug 의 Storage 조회가 성공한다.
     """
     import hashlib
     import re
@@ -62,6 +66,10 @@ def _ascii_safe_slug(name: str) -> str:
         return name
     h = hashlib.sha1(name.encode("utf-8")).hexdigest()[:12]
     return f"kw-{h}"
+
+
+# 옛 호출처 호환 alias (private). 신규 코드는 ascii_safe_slug 직접 사용.
+_ascii_safe_slug = ascii_safe_slug
 
 
 def _storage_prefix(output_dir: Path) -> str:

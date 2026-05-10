@@ -184,12 +184,17 @@ def get_image(slug: str, filename: str) -> FileResponse | RedirectResponse:
             return FileResponse(path, media_type=media_type)
 
     # Storage fallback — output_path 에서 timestamp 를 얻어 Signed URL 리다이렉트.
+    # 업로드 측(_upload_images_to_storage)이 한글 slug 를 ascii_safe_slug 로
+    # 변환해 Storage key 를 만든다. 같은 변환을 fallback 에서도 적용하지 않으면
+    # key 가 mismatch 되어 한글 slug 결과는 항상 404 (2026-05-10 발견 + 수정).
+    from application.stage_runner import ascii_safe_slug
+
     row = _fetch_latest_row(slug, "output_path")
     if not row or not row.get("output_path"):
         raise HTTPException(status_code=404, detail="Image not found")
     output_path = row["output_path"].replace("\\", "/")
     ts = Path(output_path).name  # output/{slug}/{ts}
-    key = f"{slug}/{ts}/images/{filename}"
+    key = f"{ascii_safe_slug(slug)}/{ts}/images/{filename}"
     url = get_signed_url(key)
     if not url:
         raise HTTPException(status_code=404, detail="Image not found")
