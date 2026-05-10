@@ -9,10 +9,18 @@ import { Menu, X } from "lucide-react";
 // Polish P2: md 미만에서 hamburger drawer (운영자 = 데스크톱 default, 모바일 sanity).
 // 운영 홈 / 생성 / 검수·발행 / 성과·분석 / 브랜드 / 관리
 
+interface NavSubItem {
+  label: string;
+  href: string;
+  matches: (pathname: string) => boolean;
+}
+
 interface NavItem {
   label: string;
   href: string;
   matches: (pathname: string) => boolean;
+  /** 드롭다운(데스크톱)·들여쓰기(모바일) 으로 노출되는 하위 메뉴. */
+  children?: NavSubItem[];
 }
 
 // P5 까지: "검수·발행" → /batches. P5 신설 후 /queue 로 변경.
@@ -33,6 +41,18 @@ const NAV_ITEMS: NavItem[] = [
     href: "/queue",
     matches: (p) =>
       p.startsWith("/queue") || p.startsWith("/batches") || p.startsWith("/results"),
+    children: [
+      {
+        label: "큐 (콘텐츠 단위)",
+        href: "/queue",
+        matches: (p) => p.startsWith("/queue") || p.startsWith("/results"),
+      },
+      {
+        label: "배치 운영",
+        href: "/batches",
+        matches: (p) => p.startsWith("/batches"),
+      },
+    ],
   },
   {
     label: "성과·분석",
@@ -86,22 +106,47 @@ export default function NavBar() {
         </span>
       </div>
 
-      {/* Desktop: md 이상 inline nav */}
+      {/* Desktop: md 이상 inline nav. children 있는 항목은 hover/focus 시 드롭다운. */}
       <nav className="hidden md:flex items-center gap-5 text-sm font-medium">
         {NAV_ITEMS.map((item) => {
           const active = item.matches(pathname);
+          const linkClass = active
+            ? "text-blue-700 font-semibold"
+            : "text-gray-700 hover:text-blue-700";
+          if (!item.children || item.children.length === 0) {
+            return (
+              <Link key={item.href} href={item.href} className={linkClass}>
+                {item.label}
+              </Link>
+            );
+          }
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={
-                active
-                  ? "text-blue-700 font-semibold"
-                  : "text-gray-700 hover:text-blue-700"
-              }
-            >
-              {item.label}
-            </Link>
+            <div key={item.href} className="relative group">
+              <Link href={item.href} className={linkClass}>
+                {item.label}
+              </Link>
+              {/* hover 또는 키보드 focus 시 노출. pt-2 로 호버 영역 끊김 방지. */}
+              <div className="absolute left-0 top-full pt-2 hidden group-hover:block group-focus-within:block z-40">
+                <div className="bg-white border border-gray-200 rounded shadow-md min-w-[160px] py-1">
+                  {item.children.map((c) => {
+                    const cActive = c.matches(pathname);
+                    return (
+                      <Link
+                        key={c.href}
+                        href={c.href}
+                        className={`block px-3 py-1.5 text-sm whitespace-nowrap ${
+                          cActive
+                            ? "text-blue-700 font-semibold bg-blue-50"
+                            : "text-gray-700 hover:bg-gray-50"
+                        }`}
+                      >
+                        {c.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
           );
         })}
       </nav>
@@ -131,17 +176,34 @@ export default function NavBar() {
             {NAV_ITEMS.map((item) => {
               const active = item.matches(pathname);
               return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`block px-4 py-2 text-sm ${
-                    active
-                      ? "text-blue-700 font-semibold bg-blue-50"
-                      : "text-gray-700 hover:bg-gray-50"
-                  }`}
-                >
-                  {item.label}
-                </Link>
+                <div key={item.href}>
+                  <Link
+                    href={item.href}
+                    className={`block px-4 py-2 text-sm ${
+                      active
+                        ? "text-blue-700 font-semibold bg-blue-50"
+                        : "text-gray-700 hover:bg-gray-50"
+                    }`}
+                  >
+                    {item.label}
+                  </Link>
+                  {item.children?.map((c) => {
+                    const cActive = c.matches(pathname);
+                    return (
+                      <Link
+                        key={c.href}
+                        href={c.href}
+                        className={`block pl-8 pr-4 py-1.5 text-xs ${
+                          cActive
+                            ? "text-blue-700 font-semibold bg-blue-50"
+                            : "text-gray-600 hover:bg-gray-50"
+                        }`}
+                      >
+                        ↳ {c.label}
+                      </Link>
+                    );
+                  })}
+                </div>
               );
             })}
           </nav>

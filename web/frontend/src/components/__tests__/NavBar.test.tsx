@@ -50,4 +50,21 @@ describe("NavBar (P1 시점)", () => {
     render(<NavBar />);
     expect(screen.getByText("검수·발행").className).toContain("font-semibold");
   });
+
+  it("'검수·발행' 드롭다운에 [큐, 배치 운영] 하위 메뉴 노출", () => {
+    mockedPathname.mockReturnValue("/queue");
+    render(<NavBar />);
+    // 드롭다운 라벨이 desktop nav 안에 렌더 (group-hover 로 가려져 있어도 DOM 존재)
+    expect(screen.getAllByText(/큐 \(콘텐츠 단위\)/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("배치 운영").length).toBeGreaterThan(0);
+  });
+
+  it("/batches 진입 시 sub-item '배치 운영' active", () => {
+    mockedPathname.mockReturnValue("/batches");
+    render(<NavBar />);
+    // 드롭다운 안의 sub-link 가 active 강조
+    const links = screen.getAllByText("배치 운영");
+    const active = links.find((el) => el.className.includes("font-semibold"));
+    expect(active).toBeDefined();
+  });
 });
