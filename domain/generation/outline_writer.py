@@ -61,8 +61,12 @@ def generate_outline(
 
     outline_thinking_budget > 0 이면 Extended Thinking 활성 + tool_choice=auto.
     thinking 과 tool 이름 강제는 Anthropic 규약상 비호환이므로, auto 에서도
-    프롬프트로 tool 사용을 강제하고 tool_use 블록이 없거나 required 필드가
-    누락되면 thinking off 로 1회 재호출한다 (tool 이름 강제 + 강한 schema 준수).
+    프롬프트로 tool 사용을 강제한다.
+
+    1차 호출 후 tool_use 가 없거나 required 필드가 누락되면 thinking off + tool 이름
+    강제 + 누락 필드 피드백 주입으로 1회 재호출한다. thinking on/off 양쪽에 동일하게
+    적용되는 안전망 — Opus 가 긴 system 제약 하에서 keyword_plan 같은 메타 필드를
+    누락하는 산발적 케이스를 흡수한다.
     """
     shared_system, messages, tool_schema = build_outline_prompt(pattern_card, compliance_rules)
     if feedback:
@@ -70,36 +74,39 @@ def generate_outline(
 
     thinking_budget = settings.outline_thinking_budget
     if thinking_budget > 0:
-        # thinking 경로 — tool_choice=auto + 프롬프트 강제 + tool_use 누락/부분 응답 시 1회 재시도
         messages[-1]["content"] += _TOOL_ENFORCE_HINT.format(tool_name=tool_schema["name"])
-        response = _invoke(
-            shared_system=shared_system,
-            tool_schema=tool_schema,
-            messages=messages,
-            thinking_budget=thinking_budget,
+
+    response = _invoke(
+        shared_system=shared_system,
+        tool_schema=tool_schema,
+        messages=messages,
+        thinking_budget=thinking_budget,
+    )
+    tool_input = _try_extract_tool_input(response)
+
+    if tool_input is None or not _has_required_fields(tool_input):
+        # 폴백: thinking off + tool 이름 강제 + 누락 필드 피드백 주입.
+        missing = (
+            _missing_fields(tool_input) if tool_input is not None else ["<tool_use missing>"]
         )
-        tool_input = _try_extract_tool_input(response)
-        if tool_input is None or not _has_required_fields(tool_input):
-            # thinking off + tool 이름 강제 폴백 (확정적·완전한 tool_use 응답)
-            missing = (
-                _missing_fields(tool_input) if tool_input is not None else ["<tool_use missing>"]
-            )
-            logger.warning(
-                "outline tool_use incomplete under thinking; falling back. missing=%s",
-                missing,
-            )
-            response = _invoke(
-                shared_system=shared_system,
-                tool_schema=tool_schema,
-                messages=messages,
-                thinking_budget=0,
-            )
-            tool_input = _extract_tool_input(response)
-    else:
+        logger.warning(
+            "outline tool_use incomplete; retrying with feedback. missing=%s thinking_was_on=%s",
+            missing,
+            thinking_budget > 0,
+        )
+        retry_messages = [
+            *messages[:-1],
+            {
+                **messages[-1],
+                "content": messages[-1]["content"]
+                + f"\n\n[필수 보정] 이전 응답에서 다음 tool_use 필드가 누락되었습니다: {missing}. "
+                + "tool_schema 의 모든 required 필드를 빠짐없이 포함해 다시 응답하세요.",
+            },
+        ]
         response = _invoke(
             shared_system=shared_system,
             tool_schema=tool_schema,
-            messages=messages,
+            messages=retry_messages,
             thinking_budget=0,
         )
         tool_input = _extract_tool_input(response)

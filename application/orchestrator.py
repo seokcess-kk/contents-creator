@@ -331,6 +331,7 @@ def _run_generation_stages(
             )
         )
     except Exception as exc:
+        logger.exception("outline_generation failed keyword=%s", keyword)
         stages.append(
             StageResult(name="outline_generation", status=StageStatus.FAILED, error=str(exc))
         )
@@ -351,6 +352,7 @@ def _run_generation_stages(
             StageResult(name="body_generation", status=StageStatus.SUCCEEDED, summary=usage_summary)
         )
     except Exception as exc:
+        logger.exception("body_generation failed keyword=%s", keyword)
         stages.append(
             StageResult(name="body_generation", status=StageStatus.FAILED, error=str(exc))
         )
@@ -379,6 +381,7 @@ def _run_generation_stages(
             )
         )
     except Exception as exc:
+        logger.exception("compliance_check failed keyword=%s", keyword)
         stages.append(
             StageResult(name="compliance_check", status=StageStatus.FAILED, error=str(exc))
         )
@@ -432,6 +435,7 @@ def _run_generation_stages(
         paths = compose_result.paths
         stages.append(StageResult(name="compose", status=StageStatus.SUCCEEDED))
     except Exception as exc:
+        logger.exception("compose failed keyword=%s", keyword)
         stages.append(StageResult(name="compose", status=StageStatus.FAILED, error=str(exc)))
         return GenerateResult(
             status=StageStatus.FAILED,
