@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import CopyButton from "./CopyButton";
 import HtmlPreview from "./HtmlPreview";
 
 type Tab = "html" | "markdown" | "outline" | "images";
@@ -9,6 +10,13 @@ interface Props {
   slug: string;
   imagesGenerated: number;
 }
+
+// 탭별 복사 endpoint + 버튼 라벨. images 탭은 복사 대상 아님.
+const COPY_TARGETS: Record<Exclude<Tab, "images">, { path: string; label: string }> = {
+  html: { path: "html", label: "HTML 복사" },
+  markdown: { path: "markdown", label: "마크다운 복사" },
+  outline: { path: "outline", label: "아웃라인 복사" },
+};
 
 export default function ResultViewer({ slug, imagesGenerated }: Props) {
   const [tab, setTab] = useState<Tab>("html");
@@ -20,23 +28,34 @@ export default function ResultViewer({ slug, imagesGenerated }: Props) {
     ...(imagesGenerated > 0 ? [{ key: "images" as Tab, label: `이미지 (${imagesGenerated})` }] : []),
   ];
 
+  const copyTarget = tab !== "images" ? COPY_TARGETS[tab] : null;
+
   return (
     <div className="bg-white rounded-lg shadow-sm ring-1 ring-gray-200 overflow-hidden">
-      {/* 탭 */}
-      <div className="border-b border-gray-200 flex">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
-              tab === t.key
-                ? "border-blue-600 text-blue-700"
-                : "border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      {/* 탭 + 우측 복사 버튼 */}
+      <div className="border-b border-gray-200 flex items-center justify-between">
+        <div className="flex">
+          {tabs.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
+                tab === t.key
+                  ? "border-blue-600 text-blue-700"
+                  : "border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        {copyTarget !== null && (
+          <CopyButton
+            endpoint={`/api/results/${encodeURIComponent(slug)}/latest/${copyTarget.path}`}
+            label={copyTarget.label}
+            className="mr-3"
+          />
+        )}
       </div>
 
       {/* 탭 컨텐츠 */}
