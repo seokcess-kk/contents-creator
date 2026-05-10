@@ -163,6 +163,16 @@ def publish_from_output_dir(
 
     # dry_run 결과는 documentModel JSON 을 파일로 보존 — 사후 검증
     if dry_run:
+        # documentModel 본체를 저장해 사후 검증을 가능하게 한다 (PublishResult.response_excerpt
+        # 는 500자만 발췌하므로 dry-run 만으로 SE 변환 정합성을 따지기 어렵다).
+        from domain.publishing.document_builder import (
+            build_document_model,
+            build_population_params,
+        )
+        full_document = build_document_model(
+            title=title, content_html=content_html, full_se=False
+        )
+        full_population = build_population_params(category_no=category_no, tags=final_tags)
         dryrun_path = output_dir / "_publish_dryrun.json"
         dryrun_path.write_text(
             json.dumps(
@@ -171,6 +181,8 @@ def publish_from_output_dir(
                     "title": title,
                     "tags": final_tags,
                     "category_no": category_no,
+                    "document_model": full_document,
+                    "population_params": full_population,
                     "result": result.model_dump(mode="json"),
                 },
                 ensure_ascii=False,

@@ -17,6 +17,7 @@
 - [테스트에서 SWR 캐시 격리 — `SWRConfig provider: () => new Map()`](#테스트에서-swr-캐시-격리--swrconfig-provider---new-map-2026-05-07) — 2026-05-07
 
 ### Deploy / Infrastructure
+- [Chrome 136+ App-Bound Encryption v20 — CDP 자동 로그인 봉쇄](#chrome-136-app-bound-encryption-v20--cdp-자동-로그인-봉쇄-2026-05-10) — 2026-05-10
 - [Outline 실패 다층 진단 — silent except + max_tokens × OOM + 영속화 비활성](#outline-실패-다층-진단--silent-except--max_tokens--oom--영속화-비활성-2026-05-10) — 2026-05-10
 - [In-memory JobManager 휘발 + 폴링 retry-bound 패턴](#in-memory-jobmanager-휘발--폴링-retry-bound-패턴-2026-05-08) — 2026-05-08
 - [Vercel 함수 페이로드 4.5MB 한계 — Presigned URL 우회](#vercel-함수-페이로드-45mb-한계--presigned-url-우회-2026-04-30) — 2026-04-30
@@ -729,4 +730,89 @@ const fetchMock = vi.fn().mockImplementation(() => sequence[Math.min(i++, sequen
 - `domain/generation/outline_writer.py:_OPTIONAL_OUTLINE_FIELDS` (graceful 폴백)
 - `web/frontend/src/types/index.ts:JobStatus` ("orphaned" 추가)
 - Render Events 메시지: `Ran out of memory (used over 512MB)` (2026-05-10 14:23 PM)
+
+---
+
+## Chrome 136+ App-Bound Encryption v20 — CDP 자동 로그인 봉쇄 (2026-05-10)
+
+`scripts/check_naver_login.py` PoC 검증 중 Profile 4 로 NID_AUT/NID_SES 추출이 어떤 경로로도 안 되는 것을 4단계 디버깅으로 확정. Chrome 127+ (운영 환경 136) 의 App-Bound Encryption v20 + CDP 보안 정책이 봉쇄선이다.
+
+### [PUB-1] 임시 사본 user-data-dir → ABE v20 으로 NID_AUT 복호화 실패
+
+`domain/publishing/auth.py:naver_login_cdp` 가 차용한 패턴은 `tempfile.mkdtemp()` → `shutil.copytree(Profile 4, tmp/Default)` → `--user-data-dir=tmp` + `--profile-directory=Default` + `--headless=new`. 정상 시작은 되지만 컨텍스트가 받는 쿠키에 NID_AUT/NID_SES 가 없다 — `BA_DEVICE, BUC, NAC, NACT, NM_srt_chzzk, NNB, PM_CK_loc, SRT30, SRT5` 만.
+
+원본 DB 직접 검사 (`scripts/_inspect_cookies.py` SQLite 조회) 로는 NID_AUT 18행 중 정상 존재 확인. 즉 임시 디렉터리에서 Chrome 이 **새 encryption key 를 생성** → 원본 키로 암호화된 `encrypted_value` 복호화 실패. `Local State` 동반 복사 (`shutil.copy2(Path(user_data) / "Local State", tmp_user_data / "Local State")`) 로도 v10 키만 복원될 뿐 v20 키는 살리지 못한다 — v20 은 elevation_service COM API + 실행 파일 경로 바인딩이라 디렉터리 복사로 옮길 수 없다.
+
+### [PUB-2] 원본 user-data-dir 직접 사용 → Chrome 이 CDP 활성화 거부
+
+위 결론 후 코드를 "원본 User Data + `--profile-directory=Profile 4`" 직접 사용으로 변경 (`NAVER_CDP_USE_TMP_COPY=1` 환경변수로 옛 동작 토글). Chrome 은 떴는데 CDP 포트 9223 이 listen 안 됨 (`ECONNREFUSED 127.0.0.1:9223`). stderr 캡쳐 시 명확한 메시지:
+
+```
+DevTools remote debugging requires a non-default data directory.
+Specify this using --user-data-dir.
+```
+
+Chrome 136 의 **보안 강화** 로 default User Data 경로를 `--user-data-dir` 로 명시하면 CDP 활성화 자체를 거부한다. 즉 임시 사본도 봉쇄(ABE), 원본도 봉쇄(CDP 정책) — **양쪽 모두 막혀** CDP 자동화 path 자체가 닫혔다.
+
+### [PUB-3] browser_cookie3 직접 복호화 → 동일하게 실패
+
+ABE v20 우회 후보로 `browser-cookie3==0.20.1` 시도. `browser_cookie3.chrome(domain_name='naver.com')` → `MAC check failed` + `BrowserCookieError: Unable to get key for cookie decryption`. 라이브러리도 v20 키를 풀지 못한다 (커뮤니티 issue 다수). pycookiecheat 등 다른 라이브러리도 동일 한계. **로컬 머신 권한으로도 v20 키는 elevation_service 통한 정식 호출만 가능**.
+
+### [PUB-4] PoC 우회 — 수동 NID_AUT/NID_SES 주입
+
+자동 추출이 모두 막힌 상황에서 PoC 검증 진행을 위해 `scripts/inject_naver_cookies.py` 추가. 사용자가 Chrome dev tools (F12 → Application → Cookies → www.naver.com) 에서 NID_AUT/NID_SES 값을 직접 복사 → getpass 로 stdin 입력 → `SessionManager.session.cookies.set(...)` → `.sessions/<name>.pkl` 저장. SessionManager 의 `_NAVER_DOMAINS = (".naver.com", "blog.naver.com", "cafe.naver.com")` 로 인해 load 시 도메인별로 펼쳐져 6개로 보인다.
+
+이 PoC 로 dry-run 까지는 100% 검증 가능 — documentModel 69 components / SE 2.8.0 / 모든 노드 SE-uuid 정합 / `_publish_dryrun.json` 본체 보존 / `publishing_attempts` insert 모두 통과.
+
+### [PUB-5] dry-run 저장은 `response_excerpt` 500자만 — orchestrator 보강 필요
+
+`PublishResult.response_excerpt = json.dumps(document_model)[:500]` 발췌만 보존하므로 SE 변환 정합성을 dry-run 만으로 따질 수 없었다. `application/publishing_orchestrator.publish_from_output_dir` 의 dry-run 분기에서 `build_document_model` + `build_population_params` 를 한 번 더 호출해 `_publish_dryrun.json` 에 `document_model` / `population_params` 본체를 포함하도록 보강 (성능 영향 무시할 수준).
+
+### [PUB-6] publishing_attempts 마이그레이션 누락 — best-effort 가 가시성을 가린다
+
+`config/schema.sql:670` 에 정의된 `publishing_attempts` 테이블이 Supabase 에 적용되지 않은 상태. `_save_attempt` 가 try/except 로 감싸여 있어 본 흐름은 통과하지만 발행 시도가 영속되지 않아 사후 분석 불가. **best-effort 영속은 운영 가시성을 가리는 부작용** — schema migration 적용 여부를 PoC 시작 전 점검 단계 (e.g. `application` 테스트 fixture 또는 `scripts/check_db_migrations.py`) 에 포함시키는 게 안전.
+
+### [PUB-7] 실 발행 차단점 — `errorCode="invalid parameter"` (모호한 응답)
+
+NID_AUT + NID_SES + NNB 3개 쿠키 주입 후 실 발행 시도 시 RabbitWrite POST 도달 (200) + 응답 본문 `{"isSuccess":false, "result":{"errorCode":"invalid parameter", "errorMessage":""}}`. 어느 필드가 거부됐는지 서버가 명시 안 함.
+
+운영 환경에서 정상 발행 1회 캡쳐 (Chrome Network → RabbitWrite Form Data) → 우리 dry-run 과 diff 결과 다음 차이 4가지를 식별·패치했지만 **여전히 거부**:
+
+| 필드 | 차용본 default | 운영 캡쳐 값 | 패치 |
+|---|---|---|---|
+| `document.version` | `2.8.0` | `2.10.2` | document_builder.py |
+| `populationMeta.directorySeq` | `21` (작성자 블로그 카테고리) | `0` | document_builder.py |
+| `populationMeta.continueSaved` | `True` (임시저장 이어쓰기 모드) | `False` | document_builder.py |
+| `populationMeta.autoByCategoryYn` | `True` | `False` | document_builder.py |
+
+추가로 `_styled_node` 가 default plain textNode 에도 풀 nodeStyle 을 박는 것을 발견 (real 은 `style` 키 자체 부재). default 시 style 키 생략하도록 패치. 그래도 거부.
+
+**최소 페이로드 (제목·본문 각 1글자) 시도** 결과 동일 거부 → components 콘텐츠 무관, 다른 필드가 직접 차단. `editorSource` 를 real 캡쳐값 (`tkx1thZgnyGrX4ObM3OQYA==`) 으로 바꿔도 거부 → **매 요청 새 토큰 발급**.
+
+`SessionManager.get('https://blog.naver.com/<blog_id>/postwrite')` 응답 (200, 22KB SPA shell) 에 `editorSource` 또는 base64 16자 토큰 문자열 부재. SPA 가 후속 XHR 로 토큰을 받거나 클라이언트 JS 가 동적 생성. 다음 세션 진단: HAR 전체 캡쳐 (페이지 로드 ~ 발행 완료) → `editorSource` 발급 경로 식별.
+
+**남은 차단점**: editorSource 동적 발급 경로. 이걸 풀어야 실 발행 1차 검증 가능. 이외 후보 (재현 시 다음 검증):
+- `document.id` 포맷 — uuid hex (ours) vs Crockford base32 ULID (real). 양쪽 모두 26자
+- `di.dio.dia` 의 `st`/`sk` 메트릭 (94/40 vs 186/6). 의미 미상
+
+### 교훈
+
+- **외부 보안 변경 (Chrome ABE v20, CDP 정책) 은 라이브러리·스크립트 차원에서 사전 차단된다** — 차용 출처 (`auto-publishing@c64b5e7`) 의 CDP 패턴은 c64b5e7 시점 기준으로 동작했지만 그 후 Chrome 의 보안 강화 2건 (`v20 ABE`, `default user-data-dir CDP 거부`) 으로 동시 봉쇄. 차용 시점 이후 Chrome 메이저 버전 차이는 publishing 류 코드의 회귀 위험 1순위
+- **`errorCode` 가 모호한 외부 API 는 직접 비교만이 결정적** — 우리 측 가설로 1필드씩 바꿔보는 건 abuse 분류 위험. 운영 환경의 정상 트래픽 캡쳐 1회 → diff 가 가장 안전하고 빠르다
+- **best-effort 영속은 가시성을 가린다** — 마이그레이션 누락이 사일런트하게 흡수되어 PGRST205 경고가 처음에 보였을 때만 발견. PoC 시작 전 migration 적용 점검을 자동화 필요
+- **dry-run 저장은 검증 가능한 수준으로** — 500자 발췌는 진단 가치 0. PoC 도메인은 본체 보존이 default
+
+**관련 변경**:
+- `domain/publishing/auth.py` — Local State 동반 복사 + `NAVER_CDP_USE_TMP_COPY` 환경변수 (default 원본 직접 사용 시도)
+- `application/publishing_orchestrator.py:165-186` — dry-run 시 documentModel/populationParams 본체 저장
+- `domain/publishing/document_builder.py` — version 2.8.0 → 2.10.2, populationMeta 4필드 (`directorySeq`, `continueSaved`, `autoByCategoryYn`, `editorSource` real 캡쳐값) 정렬, `_styled_node` 가 default plain 시 `style` 키 생략
+- `scripts/inject_naver_cookies.py` (NEW) — getpass 기반 NID_AUT/NID_SES/NNB 수동 주입
+- `scripts/_inspect_cookies.py` (NEW) — Profile 의 Cookies SQLite DB 직접 조회 진단
+- `scripts/_debug_publish_minimal.py` (NEW) — 제목·본문 1글자 최소 페이로드 발행 시도 (components 무관 확인)
+
+**참조**:
+- `tasks/todo.md` 의 Phase AP — 자동 발행
+- `domain/publishing/CLAUDE.md`
+- 차용 출처: `seokcess-kk/auto-publishing@c64b5e7`
+- Chrome 보안 변경 추적: `https://issues.chromium.org/issues/40945783` (Application-Bound Encryption)
 

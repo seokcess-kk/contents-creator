@@ -61,10 +61,23 @@ def _styled_node(
     bg: str = "#ffffff",
     link_url: str = "",
 ) -> dict:
+    # 운영 RabbitWrite 캡쳐 (2026-05-10) 기준: default plain textNode 는 `style`
+    # 키 자체를 생략한다. 차용 출처 auto-publishing@c64b5e7 처럼 풀 nodeStyle 을
+    # 박으면 invalid parameter 거부 (제목·본문 양쪽 모두 동일).
     node: dict = {
         "id": _se_uuid(),
         "value": text,
-        "style": {
+        "@ctype": "textNode",
+    }
+    needs_style = (
+        bold
+        or italic
+        or color != "#000000"
+        or size != _DEFAULT_FONT_SIZE
+        or bg != "#ffffff"
+    )
+    if needs_style:
+        node["style"] = {
             "fontColor": color,
             "fontFamily": "system",
             "fontSizeCode": size,
@@ -72,9 +85,7 @@ def _styled_node(
             "bold": bold,
             "italic": italic,
             "@ctype": "nodeStyle",
-        },
-        "@ctype": "textNode",
-    }
+        }
     if link_url:
         node["link"] = {"url": link_url, "@ctype": "urlLink"}
     return node
@@ -322,7 +333,9 @@ def build_document_model(
     return {
         "documentId": "",
         "document": {
-            "version": "2.8.0",
+            # 2.10.2 — 운영 RabbitWrite 캡쳐 (2026-05-10) 기준 최신. 차용 출처
+            # auto-publishing@c64b5e7 의 2.8.0 은 invalid parameter 거부.
+            "version": "2.10.2",
             "theme": "default",
             "language": "ko-KR",
             "id": _doc_id(),
@@ -344,6 +357,13 @@ def build_population_params(*, category_no: int, tags: list[str]) -> dict:
     `auto-publishing` 의 `_build_population_params` 그대로 차용 — 네이버가 요구하는
     완전한 dict 셋. 운영 노출 옵션(공개/댓글/스크랩 등)은 일반적 default.
     """
+    # populationMeta 의 4개 필드는 운영 RabbitWrite 캡쳐 (2026-05-10) 기준 정렬.
+    # auto-publishing@c64b5e7 의 default 값은 invalid parameter 거부의 직접 원인.
+    #   - directorySeq: 21 → 0 (21 은 차용 시점 작성자 블로그의 카테고리 순번,
+    #     deu05389 등 다른 블로그에는 부재)
+    #   - continueSaved: True → False (True 는 임시저장 이어쓰기 모드로 해석되어
+    #     매칭되는 autoSaveNo 가 없으면 거부)
+    #   - autoByCategoryYn: True → False (운영 캡쳐 default)
     return {
         "configuration": {
             "openType": 2,
@@ -359,16 +379,16 @@ def build_population_params(*, category_no: int, tags: list[str]) -> dict:
         "populationMeta": {
             "categoryId": category_no,
             "logNo": None,
-            "directorySeq": 21,
+            "directorySeq": 0,
             "directoryDetail": None,
             "mrBlogTalkCode": None,
             "postWriteTimeType": "now",
             "tags": ",".join(tags) if tags else "",
             "moviePanelParticipation": False,
             "greenReviewBannerYn": False,
-            "continueSaved": True,
+            "continueSaved": False,
             "noticePostYn": False,
-            "autoByCategoryYn": True,
+            "autoByCategoryYn": False,
             "postLocationSupportYn": False,
             "postLocationJson": None,
             "prePostDate": None,
@@ -376,7 +396,7 @@ def build_population_params(*, category_no: int, tags: list[str]) -> dict:
             "scrapYn": False,
             "autoSaveNo": None,
         },
-        "editorSource": "XQdkruFJsAUjbhDZppTiRA==",
+        "editorSource": "tkx1thZgnyGrX4ObM3OQYA==",
     }
 
 

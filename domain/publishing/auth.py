@@ -99,35 +99,51 @@ def naver_login_cdp(
 
     logger.info("auth.cdp.start profile=%s", profile)
 
-    # 실행 중인 Chrome 과 충돌 방지 — 프로필 임시 복사
-    tmp_user_data = Path(tempfile.mkdtemp(prefix="naver_chrome_"))
-    tmp_profile_dir = tmp_user_data / "Default"
-    try:
-        shutil.copytree(
-            src_profile,
-            tmp_profile_dir,
-            ignore=shutil.ignore_patterns(
-                "SingletonLock",
-                "SingletonCookie",
-                "SingletonSocket",
-                "lockfile",
-                "*.log",
-                "Cache",
-                "Code Cache",
-                "GPUCache",
-                "ShaderCache",
-            ),
-        )
-    except Exception as exc:
-        logger.warning("auth.cdp.copy_failed err=%s", exc)
-        shutil.rmtree(tmp_user_data, ignore_errors=True)
-        return False
+    # Chrome 134+ App-Bound Encryption (v20) 은 임시 사본 user-data-dir 에서
+    # NID_AUT/NID_SES 같은 v20 암호화 쿠키를 복호화하지 못한다 (elevation_service
+    # COM + 실행 파일 경로 바인딩 때문). 기본은 원본 User Data 직접 사용 모드.
+    # NAVER_CDP_USE_TMP_COPY=1 로 옛 동작(임시 사본 + Default profile) 강제 가능.
+    use_tmp_copy = os.environ.get("NAVER_CDP_USE_TMP_COPY", "").lower() in ("1", "true", "yes")
+    tmp_user_data: Path | None = None
+
+    if use_tmp_copy:
+        tmp_user_data = Path(tempfile.mkdtemp(prefix="naver_chrome_"))
+        tmp_profile_dir = tmp_user_data / "Default"
+        try:
+            shutil.copytree(
+                src_profile,
+                tmp_profile_dir,
+                ignore=shutil.ignore_patterns(
+                    "SingletonLock",
+                    "SingletonCookie",
+                    "SingletonSocket",
+                    "lockfile",
+                    "*.log",
+                    "Cache",
+                    "Code Cache",
+                    "GPUCache",
+                    "ShaderCache",
+                ),
+            )
+            local_state_src = Path(user_data) / "Local State"
+            if local_state_src.exists():
+                shutil.copy2(local_state_src, tmp_user_data / "Local State")
+        except Exception as exc:
+            logger.warning("auth.cdp.copy_failed err=%s", exc)
+            shutil.rmtree(tmp_user_data, ignore_errors=True)
+            return False
+        chrome_user_data_arg = str(tmp_user_data)
+        chrome_profile_arg = "Default"
+    else:
+        # 원본 직접 사용. Chrome 이 이미 모두 종료된 상태여야 함 (호출 측 책임).
+        chrome_user_data_arg = user_data
+        chrome_profile_arg = profile
 
     cmd = [
         chrome_path,
         f"--remote-debugging-port={_CDP_PORT}",
-        f"--user-data-dir={tmp_user_data}",
-        "--profile-directory=Default",
+        f"--user-data-dir={chrome_user_data_arg}",
+        f"--profile-directory={chrome_profile_arg}",
         "--headless=new",
         "--no-sandbox",
         "--disable-blink-features=AutomationControlled",
@@ -163,7 +179,8 @@ def naver_login_cdp(
     finally:
         proc.terminate()
         time.sleep(0.5)
-        shutil.rmtree(tmp_user_data, ignore_errors=True)
+        if tmp_user_data is not None:
+            shutil.rmtree(tmp_user_data, ignore_errors=True)
 
     if not naver_cookies:
         logger.warning("auth.cdp.no_cookies — profile %s 에 네이버 로그인 필요", profile)
