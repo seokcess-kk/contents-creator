@@ -16,8 +16,11 @@ interface QueueItemDrawerProps {
   slug: string | null;
   /** drawer 헤더 라벨 */
   title?: string;
-  /** drawer 좌측 보조 액션 슬롯 (URL 등록 form 등) */
+  /** drawer 우측 보조 액션 슬롯 (legacy — 추후 제거 가능). topBar 가 우선이라 주로
+   *  미사용 상태. */
   sidebar?: ReactNode;
+  /** drawer 본문 미리보기 위쪽에 가로로 배치되는 액션 영역 (URL 등록 폼 등). */
+  topBar?: ReactNode;
 }
 
 export default function QueueItemDrawer({
@@ -26,6 +29,7 @@ export default function QueueItemDrawer({
   slug,
   title,
   sidebar,
+  topBar,
 }: QueueItemDrawerProps) {
   // ESC 닫기
   useEffect(() => {
@@ -67,6 +71,10 @@ export default function QueueItemDrawer({
             <X size={18} />
           </button>
         </header>
+        {/* topBar 슬롯 (가로 액션 영역) */}
+        {topBar && (
+          <div className="px-4 py-2 border-b border-gray-200 bg-gray-50">{topBar}</div>
+        )}
         {/* P2 mobile: sm 미만 stack (column), md 이상 row */}
         <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
           <div className="flex-1 overflow-y-auto p-4">

@@ -39,6 +39,12 @@ export interface PublicationFormProps {
   title?: ReactNode;
   /** 색상 톤: amber(create-internal), emerald(create-external), blue(edit) */
   tone?: "amber" | "emerald" | "blue";
+  /**
+   * compact: 한 줄 가로 레이아웃 (drawer top bar 등 제한된 영역). create variant
+   * 에서만 의미 있음 — 헤더·발행일·키워드 input 을 생략하고 [채널 select | URL |
+   * 등록] 한 줄로 압축. keyword 는 defaultKeyword/source 에서 자동 채움.
+   */
+  compact?: boolean;
 }
 
 const TONE_CLASS: Record<NonNullable<PublicationFormProps["tone"]>, string> = {
@@ -58,6 +64,7 @@ export default function PublicationForm({
   onCancel,
   title,
   tone,
+  compact = false,
 }: PublicationFormProps) {
   // edit variant 의 source = publication, create 의 source = existing(읽기) → 변경 토글
   const source = variant === "edit" ? publication : existingPublication;
@@ -184,6 +191,61 @@ export default function PublicationForm({
 
   // 외부 URL 등록 (slug 없음) 일 때만 keyword 입력 노출. 그 외에는 keyword 잠금.
   const showKeywordInput = variant === "edit" || !slug;
+
+  // compact: drawer top bar 전용 — [채널 select | URL input | 등록] 한 줄.
+  // create variant + slug 있는 케이스 (큐 drawer 흐름) 만 의도. 헤더·발행일·키워드
+  // input 생략, published_at 은 backend default (today) 사용.
+  if (compact && variant === "create") {
+    return (
+      <form
+        onSubmit={handleSubmit}
+        className={`border rounded px-3 py-2 ${TONE_CLASS[effectiveTone]}`}
+      >
+        <div className="flex items-center gap-2 flex-wrap">
+          <select
+            value={blogChannelId}
+            onChange={(e) => setBlogChannelId(e.target.value)}
+            className="px-2 py-1 border border-gray-300 rounded text-xs bg-white min-w-[140px]"
+            aria-label="발행 블로그 채널 선택"
+          >
+            <option value="">— 채널 미지정 —</option>
+            {channels.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+                {c.is_default ? " ★" : ""}
+              </option>
+            ))}
+          </select>
+          <input
+            type="url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://blog.naver.com/myblog/123456789"
+            required
+            className="flex-1 min-w-[220px] px-2 py-1 border border-gray-300 rounded text-sm"
+          />
+          <Button
+            type="submit"
+            variant="primary"
+            size="sm"
+            disabled={submitting || !url.trim()}
+            loading={submitting}
+          >
+            등록
+          </Button>
+          <Link
+            href="/blogs"
+            className="text-[11px] text-blue-700 hover:underline shrink-0"
+            title="블로그 채널 등록·수정"
+          >
+            + 채널
+          </Link>
+        </div>
+        {error && <div className="text-xs text-red-700 mt-1">{error}</div>}
+        {okMessage && <div className="text-xs text-emerald-800 mt-1">{okMessage}</div>}
+      </form>
+    );
+  }
 
   return (
     <form
