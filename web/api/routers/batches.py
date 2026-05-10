@@ -20,12 +20,14 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from application import batch_orchestrator
 from application.orchestrator import _slugify
 from config.settings import settings
 from domain.batch import storage
+from domain.batch.csv_parser import build_csv_template
 from domain.batch.model import NotSupportedYetError
 from web.api.auth import require_api_key
 
@@ -77,6 +79,21 @@ class BatchCreateJsonRequest(BaseModel):
     cluster_dedupe: bool = False
     # Phase 4 PR3 — opt-in publication 자동 등록. default False (운영 철학 §0).
     auto_publish_enabled: bool = False
+
+
+@router.get("/csv-template")
+def get_csv_template() -> Response:
+    """배치 업로드용 CSV 템플릿 다운로드.
+
+    헤더 + 안내 예시 2행 (UTF-8 BOM 부착 — Windows Excel 한글 깨짐 방지).
+    컬럼 사양 단일 출처: domain/batch/csv_parser.py.
+    """
+    body = build_csv_template(with_bom=True)
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="batch_template.csv"'},
+    )
 
 
 @router.post("", status_code=202)

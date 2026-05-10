@@ -41,6 +41,68 @@ _VALID_OPERATIONS: tuple[Operation, ...] = ("analyze", "generate", "pipeline")
 _VALID_CLUSTER_ROLES: tuple[ClusterRole, ...] = ("primary", "member")
 _REQUIRED_COLUMNS = ("keyword",)
 
+# 운영자 다운로드용 CSV 템플릿 헤더. parse_csv 가 받는 컬럼 전체 + 모듈 docstring
+# 의 "지원 컬럼" 순서와 동일. 단일 출처: 컬럼 추가 시 docstring·_parse_row 와 함께
+# 갱신.
+_TEMPLATE_HEADERS = (
+    "keyword",
+    "operation",
+    "priority",
+    "cluster_id",
+    "cluster_role",
+    "intent",
+    "region",
+    "brand_id",
+    "target_url",
+    "memo",
+    "blog",
+)
+
+# 안내성 예시 행. 운영자가 그대로 두면 1건 등록되니 정보성 더미 (memo 컬럼에 안내).
+_TEMPLATE_SAMPLE_ROWS: tuple[tuple[str, ...], ...] = (
+    (
+        "예시 키워드 1",
+        "pipeline",
+        "5",
+        "",
+        "",
+        "info",
+        "",
+        "",
+        "",
+        "operation 은 pipeline·generate·analyze 중 선택 (default analyze)",
+        "",
+    ),
+    (
+        "예시 키워드 2",
+        "pipeline",
+        "3",
+        "",
+        "",
+        "info",
+        "강남",
+        "",
+        "",
+        "priority 1~9, default 5",
+        "",
+    ),
+)
+
+
+def build_csv_template(*, with_bom: bool = True) -> str:
+    """운영자 다운로드용 CSV 템플릿 문자열.
+
+    with_bom: Windows Excel 에서 한글 깨짐 방지 (UTF-8 BOM 부착).
+    헤더 + 안내 예시 2행. 사용자는 예시 행을 지우거나 자기 키워드로 교체.
+    """
+    buf = io.StringIO()
+    writer = csv.writer(buf, lineterminator="\n")
+    writer.writerow(_TEMPLATE_HEADERS)
+    for row in _TEMPLATE_SAMPLE_ROWS:
+        writer.writerow(row)
+    text = buf.getvalue()
+    return ("﻿" + text) if with_bom else text
+
 
 def parse_csv(
     csv_text: str,

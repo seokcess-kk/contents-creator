@@ -63,9 +63,21 @@ export default function BatchUploadForm({ onCreated }: Props) {
     <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-sm ring-1 ring-gray-200 p-4 space-y-3">
       <div className="grid grid-cols-12 gap-3 items-end">
         <div className="col-span-12 lg:col-span-5">
-          <label className="block text-xs font-semibold text-gray-700 mb-1">
-            CSV 파일 <span className="text-red-500">*</span>
-          </label>
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-xs font-semibold text-gray-700">
+              CSV 파일 <span className="text-red-500">*</span>
+            </label>
+            {/* 템플릿: same-origin /api proxy 가 X-API-Key 자동 주입. 백엔드는
+                domain/batch/csv_parser.build_csv_template 단일 출처. */}
+            <a
+              href="/api/batches/csv-template"
+              download="batch_template.csv"
+              className="text-[11px] text-blue-700 hover:underline font-normal"
+              title="컬럼 헤더 + 안내 예시 2행 (UTF-8 BOM)"
+            >
+              템플릿 다운로드
+            </a>
+          </div>
           <input
             type="file"
             accept=".csv,text/csv"

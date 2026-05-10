@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from domain.batch.csv_parser import parse_csv
+from domain.batch.csv_parser import build_csv_template, parse_csv
 
 
 def test_parses_minimal_keyword_only_csv() -> None:
@@ -122,3 +122,30 @@ def test_blog_resolver_none_means_no_lookup() -> None:
     csv_text = "keyword,blog\nkw1,메인블로그\n"
     created, _, _ = parse_csv(csv_text, batch_id="b-1", blog_resolver=None)
     assert created[0].blog_channel_id is None
+
+
+def test_template_roundtrips_through_parser() -> None:
+    """build_csv_template 출력이 parse_csv 로 그대로 round-trip 되어야 한다.
+
+    헤더·예시 행이 컬럼 추가/이름 변경으로 어긋나면 운영자가 받은 템플릿이
+    바로 failed 로 떨어지는 사고를 회귀 방지.
+    """
+    template = build_csv_template(with_bom=True)
+    # BOM 은 운영자 도구(Excel)용. parse_csv 는 BOM 없는 입력을 가정하므로 strip.
+    template_no_bom = template.lstrip("﻿")
+    created, skipped, failed = parse_csv(template_no_bom, batch_id="b-tpl")
+
+    assert failed == [], f"템플릿이 parser 검증을 통과해야 함: {failed}"
+    assert skipped == []
+    # 안내 예시 2행이 모두 created 로 들어와야 함
+    assert len(created) == 2
+    assert all(it.operation == "pipeline" for it in created)
+    # 두 예시 행은 priority 5, 3 이어야 함 (template 의 안내 예시 정의)
+    priorities = sorted(it.priority for it in created)
+    assert priorities == [3, 5]
+
+
+def test_template_has_bom_for_excel_compatibility() -> None:
+    """Windows Excel 한글 깨짐 방지를 위해 BOM 부착이 default."""
+    assert build_csv_template().startswith("﻿")
+    assert not build_csv_template(with_bom=False).startswith("﻿")
