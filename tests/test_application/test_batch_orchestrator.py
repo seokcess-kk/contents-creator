@@ -605,8 +605,20 @@ class TestRetryItem:
         assert last_status == "queued"
         manager_mock.get_default_manager.return_value.submit.assert_called_once()
 
-    def test_running_item_cannot_be_manually_retried(self, storage_mock: Any) -> None:
-        storage_mock.get_item.return_value = _item(status="running")
+    def test_running_item_can_be_manually_retried(
+        self, storage_mock: Any, manager_mock: Any
+    ) -> None:
+        """2026-05-10 — backend 재시작으로 running 으로 박힌 hang 패턴 운영자
+        강제 복구. atomic claim 이 진짜 진행 중인 dispatch 의 중복은 흡수."""
+        storage_mock.get_item.return_value = _item(status="running", retry_count=0)
+        batch_orchestrator.retry_item("i-1")
+        last_status = storage_mock.update_item_status.call_args_list[-1].args[1]
+        assert last_status == "queued"
+        manager_mock.get_default_manager.return_value.submit.assert_called_once()
+
+    def test_queued_item_still_rejected(self, storage_mock: Any) -> None:
+        """queued 는 자동 처리 대상 — 운영자 수동 retry 거부 유지."""
+        storage_mock.get_item.return_value = _item(status="queued")
         with pytest.raises(ValueError, match="재시도 가능 상태 아님"):
             batch_orchestrator.retry_item("i-1")
 

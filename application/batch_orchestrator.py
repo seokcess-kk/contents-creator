@@ -768,16 +768,30 @@ def _handle_item_failure(item: KeywordBatchItem, exc: Exception) -> None:
 
 
 def retry_item(item_id: str) -> None:
-    """수동 재시도 — failed item 을 queued 로 복귀 + dispatch.
+    """수동 재시도 — terminal 또는 hang 상태의 item 을 queued 로 복귀 + dispatch.
 
     max_retries 무시하고 1회 강제 재시도. 사용자가 운영 중 트리거.
+
+    `running` 도 허용한다 (2026-05-10 추가): backend 컨테이너 재시작(Render
+    auto-deploy / OOM)으로 in-memory dispatcher thread 가 죽으면 batch item
+    DB status 가 'running' 으로 박히는 hang 패턴이 발생. batch 도메인은 jobs 와
+    달리 startup 시 stale running 자동 마킹이 없어(mark_running_as_orphaned 가
+    jobs 만 처리), 운영자가 수동으로 풀어줄 권한이 필요하다. 진짜 진행 중인
+    경우 중복 dispatch 는 atomic claim(claim_item_for_dispatch)이 race-safe 로
+    흡수.
     """
     item = storage.get_item(item_id)
     if item is None:
         raise ValueError(f"item 미존재: {item_id}")
-    if item.status not in ("failed", "succeeded", "needs_review", "ready_to_publish"):
+    if item.status not in (
+        "failed",
+        "succeeded",
+        "needs_review",
+        "ready_to_publish",
+        "running",
+    ):
         raise ValueError(
-            f"재시도 가능 상태 아님 (현재: {item.status}). queued/running 은 자동 처리됩니다."
+            f"재시도 가능 상태 아님 (현재: {item.status}). queued 는 자동 처리됩니다."
         )
     storage.update_item_status(
         item_id,
