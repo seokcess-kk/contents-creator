@@ -130,6 +130,32 @@ describe("CopyButton", () => {
     });
   });
 
+  it("rich 모드: 의료법 인라인 마커 ⚠️ 는 복사 시 strip 된다", async () => {
+    // 강제 발행 모드의 본문은 `<strong>⚠️ 위반텍스트 ⚠️</strong>` 형태로 마커가 박힘.
+    // 미리보기에는 보여야 하지만 복사 본문에는 ⚠️ 글자가 들어가면 안 됨.
+    const html =
+      "<html><body><p>일반 문장 <strong>⚠️ 위반텍스트 ⚠️</strong> 다음 문장</p></body></html>";
+    mockFetch(html);
+    writeRich.mockResolvedValueOnce();
+
+    render(<CopyButton endpoint="/api/results/x/latest/html" label="HTML 복사" mode="rich" />);
+    fireEvent.click(screen.getByRole("button", { name: "HTML 복사" }));
+
+    await waitFor(() => {
+      expect(writeRich).toHaveBeenCalledTimes(1);
+    });
+    const items = writeRich.mock.calls[0]![0] as Array<{
+      data: Record<string, Blob>;
+    }>;
+    const htmlText = await items[0]!.data["text/html"]!.text();
+    const plainText = await items[0]!.data["text/plain"]!.text();
+    // ⚠️ 글자가 두 사본 모두에서 제거 (strong 태그·bold 시각 강조는 보존)
+    expect(htmlText).not.toContain("⚠️");
+    expect(plainText).not.toContain("⚠️");
+    expect(htmlText).toContain("<strong>위반텍스트</strong>");
+    expect(plainText).toContain("위반텍스트");
+  });
+
   it("복사 중에는 버튼이 비활성화된다", async () => {
     let resolveFetch: (value: Response) => void = () => {};
     const fetchMock = vi.fn<typeof fetch>().mockImplementation(

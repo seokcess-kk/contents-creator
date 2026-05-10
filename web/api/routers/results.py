@@ -129,6 +129,26 @@ def get_markdown(slug: str) -> FileResponse | PlainTextResponse:
 
 
 @router.get(
+    "/{slug}/latest/compliance-warning",
+    response_model=None,
+    dependencies=[Depends(require_slug_access)],
+)
+def get_compliance_warning(slug: str) -> FileResponse:
+    """강제 발행 모드의 의료법 경고 배너 (markdown).
+
+    파일이 없으면 404 — frontend 는 200 일 때만 경고 영역 노출.
+    seo-content.{md,html} 에는 banner 가 포함되지 않아 일괄 복사 시 본문만 들어간다.
+    """
+    latest = _local_latest(slug)
+    if latest is None:
+        raise HTTPException(status_code=404, detail="No latest run")
+    path = latest / "content" / "compliance-warning.md"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="No compliance warning")
+    return FileResponse(path, media_type="text/markdown; charset=utf-8")
+
+
+@router.get(
     "/{slug}/latest/outline", response_model=None, dependencies=[Depends(require_slug_access)]
 )
 def get_outline(slug: str) -> FileResponse | PlainTextResponse:

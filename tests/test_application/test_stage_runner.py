@@ -387,11 +387,14 @@ class TestMarkComplianceViolations:
             final_text=content_md,
         )
 
-        marked = _mark_compliance_violations(content_md, report)
+        marked_body, banner = _mark_compliance_violations(content_md, report)
 
-        assert marked.startswith("> ⚠️ **의료법 검증 미통과")
-        assert "[first_person_promotion]" in marked
-        assert "**⚠️ 특정 위반 문구 여기있음 ⚠️**" in marked
+        # banner 와 본문이 분리되어 반환 (2026-05-10) — 일괄 복사 시 banner 가 본문에 따라가지 않도록.
+        assert banner.startswith("> ⚠️ **의료법 검증 미통과")
+        assert "[first_person_promotion]" in banner
+        # 인라인 마커는 본문에만 (사용자 수동 검수 가이드)
+        assert "**⚠️ 특정 위반 문구 여기있음 ⚠️**" in marked_body
+        assert "의료법 검증 미통과" not in marked_body
 
     def test_missing_snippet_keeps_banner(self) -> None:
         from application.stage_runner import _mark_compliance_violations
@@ -412,10 +415,12 @@ class TestMarkComplianceViolations:
             final_text=content_md,
         )
 
-        marked = _mark_compliance_violations(content_md, report)
+        marked_body, banner = _mark_compliance_violations(content_md, report)
 
-        assert "[patient_testimonial]" in marked
-        assert "**⚠️" not in marked.split("---")[1]
+        # snippet 매칭 실패해도 banner 는 카테고리 정보 유지
+        assert "[patient_testimonial]" in banner
+        # 본문은 인라인 래핑 없이 원본 그대로
+        assert marked_body == content_md
 
 
 # ── e2e 발견 이슈 #1: Storage key 한글 → ASCII slug ────────────────────────

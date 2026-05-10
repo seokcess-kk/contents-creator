@@ -812,17 +812,23 @@ def run_stage_image_generation(
 # ── [10] 조립 ──
 
 
-def _mark_compliance_violations(content_md: str, report: ComplianceReport) -> str:
-    """강제 발행 모드: 잔존 위반 지점을 본문에 표시한다.
+def _mark_compliance_violations(
+    content_md: str, report: ComplianceReport
+) -> tuple[str, str]:
+    """강제 발행 모드: 본문 + 분리된 경고 배너 반환.
 
-    - 상단에 경고 배너 (blockquote) 를 삽입해 위반 전체 목록을 제공
-    - 각 위반의 text_snippet 을 본문에서 찾아 **⚠️ ... ⚠️** 로 래핑
-    - 화이트리스트 호환 (blockquote/strong/hr 만 사용)
-    - snippet 이 본문에 없으면 (fixer 가 이후 텍스트를 변형) 래핑 스킵, 배너만 유지
+    Returns:
+        (marked_body_md, banner_md)
+        - marked_body_md: 본문 안 위반 snippet 만 **⚠️ ... ⚠️** 인라인 래핑
+        - banner_md: 별도 파일/영역에 표시할 경고 배너 (사용자가 일괄 복사 시
+          본문에 배너가 따라가지 않도록 분리)
+
+    화이트리스트 호환 (blockquote/strong/hr 만 사용). snippet 이 본문에 없으면
+    (fixer 가 이후 텍스트를 변형) 인라인 래핑 스킵, 배너만 유지.
     """
     banner = _build_compliance_banner(report)
     marked_body = _wrap_violation_snippets(content_md, report)
-    return banner + marked_body
+    return marked_body, banner
 
 
 def _build_compliance_banner(report: ComplianceReport) -> str:
@@ -904,16 +910,29 @@ def run_stage_compose(
         content_md = assembled.content_md
         title = assembled.title
 
-    # 강제 발행 모드: 위반 잔존 시 배너 + 인라인 마커 삽입.
+    # 강제 발행 모드: 위반 잔존 시 인라인 마커는 본문에, 경고 배너는 별도 파일.
+    # banner 를 seo-content 에 박으면 운영자가 일괄 복사 시 배너 텍스트가 같이
+    # 네이버 에디터에 붙여넣어진다 → 분리 (compliance-warning.md).
+    compliance_banner_md: str | None = None
     if not compliance_report.passed and compliance_report.violations:
-        content_md = _mark_compliance_violations(content_md, compliance_report)
+        marked_body, banner_md = _mark_compliance_violations(
+            content_md, compliance_report
+        )
+        content_md = marked_body
+        compliance_banner_md = banner_md
 
     content_dir = output_dir / "content"
     content_dir.mkdir(parents=True, exist_ok=True)
 
-    # seo-content.md
+    # seo-content.md (banner 미포함)
     md_path = content_dir / "seo-content.md"
     md_path.write_text(content_md, encoding="utf-8")
+
+    # compliance-warning.md (강제 발행 케이스만 — frontend 가 별도 영역에 노출)
+    if compliance_banner_md:
+        (content_dir / "compliance-warning.md").write_text(
+            compliance_banner_md, encoding="utf-8"
+        )
 
     # seo-content.html
     html_doc = convert_to_naver_html(content_md, title)

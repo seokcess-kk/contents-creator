@@ -22,12 +22,23 @@ interface Props {
 
 const RESET_MS = 1500;
 
+// 의료법 강제 발행 모드의 인라인 마커 ⚠️ 를 본문 복사 시 제거.
+// 본문 안에 `**⚠️ ... ⚠️**` 형태로 들어있는데, ⚠️ + 양 끝 spacing 만 strip 하고
+// strong 태그(=bold)는 보존해 사용자가 위반 위치를 시각적으로는 인지하게 한다.
+function stripComplianceMarkers(html: string): string {
+  // ⚠️ 다음에 오는 공백, 그리고 ⚠️ 앞의 공백을 함께 제거.
+  return html.replace(/\s?⚠️\s?/g, "");
+}
+
 async function copyRichHtml(rawHtml: string): Promise<void> {
   // 풀 문서면 body 만 추출, 아니면 그대로 fragment 로.
   const doc = new DOMParser().parseFromString(rawHtml, "text/html");
   const body = doc.body;
-  const fragmentHtml = body && body.innerHTML.trim().length > 0 ? body.innerHTML : rawHtml;
-  const fragmentText = body ? body.innerText || body.textContent || "" : rawHtml;
+  const rawFragment =
+    body && body.innerHTML.trim().length > 0 ? body.innerHTML : rawHtml;
+  const fragmentHtml = stripComplianceMarkers(rawFragment);
+  const rawText = body ? body.innerText || body.textContent || "" : rawHtml;
+  const fragmentText = stripComplianceMarkers(rawText);
 
   const item = new ClipboardItem({
     "text/html": new Blob([fragmentHtml], { type: "text/html" }),

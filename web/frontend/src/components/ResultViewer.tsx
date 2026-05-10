@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import CopyButton from "./CopyButton";
 import HtmlPreview from "./HtmlPreview";
 
@@ -25,6 +25,28 @@ const COPY_TARGETS: Record<
 
 export default function ResultViewer({ slug, imagesGenerated }: Props) {
   const [tab, setTab] = useState<Tab>("html");
+  // 강제 발행 모드의 의료법 경고 배너 (markdown). 200 응답이면 본문 위에 별도
+  // 영역으로 표시. 본문(HTML)에는 포함되지 않아 일괄 복사 시 따라가지 않는다.
+  const [complianceWarning, setComplianceWarning] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/results/${encodeURIComponent(slug)}/latest/compliance-warning`,
+        );
+        if (cancelled) return;
+        if (res.ok) {
+          setComplianceWarning(await res.text());
+        }
+      } catch {
+        // 네트워크 실패는 조용히 — 경고는 부가 정보, 본문 표시는 계속
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [slug]);
 
   const tabs: { key: Tab; label: string }[] = [
     { key: "html", label: "HTML 미리보기" },
@@ -36,7 +58,25 @@ export default function ResultViewer({ slug, imagesGenerated }: Props) {
   const copyTarget = tab !== "images" ? COPY_TARGETS[tab] : null;
 
   return (
-    <div className="bg-white rounded-lg shadow-sm ring-1 ring-gray-200 overflow-hidden">
+    <div className="space-y-3">
+      {complianceWarning && (
+        <div
+          role="alert"
+          className="bg-amber-50 ring-1 ring-amber-300 rounded-lg px-4 py-3"
+        >
+          <div className="text-sm font-semibold text-amber-900 mb-1">
+            ⚠️ 의료법 검증 미통과 — 강제 발행 (별도 표시)
+          </div>
+          <p className="text-xs text-amber-800 mb-2">
+            아래 본문에는 이 경고가 포함되지 않습니다. 일괄 복사 시 본문만 들어갑니다.
+            발행 전 본문 안의 ⚠️ 표시 위치를 수동 검토·수정해 주세요.
+          </p>
+          <pre className="text-xs text-amber-900 bg-white/60 ring-1 ring-amber-200 rounded p-2 overflow-auto max-h-[200px] whitespace-pre-wrap">
+            {complianceWarning}
+          </pre>
+        </div>
+      )}
+      <div className="bg-white rounded-lg shadow-sm ring-1 ring-gray-200 overflow-hidden">
       {/* 탭 + 우측 복사 버튼 */}
       <div className="border-b border-gray-200 flex items-center justify-between">
         <div className="flex">
@@ -73,6 +113,7 @@ export default function ResultViewer({ slug, imagesGenerated }: Props) {
         {tab === "outline" && <MarkdownView slug={slug} type="outline" />}
 
         {tab === "images" && <ImagesGrid slug={slug} count={imagesGenerated} />}
+      </div>
       </div>
     </div>
   );
