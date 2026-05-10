@@ -37,16 +37,20 @@ _TOOL_ENFORCE_HINT = (
     "자유 텍스트·마크다운·설명 없이 tool_use 블록만 응답하라."
 )
 
-# tool_use 응답에 반드시 포함돼야 하는 최상위 필드. OUTLINE_TOOL.input_schema.required 와 동기화.
+# tool_use 응답에 반드시 포함돼야 하는 최상위 필드. 이게 빠지면 [7]~[10] 진행 자체가 불가하다.
+# image_prompts 는 의도적으로 제외 — [9] 이미지 생성은 옵션 단계라 누락 시 빈 list 폴백 후
+# 이미지 없이 발행 가능. 운영 데이터상 system 프롬프트가 큰 키워드(예: 분석 input>90k tokens)
+# 에서 응답 끝부분 메타 필드가 max_tokens 한도로 잘리며 image_prompts 가 자주 누락된다.
+# 이런 케이스에서 콘텐츠 발행 자체를 막는 것보다 이미지 0개로 발행하는 편이 운영적으로 합리적.
 _REQUIRED_OUTLINE_FIELDS = (
     "title",
     "title_pattern",
     "target_chars",
     "intro",
     "sections",
-    "image_prompts",
     "keyword_plan",
 )
+_OPTIONAL_OUTLINE_FIELDS = ("image_prompts",)
 
 
 def generate_outline(
@@ -86,8 +90,11 @@ def generate_outline(
 
     if tool_input is None or not _has_required_fields(tool_input):
         # 폴백: thinking off + tool 이름 강제 + 누락 필드 피드백 주입.
+        # 누락 필드 메시지에는 optional 까지 포함해 LLM 에게 모든 schema 필드를 채워달라고 요청.
         missing = (
-            _missing_fields(tool_input) if tool_input is not None else ["<tool_use missing>"]
+            _missing_fields(tool_input, include_optional=True)
+            if tool_input is not None
+            else ["<tool_use missing>"]
         )
         logger.warning(
             "outline tool_use incomplete; retrying with feedback. missing=%s thinking_was_on=%s",
@@ -119,14 +126,23 @@ def _has_required_fields(tool_input: dict[str, Any]) -> bool:
     return all(field in tool_input for field in _REQUIRED_OUTLINE_FIELDS)
 
 
-def _missing_fields(tool_input: dict[str, Any]) -> list[str]:
-    return [f for f in _REQUIRED_OUTLINE_FIELDS if f not in tool_input]
+def _missing_fields(tool_input: dict[str, Any], *, include_optional: bool = False) -> list[str]:
+    fields = _REQUIRED_OUTLINE_FIELDS + (_OPTIONAL_OUTLINE_FIELDS if include_optional else ())
+    return [f for f in fields if f not in tool_input]
 
 
 def _assert_required_fields(tool_input: dict[str, Any]) -> None:
     missing = _missing_fields(tool_input)
     if missing:
         raise ValueError(f"outline tool_use 응답에 필수 필드 누락: {missing}")
+    # optional 필드 누락은 raise 안 하고 warning + graceful (Outline 모델의 default_factory 활용).
+    optional_missing = [f for f in _OPTIONAL_OUTLINE_FIELDS if f not in tool_input]
+    if optional_missing:
+        logger.warning(
+            "outline tool_use optional 필드 누락 (graceful 폴백): %s — "
+            "콘텐츠는 발행되지만 이미지 등 누락 필드 관련 산출물은 비어있음",
+            optional_missing,
+        )
 
 
 def _invoke(
@@ -149,14 +165,14 @@ def _invoke(
     if thinking_budget > 0:
         extra_kwargs["thinking"] = {"type": "adaptive"}
         extra_kwargs["output_config"] = {"effort": "high"}
-        max_tokens = 8192
+        max_tokens = 16384
         tool_choice: dict[str, Any] = {"type": "auto"}
     else:
         # outline 응답은 title + intro + sections + image_prompts(5-8개 영문 prompt)
-        # + keyword_plan + suggested_tags 가 합쳐져 4096 토큰 한도를 자주 초과한다.
-        # 한도 초과 시 응답 후반부 필드 (image_prompts, keyword_plan) 가 잘려 누락되어
-        # _assert_required_fields 가 raise — 이게 [6] 단계 silent failure 의 진짜 원인.
-        max_tokens = 8192
+        # + keyword_plan + suggested_tags 가 합쳐져 8192 토큰도 초과하는 케이스가 있다.
+        # 운영 데이터: 분석 input 91k tokens 키워드에서 retry 후에도 image_prompts 누락 재발.
+        # 16384 로 상향 + image_prompts 는 _OPTIONAL_OUTLINE_FIELDS 로 강등하여 graceful 폴백.
+        max_tokens = 16384
         tool_choice = {"type": "tool", "name": tool_schema["name"]}
 
     response = messages_create_with_retry(
