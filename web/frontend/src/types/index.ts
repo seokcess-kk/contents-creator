@@ -15,7 +15,9 @@ export const PIPELINE_STAGES = [
 
 export type StageKey = (typeof PIPELINE_STAGES)[number]["key"];
 
-export type JobStatus = "pending" | "running" | "succeeded" | "failed";
+// "orphaned": Phase J2 PR3 — 컨테이너 재시작으로 in-memory 진행이 분실된 작업의
+// 자연 종결 상태. backend GET fallback 이 DB 에서 200 OK + status=orphaned 로 응답.
+export type JobStatus = "pending" | "running" | "succeeded" | "failed" | "orphaned";
 
 export interface Job {
   id: string;
