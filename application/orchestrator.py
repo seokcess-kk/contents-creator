@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import gc
 import logging
 import re
 import subprocess
@@ -627,6 +628,13 @@ def run_pipeline(
                 stages=all_stages,
                 error=all_stages[-1].error if all_stages else "분석 실패",
             )
+
+        # [1]~[5] 분석 단계가 누적한 큰 객체(scraped HTML, semantic/appeal results,
+        # Anthropic 응답 객체 16+개)를 [6] outline 호출 전에 명시적으로 회수한다.
+        # Render Starter plan 512MB 한계에서 outline LLM 응답 spike 와 합쳐져
+        # OOM 을 trigger 하는 패턴 mitigation. PatternCard 만 다음 단계로 전달되므로
+        # 이 시점의 GC 는 안전하다.
+        gc.collect()
 
         # [6]~[10] 생성
         gen_result = _run_generation_stages(

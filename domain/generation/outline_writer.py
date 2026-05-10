@@ -165,14 +165,14 @@ def _invoke(
     if thinking_budget > 0:
         extra_kwargs["thinking"] = {"type": "adaptive"}
         extra_kwargs["output_config"] = {"effort": "high"}
-        max_tokens = 16384
+        max_tokens = 8192
         tool_choice: dict[str, Any] = {"type": "auto"}
     else:
-        # outline 응답은 title + intro + sections + image_prompts(5-8개 영문 prompt)
-        # + keyword_plan + suggested_tags 가 합쳐져 8192 토큰도 초과하는 케이스가 있다.
-        # 운영 데이터: 분석 input 91k tokens 키워드에서 retry 후에도 image_prompts 누락 재발.
-        # 16384 로 상향 + image_prompts 는 _OPTIONAL_OUTLINE_FIELDS 로 강등하여 graceful 폴백.
-        max_tokens = 16384
+        # 16384 는 Render Starter plan(512MB) 에서 OOM trigger.
+        # Anthropic SDK httpx response buffer + Pydantic transient 메모리 spike 가
+        # [1]~[5] 분석 누적 메모리와 합쳐져 한계 초과. 8192 로 되돌리고 image_prompts
+        # 가 잘릴 경우엔 _OPTIONAL_OUTLINE_FIELDS graceful 폴백이 받아낸다.
+        max_tokens = 8192
         tool_choice = {"type": "tool", "name": tool_schema["name"]}
 
     response = messages_create_with_retry(
