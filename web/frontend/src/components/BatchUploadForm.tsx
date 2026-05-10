@@ -24,6 +24,33 @@ export default function BatchUploadForm({ onCreated }: Props) {
   // (priority<=3 즉시 실행, priority>=4 overnight 큐 보류). Anthropic Batch API 는
   // 운영 데이터 누적 후 별도 PR (Phase 5+) 이라 overnight 의미는 "일반 API 일괄 dispatch".
   const [mode, setMode] = useState<"now" | "overnight" | "auto">("now");
+  // 템플릿 다운로드 상태
+  const [tplLoading, setTplLoading] = useState(false);
+  const [tplError, setTplError] = useState<string | null>(null);
+
+  async function handleTemplateDownload() {
+    setTplError(null);
+    setTplLoading(true);
+    try {
+      const res = await fetch("/api/batches/csv-template");
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "batch_template.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setTplError(`템플릿 다운로드 실패 — ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setTplLoading(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -67,17 +94,22 @@ export default function BatchUploadForm({ onCreated }: Props) {
             <label className="block text-xs font-semibold text-gray-700">
               CSV 파일 <span className="text-red-500">*</span>
             </label>
-            {/* 템플릿: same-origin /api proxy 가 X-API-Key 자동 주입. 백엔드는
-                domain/batch/csv_parser.build_csv_template 단일 출처. */}
-            <a
-              href="/api/batches/csv-template"
-              download="batch_template.csv"
-              className="text-[11px] text-blue-700 hover:underline font-normal"
+            {/* 템플릿 다운로드: a[download] navigation 은 일부 환경(rewrites
+                + middleware 조합)에서 요청이 누락되는 케이스가 있어 fetch + Blob
+                으로 강제. Network 탭에 항상 잡혀 진단 가능, 실패 메시지 명시적. */}
+            <button
+              type="button"
+              onClick={handleTemplateDownload}
+              disabled={tplLoading}
+              className="text-[11px] text-blue-700 hover:underline font-normal disabled:opacity-60 disabled:cursor-wait"
               title="컬럼 헤더 + 안내 예시 2행 (UTF-8 BOM)"
             >
-              템플릿 다운로드
-            </a>
+              {tplLoading ? "다운로드 중..." : "템플릿 다운로드"}
+            </button>
           </div>
+          {tplError && (
+            <div className="text-[11px] text-red-700 mb-1">{tplError}</div>
+          )}
           <input
             type="file"
             accept=".csv,text/csv"
