@@ -207,7 +207,11 @@ function QueuePageInner() {
         slug={drawerItem?.slug ?? null}
         title={drawerItem ? `${drawerItem.keyword} — 본문 미리보기` : undefined}
         sidebar={
-          drawerItem && drawerItem.source === "batch" ? (
+          drawerItem ? (
+            // batch / single 모두 동일 동선 — drawer 안에서 본문 미리보기 + HTML 복사 +
+            // 발행 URL 등록까지 1화면. (이전: batch 만 sidebar 노출 → single 출처
+            // 과거 원고는 별도 모달 클릭 강요. /jobs/[id] 결과 페이지의 통합 동선과
+            // 일관성 유지.)
             <PublicationForm
               variant="create"
               defaultKeyword={drawerItem.keyword}
