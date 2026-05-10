@@ -11,11 +11,16 @@ interface Props {
   imagesGenerated: number;
 }
 
-// 탭별 복사 endpoint + 버튼 라벨. images 탭은 복사 대상 아님.
-const COPY_TARGETS: Record<Exclude<Tab, "images">, { path: string; label: string }> = {
-  html: { path: "html", label: "HTML 복사" },
-  markdown: { path: "markdown", label: "마크다운 복사" },
-  outline: { path: "outline", label: "아웃라인 복사" },
+// 탭별 복사 endpoint + 버튼 라벨 + 복사 모드. images 탭은 복사 대상 아님.
+// HTML 탭은 "rich" — ClipboardItem(text/html) 으로 보내 네이버 에디터 등에서
+// 미리보기를 드래그·복사한 것과 동일한 rich text 로 붙여넣기 가능.
+const COPY_TARGETS: Record<
+  Exclude<Tab, "images">,
+  { path: string; label: string; mode: "rich" | "text" }
+> = {
+  html: { path: "html", label: "HTML 복사", mode: "rich" },
+  markdown: { path: "markdown", label: "마크다운 복사", mode: "text" },
+  outline: { path: "outline", label: "아웃라인 복사", mode: "text" },
 };
 
 export default function ResultViewer({ slug, imagesGenerated }: Props) {
@@ -53,6 +58,7 @@ export default function ResultViewer({ slug, imagesGenerated }: Props) {
           <CopyButton
             endpoint={`/api/results/${encodeURIComponent(slug)}/latest/${copyTarget.path}`}
             label={copyTarget.label}
+            mode={copyTarget.mode}
             className="mr-3"
           />
         )}

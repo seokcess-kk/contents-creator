@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 type Status = "idle" | "copying" | "success" | "error";
+type Mode = "rich" | "text";
 
 interface Props {
   endpoint: string;
@@ -10,9 +11,30 @@ interface Props {
   successLabel?: string;
   errorLabel?: string;
   className?: string;
+  /**
+   * "rich": HTML 응답을 ClipboardItem(text/html + text/plain) 으로 복사 — 붙여넣기
+   *   시 미리보기를 드래그해서 복사한 것과 동일한 rich text 결과. body 의 innerHTML
+   *   만 fragment 로 보내 일부 에디터 (네이버 등) 호환성을 높인다.
+   * "text": 응답을 그대로 plain text 로 복사 (마크다운·아웃라인 등).
+   */
+  mode?: Mode;
 }
 
 const RESET_MS = 1500;
+
+async function copyRichHtml(rawHtml: string): Promise<void> {
+  // 풀 문서면 body 만 추출, 아니면 그대로 fragment 로.
+  const doc = new DOMParser().parseFromString(rawHtml, "text/html");
+  const body = doc.body;
+  const fragmentHtml = body && body.innerHTML.trim().length > 0 ? body.innerHTML : rawHtml;
+  const fragmentText = body ? body.innerText || body.textContent || "" : rawHtml;
+
+  const item = new ClipboardItem({
+    "text/html": new Blob([fragmentHtml], { type: "text/html" }),
+    "text/plain": new Blob([fragmentText], { type: "text/plain" }),
+  });
+  await navigator.clipboard.write([item]);
+}
 
 export default function CopyButton({
   endpoint,
@@ -20,6 +42,7 @@ export default function CopyButton({
   successLabel = "복사됨",
   errorLabel = "복사 실패",
   className = "",
+  mode = "text",
 }: Props) {
   const [status, setStatus] = useState<Status>("idle");
 
@@ -29,10 +52,14 @@ export default function CopyButton({
     try {
       const res = await fetch(endpoint);
       if (!res.ok) throw new Error(`fetch ${res.status}`);
-      const text = await res.text();
+      const body = await res.text();
       // navigator.clipboard 는 secure context (HTTPS or localhost) 에서만 동작.
-      // 그 외 환경은 catch 로 빠져 errorLabel 표시.
-      await navigator.clipboard.writeText(text);
+      // ClipboardItem 미지원 또는 권한 거부 시 catch 로 빠져 errorLabel 표시.
+      if (mode === "rich") {
+        await copyRichHtml(body);
+      } else {
+        await navigator.clipboard.writeText(body);
+      }
       setStatus("success");
       window.setTimeout(() => setStatus("idle"), RESET_MS);
     } catch {

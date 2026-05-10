@@ -2,15 +2,25 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import CopyButton from "@/components/CopyButton";
 
-// jsdom 은 navigator.clipboard 를 기본 제공하지 않으므로 테스트 시작 시 직접 정의.
+// jsdom 은 navigator.clipboard / ClipboardItem 을 기본 제공하지 않으므로 직접 정의.
 const writeText = vi.fn<(t: string) => Promise<void>>();
+const writeRich = vi.fn<(items: unknown[]) => Promise<void>>();
+
+class FakeClipboardItem {
+  data: Record<string, Blob>;
+  constructor(items: Record<string, Blob>) {
+    this.data = items;
+  }
+}
 
 beforeEach(() => {
   writeText.mockReset();
+  writeRich.mockReset();
   Object.defineProperty(navigator, "clipboard", {
-    value: { writeText },
+    value: { writeText, write: writeRich },
     configurable: true,
   });
+  vi.stubGlobal("ClipboardItem", FakeClipboardItem);
 });
 
 afterEach(() => {
@@ -31,20 +41,54 @@ function mockFetch(text: string, ok = true, status = 200) {
 }
 
 describe("CopyButton", () => {
-  it("클릭 시 endpoint 를 fetch 해 본문을 클립보드에 복사한다", async () => {
-    const fetchMock = mockFetch("<p>본문</p>");
+  it("text 모드: 응답 본문을 그대로 plain text 로 클립보드에 복사한다", async () => {
+    const fetchMock = mockFetch("# 마크다운 본문");
     writeText.mockResolvedValueOnce();
 
-    render(<CopyButton endpoint="/api/results/x/latest/html" label="HTML 복사" />);
-    fireEvent.click(screen.getByRole("button", { name: "HTML 복사" }));
+    render(
+      <CopyButton endpoint="/api/results/x/latest/markdown" label="복사" mode="text" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "복사" }));
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith("/api/results/x/latest/html");
+      expect(fetchMock).toHaveBeenCalledWith("/api/results/x/latest/markdown");
     });
-    expect(writeText).toHaveBeenCalledWith("<p>본문</p>");
+    expect(writeText).toHaveBeenCalledWith("# 마크다운 본문");
+    expect(writeRich).not.toHaveBeenCalled();
     await waitFor(() => {
       expect(screen.getByRole("button")).toHaveTextContent("복사됨");
     });
+  });
+
+  it("rich 모드: HTML 응답을 ClipboardItem(text/html + text/plain) 으로 복사한다", async () => {
+    const html =
+      "<!DOCTYPE html><html><head></head><body><h1>제목</h1><p>본문</p></body></html>";
+    mockFetch(html);
+    writeRich.mockResolvedValueOnce();
+
+    render(
+      <CopyButton endpoint="/api/results/x/latest/html" label="HTML 복사" mode="rich" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "HTML 복사" }));
+
+    await waitFor(() => {
+      expect(writeRich).toHaveBeenCalledTimes(1);
+    });
+    const items = writeRich.mock.calls[0]![0] as Array<{
+      data: Record<string, Blob>;
+    }>;
+    expect(items).toHaveLength(1);
+    const data = items[0]!.data;
+    expect(Object.keys(data).sort()).toEqual(["text/html", "text/plain"]);
+    const htmlBlobText = await data["text/html"]!.text();
+    const plainBlobText = await data["text/plain"]!.text();
+    // body innerHTML 만 fragment 로 — DOCTYPE/html/head/body 래퍼 제거
+    expect(htmlBlobText).toContain("<h1>제목</h1>");
+    expect(htmlBlobText).toContain("<p>본문</p>");
+    expect(htmlBlobText).not.toContain("<!DOCTYPE");
+    expect(plainBlobText).toContain("제목");
+    expect(plainBlobText).toContain("본문");
+    expect(writeText).not.toHaveBeenCalled();
   });
 
   it("fetch 실패 시 에러 라벨을 노출한다", async () => {
@@ -66,7 +110,19 @@ describe("CopyButton", () => {
     mockFetch("<p>본문</p>");
     writeText.mockRejectedValueOnce(new Error("denied"));
 
-    render(<CopyButton endpoint="/api/results/x/latest/html" label="HTML 복사" />);
+    render(<CopyButton endpoint="/api/results/x/latest/html" label="HTML 복사" mode="text" />);
+    fireEvent.click(screen.getByRole("button", { name: "HTML 복사" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button")).toHaveTextContent("복사 실패");
+    });
+  });
+
+  it("rich 모드에서 clipboard.write 가 거부되면 에러 라벨을 노출한다", async () => {
+    mockFetch("<html><body><p>본문</p></body></html>");
+    writeRich.mockRejectedValueOnce(new Error("denied"));
+
+    render(<CopyButton endpoint="/api/results/x/latest/html" label="HTML 복사" mode="rich" />);
     fireEvent.click(screen.getByRole("button", { name: "HTML 복사" }));
 
     await waitFor(() => {
