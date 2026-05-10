@@ -12,6 +12,48 @@
 - Phase U0~U12 UI 압축 + 브랜드 카드 + 외부 검토 P0/P1 (2026-04-27 ~ 04-28) — commit 8774267 등
 - Phase B7~B19 Batch Pipeline 후속 PR (2026-05-04 ~ 05-05) — SPEC-BATCH.md
 
+---
+
+## 🚀 Phase AP — 자동 발행 (Auto-Publishing)
+
+> 2026-05-10 시작. `seokcess-kk/auto-publishing@c64b5e7` (MIT, MoonbirdThinker) 의 RabbitWrite + CDP/RSA 인증 자산을 차용.
+> 결정사항: 풀 SE 변환 (목표) / LRU 5채널 / 검수 통과 자동 / **PoC 부터 (단일 블로그·평문)**.
+> 운영 가드: `PUBLISHING_ENABLED` env, `--dry-run`, 발행 직전 의료법 재검증, 발행 시도 로그 영속.
+
+### Phase AP-A — PoC: 단일 블로그 평문 발행 (집중)
+
+새 도메인 `domain/publishing/` (격리). naver_publisher 가 RabbitWrite POST 한 번 성공시키는 것이 acceptance.
+
+- [x] AP-A1 `domain/publishing/CLAUDE.md` — 도메인 규칙 + 차용 출처 명시
+- [x] AP-A2 `domain/publishing/model.py` — `PublishRequest`, `PublishResult`, `PublishingError` Pydantic
+- [x] AP-A3 `domain/publishing/session.py` — `SessionManager` (.sessions/<channel>.pkl) 차용
+- [x] AP-A4 `domain/publishing/auth.py` — `naver_login_cdp` + `naver_login` (RSA 폴백) 차용. logger 우리 `logging.getLogger`
+- [x] AP-A5 `domain/publishing/document_builder.py` — PoC: `seo-content.html` → SE paragraph 평문화 (`<h2>` → bold paragraph, `<p>` → paragraph). `<img>/<table>/<blockquote>` 는 [PLACEHOLDER] 텍스트
+- [x] AP-A6 `domain/publishing/naver_publisher.py` — `NaverBlogPublisher.publish(req: PublishRequest) -> PublishResult`. RabbitWrite POST + logNo 추출
+- [x] AP-A7 `application/publishing_orchestrator.py` — `publish_from_output_dir(output_dir, channel, keyword, *, dry_run=False)`: 콘텐츠 fetch → publisher 호출 → publishing_attempts 영속 → register_publication. **의료법 재검증은 Phase AP-B 로 이월** (PoC 신뢰 가정 + block_medical_auto_publish 안전망)
+- [x] AP-A8 `scripts/publish.py --slug --channel-id [--ts] [--keyword] [--dry-run] [--no-register]` 얇은 CLI
+- [x] AP-A9 `config/settings.py` 환경 변수: `publishing_enabled`, `naver_username/password`, `naver_chrome_profile`, `chrome_path`, `min_publish_interval_minutes`, `block_medical_auto_publish`. (.env.example 동기화)
+- [x] AP-A10 발행 시도 로그 — `domain/publishing/storage.py` + `publishing_attempts` 테이블 schema (id/channel_id/slug/job_id/status/post_url/post_id/message/response_excerpt/attempted_at)
+- [x] AP-A11 `--dry-run` 시 documentModel JSON 만 `output/{slug}/{ts}/_publish_dryrun.json` 저장
+- [x] AP-A12 단위 테스트: `tests/test_publishing/test_document_builder.py` — 16 케이스 (SE 스펙·요소별 변환·placeholder·population_params 가드) ✅
+- [ ] AP-A13 **사용자 작업 + 1회 실 발행 검증** — Supabase 에 `publishing_attempts` 테이블 마이그레이션 적용 → `.env` 에 `PUBLISHING_ENABLED=true` + `NAVER_CHROME_PROFILE=Profile X` 설정 → 등록된 1채널로 dry-run → 실 발행 → 네이버에서 노출 확인 → publication 자동 등록 확인
+
+### Phase AP-B — 풀 SE 변환기 + 이미지 업로드 (Phase A 완료 후)
+
+- [ ] AP-B1 SE 컴포넌트 변환 확장: `<table>`, `<blockquote>`, `<ul>/<ol>`, `<strong>`, `<em>`, headings (h2/h3 별 폰트)
+- [ ] AP-B2 **네이버 이미지 업로드 API 리버스** (auto-publishing 미구현 부분, 가장 큰 unknown). 글쓰기 페이지 network trace → endpoint 식별 → multipart 업로드 → 응답 image URL 을 SE `image` 컴포넌트로 삽입
+- [ ] AP-B3 카테고리 매핑: `category_no` 자동 조회 (블로그 카테고리 목록 fetch)
+- [ ] AP-B4 변환 fixture 12개 snapshot 테스트 (DIA+ 풍부 케이스 포함)
+
+### Phase AP-C — 5개 LRU 로테이션 + 검수 큐 자동 통합
+
+- [ ] AP-C1 `blog_channels` 테이블에 `last_published_at TIMESTAMPTZ`, `chrome_profile TEXT NULL`, `naver_account_label TEXT NULL` 추가 (마이그레이션)
+- [ ] AP-C2 `domain/publishing/channel_selector.py::pick_lru_channel()` — 가장 오래 발행 안된 채널 선택 + min_interval 가드
+- [ ] AP-C3 `application/publishing_orchestrator.py::auto_publish_approved_items()` — 검수 큐 approve 시 자동 트리거
+- [ ] AP-C4 `POST /batches/{id}/publish-now` API + `/queue` 페이지 액션 버튼
+- [ ] AP-C5 의료 키워드 차단 옵션 — `BLOCK_MEDICAL_AUTO_PUBLISH=true` 시 의료 카테고리 자동 발행 거부 (수동만 허용)
+- [ ] AP-C6 `docs/auto-publishing-setup.md` — 5채널 Chrome 프로필 운영 가이드 (Windows 로컬)
+
 ## ⏸ 사용자 샘플 대기 — Phase 0.6 잔여 (BC-3/BC-4)
 
 > 2026-05-08 정밀 정리 — Phase 0.5 SEO 실측 + Phase 0.6 브랜드 카드 실측 완료 항목은 archive 이관.

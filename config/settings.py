@@ -251,6 +251,37 @@ class Settings(BaseSettings):
         description="orphaned sweep 주기 (초). flag on 시 lifespan 에서 asyncio.create_task",
     )
 
+    # ── Phase AP — 자동 발행 (2026-05-10) ─────────────────────
+    # 자산 위험이 가장 높은 영역. 사고 방지 위해 default False 로 강제 opt-in.
+    # 차용: seokcess-kk/auto-publishing@c64b5e7 (MIT, MoonbirdThinker).
+    publishing_enabled: bool = Field(
+        default=False,
+        description="자동 발행 마스터 스위치. False 면 NaverBlogPublisher 인스턴스 생성 자체 거부",
+    )
+    naver_username: str | None = Field(
+        default=None, description="네이버 ID — RSA 폴백 로그인용. CDP 우선이면 미설정 가능"
+    )
+    naver_password: str | None = Field(
+        default=None, description="네이버 PW — RSA 폴백 로그인용"
+    )
+    naver_chrome_profile: str | None = Field(
+        default=None,
+        description="CDP 로그인에 사용할 Chrome 프로필명 (예: 'Profile 2'). 5채널 시 채널별 오버라이드",
+    )
+    chrome_path: str | None = Field(
+        default=None,
+        description="chrome.exe 절대경로. 미설정 시 OS 기본 경로 자동 탐지",
+    )
+    # Phase AP-C 5채널 LRU 운영 — 동일 채널 반복 발행 방지
+    min_publish_interval_minutes: int = Field(
+        default=30,
+        description="동일 채널 직전 발행에서 최소 대기 시간 (분). LRU 선택 시 가드",
+    )
+    block_medical_auto_publish: bool = Field(
+        default=False,
+        description="의료 카테고리 자동 발행 차단. True 시 의료 키워드는 수동 발행만 허용",
+    )
+
 
 settings = Settings()
 

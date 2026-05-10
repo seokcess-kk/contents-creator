@@ -660,6 +660,39 @@ create index if not exists idx_keyword_batch_items_blog_channel
 
 
 -- ============================================================
+-- publishing_attempts (Phase AP, 2026-05-10) — 발행 시도 영속 로그
+-- ============================================================
+-- 자동 발행 시도(성공·실패·dry_run) 1건당 1행. 운영 분석 + 사고 추적 + 재시도
+-- 판단의 정본. 차용: seokcess-kk/auto-publishing@c64b5e7 (RabbitWrite 응답 로깅 패턴).
+-- application/publishing_orchestrator 가 publish 호출 직후 best-effort insert.
+-- channel_id FK 는 ON DELETE SET NULL — 채널 삭제돼도 시도 이력은 보존.
+-- ============================================================
+create table if not exists publishing_attempts (
+    id uuid primary key default gen_random_uuid(),
+    channel_id uuid references blog_channels(id) on delete set null,
+    keyword text,
+    slug text,
+    job_id text,
+    -- 시도 결과 — success / failed / dry_run
+    status text not null check (status in ('success', 'failed', 'dry_run')),
+    post_url text,
+    post_id text,
+    -- 실패 메시지 또는 성공 시 'ok'/'dry_run'. 1000자 제한
+    message text not null default '',
+    -- RabbitWrite 응답 본문 일부 (사후 분석용). 500자 제한
+    response_excerpt text not null default '',
+    attempted_at timestamptz not null default now()
+);
+
+create index if not exists idx_publishing_attempts_channel
+    on publishing_attempts (channel_id, attempted_at desc);
+create index if not exists idx_publishing_attempts_slug
+    on publishing_attempts (slug, attempted_at desc);
+create index if not exists idx_publishing_attempts_status
+    on publishing_attempts (status, attempted_at desc);
+
+
+-- ============================================================
 -- jobs — Phase J2 (2026-05-08): 작업 상태 영속화
 -- ============================================================
 -- in-memory `web/api/job_manager.JobManager._jobs` dict 의 영속 백업.
