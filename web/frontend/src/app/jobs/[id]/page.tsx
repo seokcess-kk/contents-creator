@@ -6,6 +6,7 @@ import { useJobProgress } from "@/lib/useJobProgress";
 import { useJobPolling } from "@/lib/useJobPolling";
 import ErrorBanner from "@/components/ui/ErrorBanner";
 import ProgressTracker from "@/components/ProgressTracker";
+import PublicationForm from "@/components/PublicationForm";
 import ResultViewer from "@/components/ResultViewer";
 
 export default function JobDetailPage({
@@ -112,9 +113,29 @@ export default function JobDetailPage({
         </div>
       )}
 
-      {/* 결과 뷰어 */}
+      {/* 결과 뷰어 + 발행 등록 (HTML 복사 → 네이버 발행 → URL·채널 등록까지 1화면) */}
       {isFinished && job.status === "succeeded" && slug && (
-        <ResultViewer slug={slug} imagesGenerated={imagesGenerated} />
+        <>
+          <ResultViewer slug={slug} imagesGenerated={imagesGenerated} />
+          <div className="mt-6">
+            <PublicationForm
+              variant="create"
+              defaultKeyword={job.keyword || ""}
+              slug={slug}
+              jobId={id}
+              tone="emerald"
+              title={
+                <div>
+                  <p className="font-semibold">발행 등록</p>
+                  <p className="text-xs mt-1 opacity-80">
+                    위에서 HTML 복사 → 네이버 에디터 붙여넣기 → 발행 후 URL 을 여기에 등록하면
+                    순위 추적이 자동 시작됩니다.
+                  </p>
+                </div>
+              }
+            />
+          </div>
+        </>
       )}
     </div>
   );
