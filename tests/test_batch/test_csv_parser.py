@@ -140,9 +140,8 @@ def test_template_roundtrips_through_parser() -> None:
     # 안내 예시 2행이 모두 created 로 들어와야 함
     assert len(created) == 2
     assert all(it.operation == "pipeline" for it in created)
-    # 두 예시 행은 priority 5, 3 이어야 함 (template 의 안내 예시 정의)
-    priorities = sorted(it.priority for it in created)
-    assert priorities == [3, 5]
+    # 미니멀 템플릿(keyword + operation 만) — priority 컬럼 부재 → default 5
+    assert all(it.priority == 5 for it in created)
 
 
 def test_template_has_bom_for_excel_compatibility() -> None:

@@ -41,59 +41,27 @@ _VALID_OPERATIONS: tuple[Operation, ...] = ("analyze", "generate", "pipeline")
 _VALID_CLUSTER_ROLES: tuple[ClusterRole, ...] = ("primary", "member")
 _REQUIRED_COLUMNS = ("keyword",)
 
-# 운영자 다운로드용 CSV 템플릿 헤더. parse_csv 가 받는 컬럼 전체 + 모듈 docstring
-# 의 "지원 컬럼" 순서와 동일. 단일 출처: 컬럼 추가 시 docstring·_parse_row 와 함께
-# 갱신.
-_TEMPLATE_HEADERS = (
-    "keyword",
-    "operation",
-    "priority",
-    "cluster_id",
-    "cluster_role",
-    "intent",
-    "region",
-    "brand_id",
-    "target_url",
-    "memo",
-    "blog",
-)
+# 운영자 다운로드용 CSV 템플릿 헤더 — 미니멀 (필수 1 + 자주 쓰는 1).
+# parse_csv 는 다른 컬럼 (priority/cluster_*/intent/region/brand_id/target_url/
+# memo/blog) 도 모두 지원하지만, 첫 사용자가 11컬럼을 보고 머뭇거리는 사례가
+# 있어 템플릿은 keyword + operation 만 노출. 추가 컬럼이 필요한 운영자는
+# BatchUploadForm 의 안내문구 또는 본 모듈 docstring 의 "지원 컬럼" 참조해
+# Excel 에서 직접 헤더 추가.
+_TEMPLATE_HEADERS = ("keyword", "operation")
 
-# 안내성 예시 행. 운영자가 그대로 두면 1건 등록되니 정보성 더미 (memo 컬럼에 안내).
 _TEMPLATE_SAMPLE_ROWS: tuple[tuple[str, ...], ...] = (
-    (
-        "예시 키워드 1",
-        "pipeline",
-        "5",
-        "",
-        "",
-        "info",
-        "",
-        "",
-        "",
-        "operation 은 pipeline·generate·analyze 중 선택 (default analyze)",
-        "",
-    ),
-    (
-        "예시 키워드 2",
-        "pipeline",
-        "3",
-        "",
-        "",
-        "info",
-        "강남",
-        "",
-        "",
-        "priority 1~9, default 5",
-        "",
-    ),
+    ("예시 키워드 1", "pipeline"),
+    ("예시 키워드 2", "pipeline"),
 )
 
 
 def build_csv_template(*, with_bom: bool = True) -> str:
-    """운영자 다운로드용 CSV 템플릿 문자열.
+    """운영자 다운로드용 CSV 템플릿 문자열 (미니멀: keyword + operation).
 
     with_bom: Windows Excel 에서 한글 깨짐 방지 (UTF-8 BOM 부착).
     헤더 + 안내 예시 2행. 사용자는 예시 행을 지우거나 자기 키워드로 교체.
+    추가 컬럼 (priority/cluster_*/intent/region/brand_id/target_url/memo/blog)
+    이 필요하면 Excel 에서 헤더 행에 직접 추가 — parse_csv 가 그대로 인식.
     """
     buf = io.StringIO()
     writer = csv.writer(buf, lineterminator="\n")
