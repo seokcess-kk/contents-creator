@@ -20,12 +20,18 @@ RUN mkdir -p domain application config web/api && \
     pip install -e ".[web]"
 
 # Playwright Chromium + 시스템 deps (브랜드 카드 PNG 렌더용).
-# 2026-05-11 — chromium-headless-shell 도 명시. Playwright 1.47+ 가 launch()
-# 시 별도 chrome-headless-shell 바이너리를 찾는데, `playwright install chromium`
-# 만으론 누락되는 케이스가 있어 둘 다 받아 둔다. PLAYWRIGHT_BROWSERS_PATH
-# 는 위 ENV 로 /ms-playwright 고정 (런타임에도 동일 경로).
-RUN playwright install --with-deps chromium chromium-headless-shell && \
+# 2026-05-11 (v2) — 두 명령으로 분리 + 설치 결과 ls 로 검증. 한 RUN 으로
+# 묶으면 첫 install 의 cache 가 두 번째 명령 추가에도 무효화되지 않을 수
+# 있고, 빌드 로그에서 chrome-headless-shell 디렉토리 존재 여부가 안 보이는
+# 사고가 있었음. ls 출력으로 빌드 산출물 검증 가능.
+# renderer.py 가 _resolve_chromium_executable 로 chromium full 경로도
+# fallback 으로 사용하므로 chromium-headless-shell 다운로드 실패 시에도
+# 동작은 가능 (단 launch 채널이 다를 수 있어 가급적 둘 다 확보).
+RUN playwright install --with-deps chromium && \
     rm -rf /var/lib/apt/lists/*
+RUN playwright install chromium-headless-shell || \
+    echo "chromium-headless-shell install skipped (renderer fallback to chromium full)"
+RUN ls -la /ms-playwright/ || true
 
 # 실제 코드 — 위 레이어들은 그대로 캐시 사용
 COPY domain/ domain/

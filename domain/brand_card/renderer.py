@@ -14,6 +14,7 @@ G4=B 결정: assets/fonts/Pretendard-Regular.woff2 를 file:// URL 로 임베딩
 
 from __future__ import annotations
 
+import glob
 import logging
 import os
 import shutil
@@ -40,6 +41,30 @@ logger = logging.getLogger(__name__)
 # 정답 경로를 가짐.
 if not os.environ.get("PLAYWRIGHT_BROWSERS_PATH"):
     os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "/ms-playwright"
+
+
+def _resolve_chromium_executable() -> str | None:
+    """런타임에서 Playwright chromium 바이너리 경로 탐색.
+
+    2026-05-11 — Playwright >= 1.49 의 default launch 가 chrome-headless-shell
+    바이너리를 자동 선택하는데, 빌드 시점에 그것이 누락된 환경에서도 동작
+    하도록 fallback. PLAYWRIGHT_BROWSERS_PATH 기준으로:
+      1) chromium_headless_shell-* 디렉토리의 chrome-headless-shell 우선
+      2) chromium-* 디렉토리의 chrome (full chromium) fallback
+    둘 다 없으면 None — 호출자가 default launch 로 시도하고 RendererSetupError.
+    """
+    base = os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "/ms-playwright")
+    shells = sorted(
+        glob.glob(
+            f"{base}/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell"
+        )
+    )
+    if shells:
+        return shells[-1]
+    chromes = sorted(glob.glob(f"{base}/chromium-*/chrome-linux/chrome"))
+    if chromes:
+        return chromes[-1]
+    return None
 
 
 _FONT_PATH = Path(__file__).parent.parent.parent / "assets" / "fonts" / "Pretendard-Regular.woff2"
@@ -142,8 +167,19 @@ def _render_with_playwright(
         ) from exc
 
     file_uri = html_path.resolve().as_uri()
+    exec_path = _resolve_chromium_executable()
     with sync_playwright() as p:
-        browser = p.chromium.launch()
+        # 2026-05-11 — chrome-headless-shell 미설치 환경에서 chromium full 을
+        # executable_path 로 명시 fallback. 둘 다 없으면 default launch (보통
+        # FileNotFoundError) → RendererSetupError 로 래핑됨.
+        if exec_path:
+            logger.info("renderer.chromium_exec=%s", exec_path)
+            browser = p.chromium.launch(executable_path=exec_path)
+        else:
+            logger.warning(
+                "renderer.chromium_exec_missing — playwright default launch 시도"
+            )
+            browser = p.chromium.launch()
         try:
             context = browser.new_context(viewport={"width": width, "height": height})
             page = context.new_page()
