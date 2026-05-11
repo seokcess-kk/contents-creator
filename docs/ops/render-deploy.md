@@ -83,7 +83,7 @@ services:
 설정값:
 
 ```
-URL:    https://sarubia.glitzy.kr/health
+URL:    https://<your-backend-domain>/health
 Method: GET
 Interval: 5 minutes
 Expected status: 200

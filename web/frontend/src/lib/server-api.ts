@@ -9,10 +9,12 @@
 
 import "server-only";
 
+// prod 에서는 BACKEND_API_URL 환경변수가 반드시 설정되어야 한다. 미설정 시
+// dev fallback (localhost:8000) — 배포된 환경에선 서버 컴포넌트 fetch 실패.
 const BACKEND = (
   process.env.BACKEND_API_URL?.trim() ||
   process.env.NEXT_PUBLIC_API_URL?.trim() ||
-  "https://sarubia.glitzy.kr"
+  "http://localhost:8000"
 ).replace(/\/$/, "");
 
 export async function serverFetch<T>(

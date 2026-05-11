@@ -15,7 +15,9 @@ const API_BASE = "/api";
 // WebSocket 전용 origin. Next rewrites 는 WS 업그레이드를 프록시하지 않으므로
 // WS 는 외부 origin 에 직접 연결한다. 이 값은 키가 아닌 "공개 가능한 origin" 이라
 // NEXT_PUBLIC_ 접두어가 허용된다. admin key 는 여기 안 실린다 (signed token 사용).
-const WS_ORIGIN = process.env.NEXT_PUBLIC_WS_URL?.trim() || "https://sarubia.glitzy.kr";
+// prod 에서는 NEXT_PUBLIC_WS_URL 환경변수가 반드시 설정되어야 한다. 미설정 시
+// dev fallback (localhost:8000) — 배포 환경에선 WS 연결이 동작 안 함.
+const WS_ORIGIN = process.env.NEXT_PUBLIC_WS_URL?.trim() || "http://localhost:8000";
 
 function buildHeaders(extra?: HeadersInit): HeadersInit {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
