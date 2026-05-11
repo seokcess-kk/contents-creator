@@ -362,6 +362,11 @@ def _attach_batch_item(publication: Publication) -> None:
     Phase B9 fix — batch item 이 발행 URL 까지 추적되도록 generated_contents.id
     또는 (job_id, keyword) triple 로 매칭. graceful (실패해도 publication 등록은
     영향 없음).
+
+    2026-05-11 fix — 동일 키워드를 서로 다른 URL 로 두 번 등록할 때 첫 등록의
+    batch_item.publication_id 가 두 번째 등록에 의해 덮어씌워져 이전 publication
+    이 orphan 으로 끊어지던 버그 차단. UPDATE 시 publication_id IS NULL 조건을
+    부착해 비어있는 row 만 백필한다.
     """
     if publication.id is None:
         return
@@ -373,15 +378,18 @@ def _attach_batch_item(publication: Publication) -> None:
 
         # 1차: generated_content_id 매칭 (가장 정확)
         if publication.job_id and publication.keyword:
-            client.table("keyword_batch_items").update(payload).eq("job_id", publication.job_id).eq(
-                "keyword", publication.keyword
+            client.table("keyword_batch_items").update(payload).eq(
+                "job_id", publication.job_id
+            ).eq("keyword", publication.keyword).is_(
+                "publication_id", "null"
             ).execute()
             return
-        # 2차 fallback: keyword 만으로 (job_id 없는 publication 호환)
+        # 2차 fallback: keyword 만으로 (job_id 없는 publication 호환).
+        # 덮어쓰기 방지를 위해 publication_id IS NULL row 만 갱신.
         if publication.keyword:
             client.table("keyword_batch_items").update(payload).eq(
                 "keyword", publication.keyword
-            ).execute()
+            ).is_("publication_id", "null").execute()
     except Exception:
         logger.warning(
             "publication.batch_item_attach_failed publication_id=%s job_id=%r keyword=%r",

@@ -105,11 +105,17 @@ export async function getUnifiedQueue(
 
   // 중복 제거 (같은 id 두 번 들어오는 경우 — batch 의 generated_content_id 와 publication 충돌 가능)
   const seen = new Set<string>();
-  return merged.filter((it) => {
+  const deduped = merged.filter((it) => {
     if (seen.has(it.id)) return false;
     seen.add(it.id);
     return true;
   });
+
+  // 2026-05-11 — publication 등록된 batch item 은 검수·발행 큐에서 자동 제외.
+  // 운영 철학: URL 등록 = 발행 완료, /queue 는 "검수·발행 대기" 만 표시.
+  // batch_items.status 가 publication 등록 후에도 ready_to_publish 그대로 남기 때문에
+  // status 전이 대신 UI 단에서 hide 하는 보수적 접근 (DB enum 무변경).
+  return deduped.filter((it) => !(it.source === "batch" && it.publication_id));
 }
 
 function _batchItemToUnified(item: BatchItem): UnifiedQueueItem {
