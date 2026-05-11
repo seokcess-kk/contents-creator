@@ -15,6 +15,7 @@ G4=B 결정: assets/fonts/Pretendard-Regular.woff2 를 file:// URL 로 임베딩
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,6 +30,16 @@ from domain.brand_card.model import (
 from domain.brand_card.template_registry import TemplateMeta, get_template
 
 logger = logging.getLogger(__name__)
+
+
+# 2026-05-11 — Render 런타임에서 PLAYWRIGHT_BROWSERS_PATH 환경변수가 누락되어
+# Playwright 가 default cache (/opt/render/.cache/ms-playwright) 를 찾는 사고
+# 차단. Dockerfile 빌드 시 /ms-playwright 에 chromium + chromium-headless-shell
+# 을 설치했으므로 본 모듈 import 시점에 같은 값을 강제 주입한다.
+# 인프라 envVars 의존을 제거 — render.yaml/dashboard 가 어떤 상태든 코드가
+# 정답 경로를 가짐.
+if not os.environ.get("PLAYWRIGHT_BROWSERS_PATH"):
+    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "/ms-playwright"
 
 
 _FONT_PATH = Path(__file__).parent.parent.parent / "assets" / "fonts" / "Pretendard-Regular.woff2"
