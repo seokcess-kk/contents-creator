@@ -19,11 +19,17 @@ export function CalendarRow({
   dayList,
   monthStr,
   compact,
+  selected,
+  onToggleSelect,
 }: {
   row: CalendarRowData;
   dayList: number[];
   monthStr: string;
   compact: boolean;
+  /** 일괄 측정 선택 여부. URL 없는 초안은 항상 false (측정 불가) */
+  selected: boolean;
+  /** 체크박스 토글 핸들러 — publication.id 전달 */
+  onToggleSelect: (publicationId: string) => void;
 }) {
   const cellW = compact ? "w-[22px]" : "w-[28px]";
   const cellH = compact ? "h-[20px]" : "h-[28px]";
@@ -44,31 +50,44 @@ export function CalendarRow({
       : isExternal
         ? "bg-emerald-100 text-emerald-800"
         : "bg-blue-100 text-blue-800";
+  // URL 없는 초안은 SERP 매칭 불가 → 체크박스 disabled (BulkCheckDialog 도 동일 정책)
+  const canMeasure = !isDraft;
   return (
     <tr className="border-t border-gray-100">
       <td
         className={`sticky left-0 bg-white ${compact ? "p-1" : "p-2"} border-r border-gray-200 z-10`}
       >
-        <Link
-          href={`/rankings/${encodeURIComponent(row.publication.id)}`}
-          className="flex items-center gap-1.5 min-w-0"
-          title={
-            isRepublishDraft
-              ? "재발행 진행 중인 draft (URL 미등록)"
-              : (row.publication.slug ?? row.publication.url ?? "URL 미등록 초안")
-          }
-        >
-          <span
-            className={`shrink-0 px-1 py-px rounded text-[10px] ${sourceClass}`}
+        <div className="flex items-center gap-1.5 min-w-0">
+          <input
+            type="checkbox"
+            checked={selected}
+            disabled={!canMeasure}
+            onChange={() => onToggleSelect(row.publication.id)}
+            aria-label={`${row.publication.keyword} 선택`}
+            title={canMeasure ? "일괄 측정 대상으로 선택" : "URL 없는 초안은 측정 불가"}
+            className="shrink-0 cursor-pointer disabled:cursor-not-allowed"
+          />
+          <Link
+            href={`/rankings/${encodeURIComponent(row.publication.id)}`}
+            className="flex items-center gap-1.5 min-w-0"
+            title={
+              isRepublishDraft
+                ? "재발행 진행 중인 draft (URL 미등록)"
+                : (row.publication.slug ?? row.publication.url ?? "URL 미등록 초안")
+            }
           >
-            {sourceLabel}
-          </span>
-          <span
-            className={`text-gray-900 font-medium truncate ${compact ? "text-[11px] leading-tight" : "text-sm"}`}
-          >
-            {row.publication.keyword}
-          </span>
-        </Link>
+            <span
+              className={`shrink-0 px-1 py-px rounded text-[10px] ${sourceClass}`}
+            >
+              {sourceLabel}
+            </span>
+            <span
+              className={`text-gray-900 font-medium truncate ${compact ? "text-[11px] leading-tight" : "text-sm"}`}
+            >
+              {row.publication.keyword}
+            </span>
+          </Link>
+        </div>
       </td>
       {dayList.map((d) => {
         const dayKey = `${monthStr}-${String(d).padStart(2, "0")}`;

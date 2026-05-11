@@ -8,7 +8,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import useSWR from "swr";
-import BulkCheckDialog from "@/components/BulkCheckDialog";
 import BulkRegisterDialog from "@/components/BulkRegisterDialog";
 import PublicationForm from "@/components/PublicationForm";
 import PublicationActionRow from "@/components/PublicationActionRow";
@@ -84,7 +83,6 @@ export default function OperationsHomePage() {
   const [tab, setTab] = useState<QueueTab>("action_required");
   const [filter, setFilter] = useState("");
   const [bulkOpen, setBulkOpen] = useState(false);
-  const [bulkCheckOpen, setBulkCheckOpen] = useState(false);
   const [sortBy, setSortBy] = useState<SortKey>("diagnosis_recent");
   const [welcomeOpen, setWelcomeOpen] = useState(false);
 
@@ -136,18 +134,12 @@ export default function OperationsHomePage() {
           <HelpTooltip content={helpMessages.home} />
         </h1>
         <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setBulkCheckOpen(true)}
-            className="text-sm text-amber-700 hover:underline"
-          >
-            순위 일괄 측정
-          </button>
           <Link
             href="/rankings/calendar"
             className="text-sm text-blue-700 hover:underline"
+            title="월별 캘린더에서 row 를 선택해 일괄 SERP 측정 가능"
           >
-            월별 캘린더
+            월별 캘린더 · 일괄 측정
           </Link>
           <Button
             variant="primary"
@@ -159,8 +151,6 @@ export default function OperationsHomePage() {
           </Button>
         </div>
       </div>
-
-      {bulkCheckOpen && <BulkCheckDialog onClose={() => setBulkCheckOpen(false)} />}
 
       {summary && <SummaryCards summary={summary} />}
 

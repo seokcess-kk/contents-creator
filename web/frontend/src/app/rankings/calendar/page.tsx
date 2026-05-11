@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import { getMonthlyCalendar, type RankingCalendar } from "@/lib/api";
 import { CalendarRow, CellLegend } from "@/components/CalendarTable";
+import BulkCheckDialog from "@/components/BulkCheckDialog";
 import { K } from "@/lib/swr";
 
 /**
@@ -18,6 +19,9 @@ export default function RankingCalendarPage() {
   const [month, setMonth] = useState(today.getMonth() + 1); // 1~12
   const [filter, setFilter] = useState("");
   const [compact, setCompact] = useState(true);
+  // 일괄 측정 선택 상태 — publication.id Set. 월 변경해도 유지 (id 는 월 무관).
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkCheckOpen, setBulkCheckOpen] = useState(false);
 
   const cellW = compact ? "w-[22px]" : "w-[28px]";
   const keyColW = compact ? "min-w-[200px]" : "min-w-[220px]";
@@ -59,6 +63,37 @@ export default function RankingCalendarPage() {
       (r.publication.url ?? "").toLowerCase().includes(filterLower) ||
       (r.publication.slug ?? "").toLowerCase().includes(filterLower),
   );
+
+  // 측정 가능한 row 만 — URL 없는 초안 제외. "전체 선택" 토글 범위.
+  const measurableRows = useMemo(
+    () => rows.filter((r) => !!r.publication.url),
+    [rows],
+  );
+  const allMeasurableSelected =
+    measurableRows.length > 0 &&
+    measurableRows.every((r) => selectedIds.has(r.publication.id));
+  const selectedCount = selectedIds.size;
+
+  const toggleSelect = useCallback((publicationId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(publicationId)) next.delete(publicationId);
+      else next.add(publicationId);
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAll = useCallback(() => {
+    setSelectedIds((prev) => {
+      const all = measurableRows.map((r) => r.publication.id);
+      const everySelected =
+        all.length > 0 && all.every((id) => prev.has(id));
+      if (everySelected) return new Set();
+      return new Set(all);
+    });
+  }, [measurableRows]);
+
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
 
   return (
     <div className="space-y-2">
@@ -113,7 +148,42 @@ export default function RankingCalendarPage() {
           className="ml-2 px-3 py-0.5 border border-gray-300 rounded text-sm w-[200px]"
         />
         <span className="text-xs text-gray-500">{rows.length}개</span>
+        <div className="flex items-center gap-2 ml-auto">
+          {selectedCount > 0 && (
+            <button
+              type="button"
+              onClick={clearSelection}
+              className="text-xs text-gray-600 hover:underline"
+              title="선택 해제"
+            >
+              선택 해제
+            </button>
+          )}
+          <span className="text-xs text-gray-700">
+            선택 <strong className="font-mono">{selectedCount}</strong>개
+          </span>
+          <button
+            type="button"
+            onClick={() => setBulkCheckOpen(true)}
+            disabled={selectedCount === 0}
+            className="px-3 py-1 text-xs bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            title={
+              selectedCount === 0
+                ? "측정할 row 를 체크박스로 선택하세요"
+                : `선택한 ${selectedCount}개 publication 의 SERP 순위 측정`
+            }
+          >
+            선택 일괄 측정
+          </button>
+        </div>
       </div>
+
+      {bulkCheckOpen && (
+        <BulkCheckDialog
+          publicationIds={Array.from(selectedIds)}
+          onClose={() => setBulkCheckOpen(false)}
+        />
+      )}
 
       <CellLegend />
 
@@ -134,7 +204,24 @@ export default function RankingCalendarPage() {
                 <th
                   className={`sticky top-0 left-0 bg-gray-50 text-left p-2 border-r border-b border-gray-200 ${keyColW} z-30`}
                 >
-                  키워드
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={allMeasurableSelected}
+                      onChange={toggleSelectAll}
+                      disabled={measurableRows.length === 0}
+                      aria-label="측정 가능한 row 전체 선택"
+                      title={
+                        measurableRows.length === 0
+                          ? "측정 가능한 row 가 없습니다"
+                          : allMeasurableSelected
+                            ? "전체 해제"
+                            : "측정 가능한 row 전체 선택"
+                      }
+                      className="cursor-pointer disabled:cursor-not-allowed"
+                    />
+                    <span>키워드</span>
+                  </div>
                 </th>
                 {dayList.map((d) => {
                   const dayDate = new Date(year, month - 1, d);
@@ -164,6 +251,8 @@ export default function RankingCalendarPage() {
                   dayList={dayList}
                   monthStr={monthStr}
                   compact={compact}
+                  selected={selectedIds.has(row.publication.id)}
+                  onToggleSelect={toggleSelect}
                 />
               ))}
             </tbody>
