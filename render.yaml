@@ -37,3 +37,9 @@ services:
         sync: false
       - key: NAVER_AD_CUSTOMER_ID
         sync: false
+      # 2026-05-11 — Playwright 브라우저 캐시 경로. Dockerfile 의 ENV 와 동일
+      # 값이지만 Render 런타임에서 ENV 가 누락되어 default cache(/opt/render/
+      # .cache/ms-playwright) 로 폴백되던 사고 차단. 빌드 시 /ms-playwright 에
+      # install 한 chromium 을 런타임에서도 같은 경로로 찾도록 보장.
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: /ms-playwright

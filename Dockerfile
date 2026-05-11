@@ -19,8 +19,12 @@ RUN mkdir -p domain application config web/api && \
           web/__init__.py web/api/__init__.py && \
     pip install -e ".[web]"
 
-# Playwright Chromium + 시스템 deps (브랜드 카드 PNG 렌더용)
-RUN playwright install --with-deps chromium && \
+# Playwright Chromium + 시스템 deps (브랜드 카드 PNG 렌더용).
+# 2026-05-11 — chromium-headless-shell 도 명시. Playwright 1.47+ 가 launch()
+# 시 별도 chrome-headless-shell 바이너리를 찾는데, `playwright install chromium`
+# 만으론 누락되는 케이스가 있어 둘 다 받아 둔다. PLAYWRIGHT_BROWSERS_PATH
+# 는 위 ENV 로 /ms-playwright 고정 (런타임에도 동일 경로).
+RUN playwright install --with-deps chromium chromium-headless-shell && \
     rm -rf /var/lib/apt/lists/*
 
 # 실제 코드 — 위 레이어들은 그대로 캐시 사용
