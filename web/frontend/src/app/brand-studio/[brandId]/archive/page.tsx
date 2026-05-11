@@ -51,8 +51,11 @@ export default function BrandArchivePage({
     return (
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <Link href="/brand-studio" className="text-sm text-blue-700 hover:underline">
-            ← 브랜드 목록
+          <Link
+            href={`/brand-studio/${encodeURIComponent(brandId)}`}
+            className="text-sm text-blue-700 hover:underline"
+          >
+            ← 브랜드 상세
           </Link>
           <h1 className="text-base font-bold text-gray-900">결과 보관함</h1>
           <span />

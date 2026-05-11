@@ -99,10 +99,10 @@ export default function BrandPlansPage({
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <Link
-          href={`/brand-studio`}
+          href={`/brand-studio/${encodeURIComponent(brandId)}`}
           className="text-sm text-blue-700 hover:underline"
         >
-          ← 브랜드 목록
+          ← 브랜드 상세
         </Link>
         <h1 className="text-base font-bold text-gray-900 truncate max-w-[50%]">
           {brand?.name ? `${brand.name} — 기획안 승인` : "기획안 승인"}

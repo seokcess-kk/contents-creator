@@ -357,6 +357,56 @@ def list_cards_by_reuse_group(reuse_group_id: str) -> list[BrandCardPlan]:
     return [_row_to_plan(cast("dict[str, Any]", r)) for r in (result.data or [])]
 
 
+def list_plan_groups_for_brand(
+    brand_id: str, *, limit: int = 50
+) -> list[dict[str, Any]]:
+    """브랜드 상세 페이지용 — reuse_group_id 별 묶음 메타.
+
+    2026-05-11 — 카드 기획안 묶음 진입점을 브랜드 상세 페이지에서 회복하기
+    위한 데이터 소스. brand_id 의 모든 plan 을 가져온 뒤 reuse_group_id 로
+    묶어 [{reuse_group_id, keyword, latest_created_at, plan_count,
+    status_counts: {draft: N, approved: N, ...}}, ...] 로 반환. created_at
+    desc 정렬 (최근 묶음이 위).
+    """
+    client = get_client()
+    result = (
+        client.table(_CARDS_TABLE)
+        .select("reuse_group_id, keyword, status, created_at")
+        .eq("brand_id", brand_id)
+        .order("created_at", desc=True)
+        .limit(limit * 10)  # 묶음당 plan 평균 3개 가정, 충분한 raw row 확보
+        .execute()
+    )
+    rows = cast("list[dict[str, Any]]", result.data or [])
+
+    groups: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        gid = r.get("reuse_group_id")
+        if not gid:
+            continue
+        existing = groups.get(gid)
+        if existing is None:
+            groups[gid] = {
+                "reuse_group_id": gid,
+                "keyword": r.get("keyword") or "",
+                "latest_created_at": r.get("created_at"),
+                "plan_count": 1,
+                "status_counts": {r.get("status") or "draft": 1},
+            }
+            continue
+        existing["plan_count"] += 1
+        st = r.get("status") or "draft"
+        existing["status_counts"][st] = existing["status_counts"].get(st, 0) + 1
+        # 최신 created_at 유지 (raw 가 desc 라 첫 등장이 최신)
+    # 정렬: latest_created_at desc
+    ordered = sorted(
+        groups.values(),
+        key=lambda g: g.get("latest_created_at") or "",
+        reverse=True,
+    )
+    return ordered[:limit]
+
+
 # ── 직렬화 헬퍼 ─────────────────────────────────────────────
 
 

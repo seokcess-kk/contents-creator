@@ -636,6 +636,55 @@ class TestGetPlans:
         assert resp.status_code == 404
 
 
+# ── 6b. GET /brands/{id}/plan-groups ────────────────────────
+
+
+class TestListPlanGroups:
+    """2026-05-11 — 브랜드 상세 페이지의 기획안 묶음 목록 API."""
+
+    def test_unknown_brand_404(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_brand", lambda _id: None)
+        resp = client.get("/api/brand-studio/brands/missing/plan-groups")
+        assert resp.status_code == 404
+
+    def test_returns_grouped_summary(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_brand", lambda _id: _profile())
+        groups = [
+            {
+                "reuse_group_id": "g-1",
+                "keyword": "다이어트",
+                "latest_created_at": "2026-05-11T03:00:00+00:00",
+                "plan_count": 3,
+                "status_counts": {"draft": 2, "approved": 1},
+            },
+            {
+                "reuse_group_id": "g-2",
+                "keyword": "한의원",
+                "latest_created_at": "2026-05-10T02:00:00+00:00",
+                "plan_count": 2,
+                "status_counts": {"published": 2},
+            },
+        ]
+        monkeypatch.setattr(
+            brand_studio.storage,
+            "list_plan_groups_for_brand",
+            lambda _bid: groups,
+        )
+
+        resp = client.get("/api/brand-studio/brands/brand-1/plan-groups")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["count"] == 2
+        assert [g["reuse_group_id"] for g in body["items"]] == ["g-1", "g-2"]
+        assert body["items"][0]["status_counts"]["approved"] == 1
+
+
 # ── 7. approve / reject ─────────────────────────────────────
 
 

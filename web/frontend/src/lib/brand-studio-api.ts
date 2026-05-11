@@ -389,6 +389,25 @@ export function getPlans(groupId: string): Promise<BrandCardPlan[]> {
   return request(`/plans/${encodeURIComponent(groupId)}`);
 }
 
+// 2026-05-11 — 브랜드 상세 페이지용 기획안 묶음 목록.
+export interface PlanGroupSummary {
+  reuse_group_id: string;
+  keyword: string;
+  latest_created_at: string | null;
+  plan_count: number;
+  status_counts: Record<string, number>;
+}
+
+export interface PlanGroupListResponse {
+  brand_id: string;
+  count: number;
+  items: PlanGroupSummary[];
+}
+
+export function listPlanGroups(brandId: string): Promise<PlanGroupListResponse> {
+  return request(`/brands/${encodeURIComponent(brandId)}/plan-groups`);
+}
+
 export function approvePlan(planId: string): Promise<BrandCardPlan> {
   return request(`/plans/${encodeURIComponent(planId)}/approve`, {
     method: "POST",

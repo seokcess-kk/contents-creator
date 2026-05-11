@@ -441,6 +441,20 @@ def get_plans(group_id: str) -> list[BrandCardPlan]:
     return plans
 
 
+@router.get("/brands/{brand_id}/plan-groups")
+def list_plan_groups(brand_id: str) -> dict[str, Any]:
+    """2026-05-11 — 브랜드 상세 페이지의 기획안 묶음 진입점.
+
+    brand_id 의 모든 plan 을 reuse_group_id 별 묶음 메타로 집계해 반환.
+    그룹마다 keyword / 최근 생성 시각 / plan 수 / status 분포 포함.
+    클라이언트가 그룹 카드를 클릭하면 /plans/{group_id} 검토 페이지로 이동.
+    """
+    if storage.get_brand(brand_id) is None:
+        raise HTTPException(status_code=404, detail="Brand not found")
+    groups = storage.list_plan_groups_for_brand(brand_id)
+    return {"brand_id": brand_id, "count": len(groups), "items": groups}
+
+
 # ── 7. approve / reject / edit ──────────────────────────────
 
 

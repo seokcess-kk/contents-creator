@@ -160,17 +160,32 @@ function BrandCard({
   onOpenSources: () => void;
   onOpenMedia: () => void;
 }) {
+  // 2026-05-11 — 상세 페이지(/brand-studio/[brandId])를 진입점으로 단일화.
+  // 기존엔 카드 안의 작은 버튼이 유일한 동선이라 페이지 떠나면 기획안 묶음을
+  // 찾을 방법이 없었음. "상세 →" 가 primary CTA. sources/미디어는 보조.
   const created = brand.created_at
     ? new Date(brand.created_at).toLocaleDateString("ko-KR")
     : "-";
   return (
     <div className="border border-gray-200 rounded p-3 bg-white space-y-2">
-      <div>
-        <div className="text-sm font-semibold text-gray-900 truncate" title={brand.name}>
-          {brand.name}
+      {brand.id ? (
+        <Link
+          href={`/brand-studio/${encodeURIComponent(brand.id)}`}
+          className="block hover:text-blue-700 transition-colors"
+        >
+          <div className="text-sm font-semibold text-gray-900 truncate" title={brand.name}>
+            {brand.name}
+          </div>
+          <div className="text-xs text-gray-500 truncate">{brand.slug}</div>
+        </Link>
+      ) : (
+        <div>
+          <div className="text-sm font-semibold text-gray-900 truncate" title={brand.name}>
+            {brand.name}
+          </div>
+          <div className="text-xs text-gray-500 truncate">{brand.slug}</div>
         </div>
-        <div className="text-xs text-gray-500 truncate">{brand.slug}</div>
-      </div>
+      )}
       <div className="text-xs text-gray-600 space-y-0.5">
         <div className="truncate" title={brand.homepage_url}>
           🌐 {brand.homepage_url || "(URL 미등록)"}
@@ -181,14 +196,14 @@ function BrandCard({
       <div className="flex flex-wrap gap-1.5 pt-1">
         {brand.id ? (
           <Link
-            href={`/brand-studio/${encodeURIComponent(brand.id)}/new`}
+            href={`/brand-studio/${encodeURIComponent(brand.id)}`}
             className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
           >
-            카드 생성
+            상세 →
           </Link>
         ) : (
           <span className="px-2 py-1 text-xs bg-gray-300 text-gray-600 rounded cursor-not-allowed">
-            카드 생성 (id 없음)
+            상세 (id 없음)
           </span>
         )}
         <button
@@ -196,6 +211,7 @@ function BrandCard({
           onClick={onOpenSources}
           disabled={!brand.id}
           className="px-2 py-1 text-xs border border-gray-300 text-gray-700 rounded hover:bg-gray-50 disabled:opacity-50"
+          title="sources 빠른 열기"
         >
           sources
         </button>
@@ -204,6 +220,7 @@ function BrandCard({
           onClick={onOpenMedia}
           disabled={!brand.id}
           className="px-2 py-1 text-xs border border-gray-300 text-gray-700 rounded hover:bg-gray-50 disabled:opacity-50"
+          title="미디어 빠른 열기"
         >
           미디어
         </button>

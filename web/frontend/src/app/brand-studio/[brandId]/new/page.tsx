@@ -179,8 +179,11 @@ export default function BrandCardNewPage({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <Link href="/brand-studio" className="text-sm text-blue-700 hover:underline">
-          ← 브랜드 목록
+        <Link
+          href={`/brand-studio/${encodeURIComponent(brandId)}`}
+          className="text-sm text-blue-700 hover:underline"
+        >
+          ← 브랜드 상세
         </Link>
         <h1 className="text-base font-bold text-gray-900 truncate max-w-[60%]">
           {brand ? `${brand.name} — 카드 생성` : "카드 생성"}
@@ -283,10 +286,10 @@ export default function BrandCardNewPage({
               <div className="text-xs text-gray-500">
                 등록된 sources 없음.{" "}
                 <Link
-                  href="/brand-studio"
+                  href={`/brand-studio/${encodeURIComponent(brandId)}`}
                   className="text-blue-700 hover:underline"
                 >
-                  목록 페이지 → sources 관리
+                  브랜드 상세 → sources 관리
                 </Link>{" "}
                 에서 업로드하세요.
               </div>
@@ -356,7 +359,7 @@ export default function BrandCardNewPage({
 
           <div className="flex justify-end gap-2 pt-2">
             <Link
-              href="/brand-studio"
+              href={`/brand-studio/${encodeURIComponent(brandId)}`}
               className="px-3 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded"
             >
               취소
