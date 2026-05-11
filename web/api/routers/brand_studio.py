@@ -886,11 +886,23 @@ def _orientation_label(width: int, height: int) -> str:
 # ── 헬퍼 ────────────────────────────────────────────────────
 
 
-_SAFE_FILENAME = re.compile(r"[^A-Za-z0-9._-]")
+# 2026-05-11 — 한글 등 유니코드 파일명 보존. 저장은 sha256 기반이라 file_name
+# 은 DB text 표시용. path traversal 방지를 위해 경로 분리자(/, \, NUL)·제어
+# 문자만 제거. 기존 regex `[^A-Za-z0-9._-]` 는 한글까지 _ 로 치환해 미리보기
+# 깨짐 유발 → ASCII whitelist 대신 blacklist 로 전환.
+_UNSAFE_FILENAME_CHARS = re.compile(r"[\x00-\x1f\x7f/\\]")
+_MAX_FILENAME_LEN = 255
 
 
 def _sanitize_filename(name: str) -> str:
-    """경로 분리자·제어 문자 제거. 표시용 이름 (저장은 sha256 기반)."""
+    """경로 분리자·제어 문자 제거. 표시용 이름 (저장은 sha256 기반).
+
+    유니코드 문자(한글/일본어/중국어/이모지)는 그대로 보존. Path(name).name
+    이 디렉토리 부분 잘라내고, 추가로 백슬래시·NUL·DEL·C0 control 만 _ 로
+    치환. 결과가 비면 "upload.bin" 폴백. 길이는 DB / OS 안전 마진 255 자로 컷.
+    """
     base = Path(name).name
-    cleaned = _SAFE_FILENAME.sub("_", base)
-    return cleaned or "upload.bin"
+    cleaned = _UNSAFE_FILENAME_CHARS.sub("_", base).strip()
+    if cleaned in ("", ".", ".."):
+        return "upload.bin"
+    return cleaned[:_MAX_FILENAME_LEN]

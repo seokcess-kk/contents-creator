@@ -436,6 +436,43 @@ class TestSourcesPresigned:
         assert record.source_type == "campaign"
         assert "안녕" in (record.content_text or "")
 
+    def test_confirm_preserves_unicode_filename(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """2026-05-11 — 한글 파일명이 _sanitize_filename 에서 _ 치환되던 버그 회귀 차단.
+
+        저장은 sha256 기반이라 file_name 은 표시 전용. ASCII whitelist 가
+        '원장 프로필.docx' 를 '__ ___.docx' 로 망가뜨리던 동작을 차단하고
+        유니코드 그대로 보존하는지 검증.
+        """
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_brand", lambda _id: _profile())
+        body = b"hello"
+        sha = hashlib.sha256(body).hexdigest()
+        monkeypatch.setattr(brand_studio.storage_signed, "download_object", lambda _p: body)
+
+        captured: dict[str, Any] = {}
+
+        def fake_insert(record: BrandMessageSource) -> BrandMessageSource:
+            captured["record"] = record
+            return record.model_copy(update={"id": "s-utf8"})
+
+        monkeypatch.setattr(brand_studio.storage, "insert_message_source", fake_insert)
+
+        path = f"brand-1/sources/{sha}.txt"
+        resp = client.post(
+            "/api/brand-studio/brands/brand-1/sources/confirm",
+            json={
+                "storage_path": path,
+                "source_type": "brand_common",
+                "file_name": "원장 프로필.txt",
+                "sha256": sha,
+            },
+        )
+        assert resp.status_code == 201
+        assert captured["record"].file_name == "원장 프로필.txt"
+
 
 # ── 4. campaign-inputs ──────────────────────────────────────
 
