@@ -363,10 +363,18 @@ export interface GeneratePlansRequest {
   allow_reuse_override: boolean;
 }
 
+/** 2026-05-11 — 동기 list[BrandCardPlan] → 비동기 JobSubmitResponse 로 전환.
+ * Vercel rewrites proxy timeout (502) 회피. 클라이언트는 job_id 를 받아
+ * GET /api/jobs/{job_id} 로 polling 후 result.reuse_group_id 사용.
+ */
+export interface GeneratePlansResponse {
+  job_id: string;
+}
+
 export function generatePlans(
   brandId: string,
   req: GeneratePlansRequest,
-): Promise<BrandCardPlan[]> {
+): Promise<GeneratePlansResponse> {
   return request(`/brands/${encodeURIComponent(brandId)}/plans`, {
     method: "POST",
     body: JSON.stringify(req),

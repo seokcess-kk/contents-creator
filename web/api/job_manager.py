@@ -39,7 +39,7 @@ from application.orchestrator import (
 )
 from application.ranking_bulk_check import bulk_check_rankings
 from config.settings import settings
-from domain.brand_card.model import RenderedCardSet
+from domain.brand_card.model import BrandCardPlanGenerateResult, RenderedCardSet
 from domain.ranking.model import RankingCheckSummary
 from web.api import job_store
 from web.api.ws_reporter import WebSocketProgressReporter
@@ -176,6 +176,17 @@ class JobManager:
         클라이언트 UX 를 막아 background 처리. 진행은 GET /api/jobs/{job_id} 폴링.
         """
         return self._submit("brand_card_render", params)
+
+    def submit_brand_card_plan_generate(self, params: dict[str, Any]) -> Job:
+        """브랜드 카드 기획안 생성 job 제출.
+
+        params: {brand_id, keyword, expression_level?, strategy_count?,
+        allow_reuse_override?}.
+        strategy_count × (plan LLM + compliance LLM) 동기 처리가 30~60s 에
+        달해 Vercel rewrites proxy timeout (502) 을 일으키던 문제를 background
+        처리로 회피. 진행은 GET /api/jobs/{job_id} 폴링.
+        """
+        return self._submit("brand_card_plan_generate", params)
 
     def _submit(self, job_type: str, params: dict[str, Any]) -> Job:
         job_id = uuid.uuid4().hex[:12]
@@ -389,6 +400,7 @@ class JobManager:
         | ValidateResult
         | RankingCheckSummary
         | RenderedCardSet
+        | BrandCardPlanGenerateResult
     ):
         p = job.params
 
@@ -437,6 +449,24 @@ class JobManager:
                 output_root=Path(output_root_str) if output_root_str else None,
                 brand_name=p.get("brand_name"),
                 brand_url=p.get("brand_url"),
+            )
+
+        if job.type == "brand_card_plan_generate":
+            from application.brand_card_orchestrator import generate_card_plan
+
+            plans = generate_card_plan(
+                brand_id=p["brand_id"],
+                keyword=p["keyword"],
+                expression_level=p.get("expression_level", "balanced"),
+                strategy_count=p.get("strategy_count", 3),
+                allow_reuse_override=p.get("allow_reuse_override", False),
+            )
+            reuse_group_id = plans[0].reuse_group_id if plans else ""
+            return BrandCardPlanGenerateResult(
+                reuse_group_id=reuse_group_id,
+                brand_id=p["brand_id"],
+                keyword=p["keyword"],
+                plans=plans,
             )
 
         msg = f"Unknown job type: {job.type}"

@@ -51,6 +51,15 @@ export function useJobPolling(
   });
 
   useEffect(() => {
+    // 2026-05-11 — id 가 빈 문자열이면 polling 비활성. brand-studio 의 카드
+    // 기획 비동기 흐름은 onSubmit 직후 job_id 를 받을 때까지 jobId state 가
+    // null/"" 인 시간이 있어, hook 가 무의미한 404 누적으로 aborted 되는
+    // 사고를 차단한다.
+    if (!id) {
+      setState({ job: null, error: null, aborted: false });
+      return;
+    }
+
     let active = true;
     let interval: ReturnType<typeof setInterval> | undefined;
     let consecutive404 = 0;

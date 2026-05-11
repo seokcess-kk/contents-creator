@@ -483,34 +483,41 @@ class TestGeneratePlans:
         assert resp.status_code == 404
 
     def test_generates_plans(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        """2026-05-11 — 동기 list 응답 → 비동기 JobSubmitResponse 전환.
+
+        Vercel rewrites proxy timeout (502) 회피를 위해 JobManager 경유. 라우터는
+        즉시 202 + job_id 반환, 실제 LLM 호출은 background.
+        """
+        from unittest.mock import MagicMock
+
+        from web.api import main as main_module
         from web.api.routers import brand_studio
 
         monkeypatch.setattr(brand_studio.storage, "get_brand", lambda _id: _profile())
+
+        fake_job = MagicMock()
+        fake_job.id = "job-plan-xyz"
         monkeypatch.setattr(
-            brand_studio.orch,
-            "generate_card_plan",
-            lambda **_: [_plan("trust_first"), _plan("empathy_first", "p-2")],
+            main_module.job_manager,
+            "submit_brand_card_plan_generate",
+            lambda params: fake_job,
         )
+
         resp = client.post(
             "/api/brand-studio/brands/brand-1/plans",
             json={"keyword": "kw", "strategy_count": 2},
         )
-        assert resp.status_code == 201
-        body = resp.json()
-        assert len(body) == 2
-        assert {p["strategy"] for p in body} == {"trust_first", "empathy_first"}
+        assert resp.status_code == 202
+        assert resp.json()["job_id"] == "job-plan-xyz"
 
     def test_invalid_strategy_count_400(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """라우터 사전 검증 — JobManager 진입 전 400 응답."""
         from web.api.routers import brand_studio
 
         monkeypatch.setattr(brand_studio.storage, "get_brand", lambda _id: _profile())
 
-        def _raise(**_: Any) -> list[BrandCardPlan]:
-            raise ValueError("strategy_count 는 1~4")
-
-        monkeypatch.setattr(brand_studio.orch, "generate_card_plan", _raise)
         resp = client.post(
             "/api/brand-studio/brands/brand-1/plans",
             json={"keyword": "kw", "strategy_count": 5},

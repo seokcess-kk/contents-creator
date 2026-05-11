@@ -12,6 +12,7 @@ import {
   type BrandMessageSource,
   type BrandProfile,
 } from "@/lib/brand-studio-api";
+import { useJobPolling } from "@/lib/useJobPolling";
 
 const EXPRESSION_LEVELS: { value: string; label: string; help: string }[] = [
   { value: "safe", label: "안전 (safe)", help: "광고법 보수적 — 사실 위주" },
@@ -53,6 +54,9 @@ export default function BrandCardNewPage({
   const [progressText, setProgressText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reuseBlocked, setReuseBlocked] = useState(false);
+  // 2026-05-11 비동기 JobManager 전환 — 기획 LLM 30~60s 동기 호출의 502 회피.
+  const [planJobId, setPlanJobId] = useState<string | null>(null);
+  const polling = useJobPolling(planJobId ?? "");
 
   const initialize = useCallback(async () => {
     setLoading(true);
@@ -96,6 +100,7 @@ export default function BrandCardNewPage({
     setError(null);
     setReuseBlocked(false);
     setSubmitting(true);
+    setPlanJobId(null);
     try {
       setProgressText("입력 저장 중…");
       await saveCampaignInput(brandId, {
@@ -109,31 +114,67 @@ export default function BrandCardNewPage({
         reference_image_paths: [],
       });
 
-      setProgressText("AI 가 카드를 기획하고 있습니다… (5~15초)");
-      const plans = await generatePlans(brandId, {
+      setProgressText("AI 가 카드를 기획하고 있습니다… (15~60초)");
+      const { job_id } = await generatePlans(brandId, {
         keyword: keyword.trim(),
         expression_level: expressionLevel,
         strategy_count: strategyCount,
         allow_reuse_override: allowReuseOverride,
       });
-      const groupId = plans[0]?.reuse_group_id;
-      if (!groupId) {
-        throw new Error("응답에 reuse_group_id 가 없습니다");
-      }
-      router.push(
-        `/brand-studio/${encodeURIComponent(brandId)}/plans/${encodeURIComponent(groupId)}`,
-      );
+      // 이후 진행은 useJobPolling + useEffect 가 담당. submitting/progressText 는
+      // job 종료 effect 에서 정리.
+      setPlanJobId(job_id);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "생성 실패";
       if (msg.includes("409")) {
         setReuseBlocked(true);
       }
       setError(msg);
-    } finally {
       setSubmitting(false);
       setProgressText(null);
     }
   }
+
+  // 2026-05-11 — job polling 결과 반영. terminal status 시 진행 종료 처리.
+  useEffect(() => {
+    if (!planJobId || !polling.job) return;
+    const job = polling.job;
+    if (job.status === "succeeded") {
+      const result = job.result as { reuse_group_id?: string } | null;
+      const groupId = result?.reuse_group_id;
+      if (groupId) {
+        router.push(
+          `/brand-studio/${encodeURIComponent(brandId)}/plans/${encodeURIComponent(groupId)}`,
+        );
+        return;
+      }
+      setError("기획 결과에 reuse_group_id 가 없습니다");
+      setSubmitting(false);
+      setProgressText(null);
+      setPlanJobId(null);
+    } else if (
+      job.status === "failed" ||
+      job.status === "timed_out" ||
+      job.status === "cancelled" ||
+      job.status === "orphaned"
+    ) {
+      const msg = job.error ?? `기획 작업이 ${job.status} 상태로 종료`;
+      if (msg.includes("409")) setReuseBlocked(true);
+      setError(msg);
+      setSubmitting(false);
+      setProgressText(null);
+      setPlanJobId(null);
+    }
+  }, [polling.job, planJobId, brandId, router]);
+
+  // polling aborted (백엔드 재시작 등) — 진행 상태 정리.
+  useEffect(() => {
+    if (!polling.aborted) return;
+    setError(polling.error ?? "기획 작업 추적 실패");
+    setSubmitting(false);
+    setProgressText(null);
+    setPlanJobId(null);
+  }, [polling.aborted, polling.error]);
 
   return (
     <div className="space-y-3">

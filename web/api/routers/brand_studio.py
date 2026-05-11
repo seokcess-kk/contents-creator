@@ -377,23 +377,34 @@ def save_campaign_input(brand_id: str, req: CampaignInputRequest) -> CardCampaig
 # ── 5. POST /plans (generate) ───────────────────────────────
 
 
-@router.post("/brands/{brand_id}/plans", status_code=201)
-def generate_plans(brand_id: str, req: GeneratePlansRequest) -> list[BrandCardPlan]:
-    """[B5] LLM 동기 호출. 5~15s 소요 — 클라이언트는 spinner."""
+@router.post("/brands/{brand_id}/plans", status_code=202)
+def generate_plans(brand_id: str, req: GeneratePlansRequest) -> JobSubmitResponse:
+    """[B5] LLM 비동기 호출. JobManager 경유.
+
+    2026-05-11 fix — strategy_count × (plan LLM + compliance LLM) 동기 처리가
+    30~60s 에 달해 Vercel rewrites proxy timeout (502) 을 일으키던 문제를
+    background 처리로 회피. 즉시 job_id 반환 후 GET /api/jobs/{job_id} 로
+    polling. 완료 시 result.reuse_group_id 로 검토 화면 이동.
+    """
     if storage.get_brand(brand_id) is None:
         raise HTTPException(status_code=404, detail="Brand not found")
-    try:
-        return orch.generate_card_plan(
-            brand_id=brand_id,
-            keyword=req.keyword,
-            expression_level=req.expression_level,
-            strategy_count=req.strategy_count,
-            allow_reuse_override=req.allow_reuse_override,
+    if not 1 <= req.strategy_count <= 4:
+        raise HTTPException(
+            status_code=400, detail=f"strategy_count 는 1~4: {req.strategy_count}"
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except BrandCardError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    from web.api.main import job_manager
+
+    job = job_manager.submit_brand_card_plan_generate(
+        {
+            "brand_id": brand_id,
+            "keyword": req.keyword,
+            "expression_level": req.expression_level,
+            "strategy_count": req.strategy_count,
+            "allow_reuse_override": req.allow_reuse_override,
+        },
+    )
+    return JobSubmitResponse(job_id=job.id)
 
 
 # ── 6. GET /plans/{group_id} ────────────────────────────────

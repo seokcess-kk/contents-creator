@@ -223,6 +223,24 @@ class RenderedCardSet(BaseModel):
     manifest_path: Path  # cards-manifest.json
 
 
+class BrandCardPlanGenerateResult(BaseModel):
+    """generate_card_plan 의 JobManager 비동기 결과.
+
+    LLM 호출 시간이 30~60s 에 달해 Vercel rewrites proxy timeout (502) 을
+    초과하던 동기 응답을 JobManager 경유 비동기로 전환. 클라이언트는 즉시
+    job_id 를 받고 GET /api/jobs/{job_id} 로 polling.
+
+    `plans` 는 storage.insert_card_plan 으로 저장된 묶음 (모두 status=draft,
+    같은 reuse_group_id 공유). frontend 는 reuse_group_id 로 검토 화면으로
+    이동한다.
+    """
+
+    reuse_group_id: str
+    brand_id: str
+    keyword: str
+    plans: list[BrandCardPlan]
+
+
 # ── 예외 ──────────────────────────────────────────────
 
 
