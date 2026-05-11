@@ -203,11 +203,19 @@ def _render_with_playwright(
 
 
 # data-text-block 속성을 가진 element 의 overflow 검출 JS.
+# 2026-05-11 — 임계값을 1px → 8px 로 완화. line-height 반올림 오차로 1~4px
+# 미세 overflow 가 자주 발생 (예: scrollH=302 vs clientH=298). 시각적으로
+# 거의 안 보이는 차이로 카드가 렌더 거부되어 운영 차단되던 문제. 8px 까지는
+# 텍스트 잘림이 사실상 안 보이는 허용 범위.
 _OVERFLOW_DETECT_JS = """
 () => {
+  const TOLERANCE_PX = 8;
   const blocks = Array.from(document.querySelectorAll('[data-text-block]'));
   return blocks
-    .filter(el => el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1)
+    .filter(el =>
+      el.scrollWidth > el.clientWidth + TOLERANCE_PX ||
+      el.scrollHeight > el.clientHeight + TOLERANCE_PX
+    )
     .map(el => ({
       block: el.getAttribute('data-text-block'),
       scrollW: el.scrollWidth,
