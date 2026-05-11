@@ -1,4 +1,9 @@
-FROM python:3.11-slim
+# 2026-05-11 — Debian Bookworm 명시 고정. python:3.11-slim 의 floating base 가
+# Debian Trixie (13) 로 바뀌면서 Playwright 의 --with-deps 가 "OS not
+# officially supported" 로 Ubuntu 20.04 폴백 → Debian Trixie 에 없는 패키지
+# (ttf-unifont, ttf-ubuntu-font-family) install 실패. Playwright 가 공식
+# 지원하는 Debian 12 (Bookworm) 으로 고정해 system deps 정합성 회복.
+FROM python:3.11-slim-bookworm
 
 WORKDIR /app
 
