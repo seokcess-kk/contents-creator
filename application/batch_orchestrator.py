@@ -913,10 +913,16 @@ def _list_overnight_queued_batches(*, batch_id: str | None = None) -> list[Keywo
     enqueue 시 보류된 상태로 status=queued 로 남아 있음. dispatch_overnight 트리거 시
     같이 처리. batch.status 는 queued/running 둘 다 (auto 의 priority<=3 이 즉시 실행되며
     batch 가 running 으로 전이된 경우 포함).
+
+    2026-05-11 fix — batch_id 명시 호출 시 mode 검사 우회. mode=now batch 도
+    backend 컨테이너 재시작으로 worker pool 휘발 → stuck 상태가 되면 운영자가
+    명시적으로 재dispatch 할 수 있게 (retry_item 이 running 도 허용하는 것과
+    같은 운영 권한). 무인 cron 호출(batch_id=None)은 기존대로 overnight/auto
+    만 처리해 안전성 유지.
     """
     if batch_id is not None:
         b = storage.get_batch(batch_id)
-        if b is None or b.mode not in _DISPATCH_OVERNIGHT_MODES:
+        if b is None:
             return []
         if b.status not in ("queued", "running"):
             return []

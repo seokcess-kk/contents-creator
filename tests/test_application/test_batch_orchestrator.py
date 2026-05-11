@@ -948,11 +948,22 @@ class TestDispatchOvernightBatches:
             batch_orchestrator.dispatch_overnight_batches()
         notif.send_overnight_dispatched.assert_not_called()
 
-    def test_specific_batch_not_overnight_skips(self, storage_mock: Any) -> None:
-        """batch_id 가 overnight/auto 가 아니면 skip."""
+    def test_specific_batch_now_mode_dispatched(
+        self, storage_mock: Any, manager_mock: Any
+    ) -> None:
+        """2026-05-11 — batch_id 명시 호출 시 mode 무관 dispatch.
+
+        backend 컨테이너 재시작으로 mode=now batch 의 worker 가 휘발해 stuck
+        되면 운영자가 명시 트리거로 재dispatch 할 수 있어야 함. 무인 cron
+        호출(batch_id=None)은 기존대로 overnight/auto 만 처리.
+        """
         storage_mock.get_batch.return_value = _batch(id="b-now", mode="now", status="queued")
+        storage_mock.list_items.return_value = [
+            _item(id="i-now-1", batch_id="b-now"),
+        ]
         result = batch_orchestrator.dispatch_overnight_batches(batch_id="b-now")
-        assert result["dispatched_batches"] == 0
+        assert result["dispatched_batches"] == 1
+        assert result["dispatched_items"] == 1
 
     def test_auto_mode_batch_dispatched(self, storage_mock: Any, manager_mock: Any) -> None:
         """Phase 3 — mode=auto batch 도 dispatch_overnight 가 처리. priority 라우팅으로
