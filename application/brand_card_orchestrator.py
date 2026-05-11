@@ -12,6 +12,7 @@ SPEC-BRAND-CARD §15 진입점 2개로 분리 (D3):
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -449,6 +450,12 @@ def _resolve_image_url(
 # ── 내부 헬퍼 ─────────────────────────────────────────────────
 
 
+_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+
+
 def _make_supabase_media_resolver(cache_dir: Path):  # type: ignore[no-untyped-def]
     """asset_id → 로컬 file path. Supabase Storage 에서 다운로드 후 temp 저장.
 
@@ -458,6 +465,10 @@ def _make_supabase_media_resolver(cache_dir: Path):  # type: ignore[no-untyped-d
 
     cache_dir 안에 sha256 기반 파일명으로 저장 — 같은 asset 두 번 호출 시
     재다운로드 없음. render_card_set 종료 후 work_dir 정리 시 함께 삭제.
+
+    UUID guard — 환각 ID (예: 'clinic_consultation_desk_daegu_v1') 가 들어오면
+    Supabase 호출이 PostgreSQL 22P02 (invalid uuid syntax) 로 터지던 사고 차단.
+    형식 검증 통과한 ID 만 storage 호출.
     """
     from domain.brand_card.storage_signed import download_object
 
@@ -467,6 +478,11 @@ def _make_supabase_media_resolver(cache_dir: Path):  # type: ignore[no-untyped-d
     def resolve(asset_id: str) -> Path | None:
         if asset_id in resolved:
             return resolved[asset_id]
+        if not _UUID_RE.match(asset_id):
+            logger.warning(
+                "media_resolver.invalid_uuid id=%s — skip Supabase 호출", asset_id
+            )
+            return None
         asset = storage.get_media_asset(asset_id)
         if asset is None:
             logger.warning("media_resolver.asset_not_found id=%s", asset_id)

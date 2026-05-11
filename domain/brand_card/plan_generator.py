@@ -11,6 +11,7 @@ SPEC-BRAND-CARD §11 (모델) + §12 [B5] + §7 (표현 강도) + §8 (BRAND_LEN
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from anthropic.types import (
@@ -85,25 +86,42 @@ def generate_brand_card_plan(
     return _sanitize_image_fields(plan, merged_assets)
 
 
+_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+
+
 def _sanitize_image_fields(plan: BrandCardPlan, merged: MergedAssets) -> BrandCardPlan:
     """블록의 image_asset_id / ai_image_prompt 정합성 후처리.
 
-    1) image_asset_id 가 미디어 라이브러리에 없는 ID 면 None 으로 정정 (환각 제거)
-    2) image_asset_id 와 ai_image_prompt 가 둘 다 비어있으면 카드 타입 기반
+    1) image_asset_id 가 UUID 형식이 아니면 환각으로 보고 None 정정
+       (예: 'clinic_consultation_desk_daegu_v1' 같은 LLM 환각).
+    2) UUID 형식이지만 미디어 라이브러리에 없는 ID 도 None 정정.
+    3) image_asset_id 와 ai_image_prompt 가 둘 다 비어있으면 카드 타입 기반
        default ai_image_prompt 자동 생성 (placeholder 빈 카드 방지).
 
     renderer 가 image_asset_id 우선 → ai_image_prompt fallback 이라 환각 ID 가
-    남아있으면 매칭 실패 후 prompt 도 없어 빈 placeholder 로 떨어졌음.
+    남아있으면 매칭 실패 후 prompt 도 없어 빈 placeholder 로 떨어졌고, 더
+    심각하게는 Supabase 호출 시 PostgreSQL 22P02 (invalid uuid syntax) 발생.
     """
     valid_ids = {a.id for a in merged.media_assets if a.id}
     fixed_blocks: list[CardBlock] = []
     for b in plan.blocks:
         new_asset_id = b.image_asset_id
-        if new_asset_id and new_asset_id not in valid_ids:
-            logger.warning(
-                "plan_generator.invalid_image_asset_id=%s — None 으로 정정", new_asset_id
-            )
-            new_asset_id = None
+        if new_asset_id:
+            if not _UUID_RE.match(new_asset_id):
+                logger.warning(
+                    "plan_generator.non_uuid_image_asset_id=%s — None 정정 (환각)",
+                    new_asset_id,
+                )
+                new_asset_id = None
+            elif new_asset_id not in valid_ids:
+                logger.warning(
+                    "plan_generator.unknown_image_asset_id=%s — None 정정",
+                    new_asset_id,
+                )
+                new_asset_id = None
         new_prompt = (b.ai_image_prompt or "").strip() or None
         if new_asset_id is None and new_prompt is None:
             new_prompt = _default_ai_image_prompt(b.card_type)

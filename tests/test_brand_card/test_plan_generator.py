@@ -334,14 +334,48 @@ class TestSanitizeImageFields:
         assert "no text" in (fixed.blocks[0].ai_image_prompt or "")
         assert "no people" in (fixed.blocks[0].ai_image_prompt or "")
 
-    def test_valid_id_kept(self) -> None:
-        """미디어 라이브러리에 존재하는 ID 는 그대로 유지."""
+    def test_non_uuid_id_rejected_even_if_in_valid_ids(self) -> None:
+        """2026-05-11 — UUID 형식이 아니면 valid_ids 검사 전에 즉시 None.
+
+        Supabase brand_media_assets.id 는 UUID 컬럼. 환각 string ID 가 어쩌다
+        valid_ids 에 포함되어 있어도 Supabase 호출 시 22P02 invalid uuid 에러.
+        UUID 검증을 사전에 강제.
+        """
         plan = self._plan_with_blocks(
             [
                 CardBlock(
                     card_type="hero",
                     headline="hi",
-                    image_asset_id="doctor-1",
+                    image_asset_id="clinic_consultation_desk_daegu_v1",
+                    ai_image_prompt=None,
+                    recommended_position="after_intro",
+                ),
+            ]
+        )
+        # 일부러 환각 ID 를 valid_ids 에 포함시켜도 — UUID 가드가 우선
+        merged = MergedAssets(
+            media_assets=[
+                BrandMediaAsset(
+                    id="clinic_consultation_desk_daegu_v1",  # 비정상 UUID
+                    brand_id="b-1",
+                    type="other",
+                    file_sha256="a" * 64,
+                ),
+            ]
+        )
+        fixed = _sanitize_image_fields(plan, merged)
+        assert fixed.blocks[0].image_asset_id is None
+        assert fixed.blocks[0].ai_image_prompt is not None
+
+    def test_valid_id_kept(self) -> None:
+        """미디어 라이브러리에 존재하는 UUID ID 는 그대로 유지."""
+        valid_uuid = "01234567-89ab-cdef-0123-456789abcdef"
+        plan = self._plan_with_blocks(
+            [
+                CardBlock(
+                    card_type="hero",
+                    headline="hi",
+                    image_asset_id=valid_uuid,
                     ai_image_prompt=None,
                     recommended_position="after_intro",
                 ),
@@ -350,7 +384,7 @@ class TestSanitizeImageFields:
         merged = MergedAssets(
             media_assets=[
                 BrandMediaAsset(
-                    id="doctor-1",
+                    id=valid_uuid,
                     brand_id="b-1",
                     type="doctor",
                     file_sha256="a" * 64,
@@ -358,7 +392,7 @@ class TestSanitizeImageFields:
             ]
         )
         fixed = _sanitize_image_fields(plan, merged)
-        assert fixed.blocks[0].image_asset_id == "doctor-1"
+        assert fixed.blocks[0].image_asset_id == valid_uuid
         # 유효 asset_id 가 있으니 ai_image_prompt 는 폴백 안 함
         assert fixed.blocks[0].ai_image_prompt is None
 
