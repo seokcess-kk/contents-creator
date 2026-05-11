@@ -520,9 +520,14 @@ def submit_render(group_id: str, req: RenderRequest) -> JobSubmitResponse:
 
     from web.api.main import job_manager
 
+    # 2026-05-11 — Job.keyword 가 빈 string 이면 /jobs/{id} 화면에 "(키워드 없음)"
+    # 으로 표시되던 버그 차단. approved plan 의 keyword 를 그대로 가져온다
+    # (한 묶음 = 한 키워드).
+    keyword = approved[0].keyword or ""
     job = job_manager.submit_brand_card_render(
         {
             "reuse_group_id": group_id,
+            "keyword": keyword,
             "brand_name": req.brand_name,
             "brand_url": req.brand_url,
             "output_root": str(_resolve_output_root()),

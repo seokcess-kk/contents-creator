@@ -45,11 +45,16 @@ def _profile(**overrides: Any) -> BrandProfile:
     return BrandProfile(**base)
 
 
-def _plan(strategy: str = "trust_first", plan_id: str = "p-1") -> BrandCardPlan:
+def _plan(
+    strategy: str = "trust_first",
+    plan_id: str = "p-1",
+    *,
+    keyword: str = "kw",
+) -> BrandCardPlan:
     return BrandCardPlan(
         id=plan_id,
         brand_id="brand-1",
-        keyword="kw",
+        keyword=keyword,
         strategy=strategy,
         expression_level="balanced",
         template_id="clinic_trust",
@@ -835,11 +840,16 @@ class TestSubmitRender:
         assert resp.status_code == 409
 
     def test_submits_job(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        """2026-05-11 — params 에 keyword 가 포함되는지 검증.
+
+        누락 시 Job.keyword 가 빈 string → /jobs/{id} 화면에 "(키워드 없음)"
+        표시되던 버그 회귀 차단.
+        """
         from unittest.mock import MagicMock
 
         from web.api.routers import brand_studio
 
-        approved = _plan().model_copy(update={"status": "approved"})
+        approved = _plan(keyword="대구다이어트").model_copy(update={"status": "approved"})
         monkeypatch.setattr(
             brand_studio.storage,
             "list_cards_by_reuse_group",
@@ -850,10 +860,16 @@ class TestSubmitRender:
 
         fake_job = MagicMock()
         fake_job.id = "job-xyz"
+        captured: dict[str, Any] = {}
+
+        def fake_submit(params: dict[str, Any]) -> Any:
+            captured["params"] = params
+            return fake_job
+
         monkeypatch.setattr(
             main_module.job_manager,
             "submit_brand_card_render",
-            lambda params: fake_job,
+            fake_submit,
         )
 
         resp = client.post(
@@ -862,6 +878,8 @@ class TestSubmitRender:
         )
         assert resp.status_code == 202
         assert resp.json()["job_id"] == "job-xyz"
+        assert captured["params"]["keyword"] == "대구다이어트"
+        assert captured["params"]["reuse_group_id"] == "g-1"
 
 
 # ── 9. GET /cards/{group_id} ────────────────────────────────
