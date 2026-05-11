@@ -47,4 +47,12 @@ RUN mkdir -p output
 ENV PORT=8000
 EXPOSE 8000
 
-CMD ["sh", "-c", "uvicorn web.api.main:app --host 0.0.0.0 --port ${PORT}"]
+# 2026-05-11 — 컨테이너 startup 시 playwright 바이너리 존재 확인 + 자동 보강.
+# Render 빌드 cache 가 chromium install RUN 을 hit 으로 skip 하거나 일부
+# 바이너리가 누락된 환경에서도 첫 launch 전에 자동 다운로드. 이미 설치돼
+# 있으면 빠른 noop (수초). uvicorn 기동 전에 동기 실행.
+#
+# `2>/dev/null || true` 패턴은 첫 명령 실패해도 두 번째 시도. 둘 다 실패
+# 해도 uvicorn 은 기동 — renderer 가 launch 시점에 RendererSetupError 로
+# 표시할 수 있게 (앱 자체는 살아있음).
+CMD ["sh", "-c", "playwright install chromium-headless-shell 2>/dev/null || true; playwright install chromium 2>/dev/null || true; ls -la /ms-playwright/ || true; exec uvicorn web.api.main:app --host 0.0.0.0 --port ${PORT}"]
