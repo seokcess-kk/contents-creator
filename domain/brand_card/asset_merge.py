@@ -17,7 +17,11 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-from domain.brand_card.model import BrandMessageSource, CardCampaignInput
+from domain.brand_card.model import (
+    BrandMediaAsset,
+    BrandMessageSource,
+    CardCampaignInput,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +40,10 @@ class MergedAssets:
     other_references: list[str] = field(default_factory=list)  # 우선순위 4
     required_phrases: list[str] = field(default_factory=list)
     forbidden_phrases: list[str] = field(default_factory=list)
+    # 2026-05-11 — 브랜드 미디어 라이브러리 자산 목록. plan_generator 가 LLM
+    # 에게 image_asset_id 를 어떤 값으로 채워야 할지 컨텍스트로 전달.
+    # 누락 시 LLM 이 환각 ID 를 만들어 renderer 매칭 실패 (image placeholder).
+    media_assets: list[BrandMediaAsset] = field(default_factory=list)
 
 
 def merge_assets(
@@ -43,6 +51,7 @@ def merge_assets(
     campaign_input: CardCampaignInput | None,
     attached_sources: list[BrandMessageSource],
     brand_sources: list[BrandMessageSource],
+    media_assets: list[BrandMediaAsset] | None = None,
 ) -> MergedAssets:
     """SPEC §6 우선순위로 자산 병합.
 
@@ -50,6 +59,8 @@ def merge_assets(
         campaign_input: 키워드별 캠페인 입력 (선택). brief_text + required/forbidden.
         attached_sources: campaign_input.attached_source_ids 로 fetch 한 소스.
         brand_sources: 브랜드 전체 메시지 소스 목록 (storage.list_message_sources).
+        media_assets: 브랜드 미디어 자산 목록 (선택, 신규). LLM 이 image_asset_id
+            를 채울 때 참조할 정답 enum.
 
     Returns: 우선순위별 텍스트가 분리된 MergedAssets.
     """
@@ -69,6 +80,7 @@ def merge_assets(
         other_references=other_refs,
         required_phrases=required,
         forbidden_phrases=forbidden,
+        media_assets=list(media_assets) if media_assets else [],
     )
 
 

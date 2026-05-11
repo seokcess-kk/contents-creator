@@ -72,7 +72,7 @@ def generate_brand_card_plan(
 
     response = _invoke(system=system, user=user, tool_schema=tool_schema)
     tool_input = _extract_tool_input(response)
-    return _parse_plan(
+    plan = _parse_plan(
         tool_input,
         brand_id=brand_id,
         keyword=keyword,
@@ -80,6 +80,79 @@ def generate_brand_card_plan(
         expression_level=expression_level,
         template_id=template_id,
         reuse_group_id=reuse_group_id,
+    )
+    # 2026-05-11 post-process — LLM 환각 ID / 빈 ai_image_prompt 폴백.
+    return _sanitize_image_fields(plan, merged_assets)
+
+
+def _sanitize_image_fields(plan: BrandCardPlan, merged: MergedAssets) -> BrandCardPlan:
+    """블록의 image_asset_id / ai_image_prompt 정합성 후처리.
+
+    1) image_asset_id 가 미디어 라이브러리에 없는 ID 면 None 으로 정정 (환각 제거)
+    2) image_asset_id 와 ai_image_prompt 가 둘 다 비어있으면 카드 타입 기반
+       default ai_image_prompt 자동 생성 (placeholder 빈 카드 방지).
+
+    renderer 가 image_asset_id 우선 → ai_image_prompt fallback 이라 환각 ID 가
+    남아있으면 매칭 실패 후 prompt 도 없어 빈 placeholder 로 떨어졌음.
+    """
+    valid_ids = {a.id for a in merged.media_assets if a.id}
+    fixed_blocks: list[CardBlock] = []
+    for b in plan.blocks:
+        new_asset_id = b.image_asset_id
+        if new_asset_id and new_asset_id not in valid_ids:
+            logger.warning(
+                "plan_generator.invalid_image_asset_id=%s — None 으로 정정", new_asset_id
+            )
+            new_asset_id = None
+        new_prompt = (b.ai_image_prompt or "").strip() or None
+        if new_asset_id is None and new_prompt is None:
+            new_prompt = _default_ai_image_prompt(b.card_type)
+        fixed_blocks.append(b.model_copy(update={
+            "image_asset_id": new_asset_id,
+            "ai_image_prompt": new_prompt,
+        }))
+    return plan.model_copy(update={"blocks": fixed_blocks})
+
+
+_DEFAULT_AI_IMAGE_PROMPTS: dict[str, str] = {
+    "hero": (
+        "soft pastel gradient abstract background, calm warm tones, no text, "
+        "no people, korean medical aesthetic, minimal"
+    ),
+    "problem": (
+        "abstract muted illustration symbolizing concern and care, soft blues "
+        "and beige, no text, no people, korean wellness mood"
+    ),
+    "solution": (
+        "abstract icon-style illustration of holistic care, soft greens, no text, "
+        "no people, calm professional medical clinic mood"
+    ),
+    "differentiator": (
+        "minimal abstract emblem representing trust and expertise, premium feel, "
+        "no text, no people, korean medical clinic brand"
+    ),
+    "process": (
+        "minimal flat illustration of step-by-step flow, three soft circles, "
+        "warm pastel palette, no text, no people"
+    ),
+    "trust_closing": (
+        "soft warm gradient with subtle leaf or seal motif, premium clean look, "
+        "no text, no people, korean wellness brand"
+    ),
+}
+
+
+def _default_ai_image_prompt(card_type: str) -> str:
+    """카드 타입별 안전한 default AI 이미지 prompt (영문, 인물 없음, 텍스트 없음).
+
+    SPEC §12 의 의료 맥락 영구 금지 + Gemini 한글 텍스트 깨짐 방지 정책을
+    충족하도록 안전한 추상 표현으로만 구성. compliance.image_prompt 검증을
+    통과하도록 'no text, no people' 명시.
+    """
+    return _DEFAULT_AI_IMAGE_PROMPTS.get(
+        card_type,
+        "soft abstract pastel illustration, calm tones, no text, no people, "
+        "korean wellness brand aesthetic",
     )
 
 
@@ -139,14 +212,46 @@ def _build_user_prompt(
         f"[표현 강도] {expression_level}",
     ]
     parts.append(_format_assets(merged_assets))
+    parts.append(_format_media_assets(merged_assets))
     parts.append(_format_reuse_constraints(reuse_check, merged_assets))
     parts.append(
         "위 자산을 우선순위 순서대로 반영해 4~6장의 카드 기획안을 만들고, "
         "submit_brand_card_plan tool 로 반환하라. 의료진/시설/장비 묘사는 "
         "image_asset_id 로만 참조 (AI 생성 금지). 추상 일러스트·아이콘·배경만 "
-        "ai_image_prompt 사용."
+        "ai_image_prompt 사용. "
+        # 2026-05-11 강화 — 환각 ID + 빈 ai_image_prompt 동시 차단:
+        "[필수 규칙] (1) image_asset_id 는 반드시 위의 [사용 가능한 미디어 자산] "
+        "단락에 명시된 ID 중 하나만 사용. 그 목록에 없는 ID 는 절대 만들어내지 말 것. "
+        "(2) image_asset_id 가 null 인 모든 블록은 ai_image_prompt 를 반드시 "
+        "비어있지 않은 영문 prompt 로 채워야 함 (예: 'soft pastel abstract illustration "
+        "of healthy lifestyle, no text, no people, calm colors'). "
+        "둘 다 null 또는 빈 문자열인 블록을 만들면 카드 이미지가 빈 placeholder "
+        "로 렌더링됨."
     )
     return "\n\n".join(parts)
+
+
+def _format_media_assets(m: MergedAssets) -> str:
+    """LLM 에게 노출할 브랜드 미디어 자산 목록.
+
+    2026-05-11 — 이전엔 LLM 이 미디어 라이브러리 컨텍스트 없이 image_asset_id
+    를 채워 환각 ID 가 생성되던 문제 차단. 목록이 비어있으면 그 사실을 명시
+    해 LLM 이 모든 블록을 ai_image_prompt 로만 채우도록 유도.
+    """
+    if not m.media_assets:
+        return (
+            "[사용 가능한 미디어 자산]\n"
+            "(브랜드 미디어 라이브러리가 비어있음 — 모든 블록의 image_asset_id 는 "
+            "반드시 null 로 두고, ai_image_prompt 로만 시각 표현)"
+        )
+    lines = ["[사용 가능한 미디어 자산 (image_asset_id 만 이 목록에서 선택)]"]
+    for a in m.media_assets:
+        if not a.id:
+            continue
+        title = a.title or "(제목 없음)"
+        type_label = a.type or "other"
+        lines.append(f"  - id={a.id} type={type_label} title={title!r}")
+    return "\n".join(lines)
 
 
 def _format_assets(m: MergedAssets) -> str:

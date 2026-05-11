@@ -87,15 +87,20 @@ def generate_card_plan(
     if not 1 <= strategy_count <= 4:
         raise ValueError(f"strategy_count 는 1~4: {strategy_count}")
 
-    # 1) 자산 fetch — 캠페인 입력 + 첨부 + 브랜드 공통
+    # 1) 자산 fetch — 캠페인 입력 + 첨부 + 브랜드 공통 + 미디어 라이브러리.
+    # 2026-05-11 — media_assets 추가. plan_generator 가 LLM 에게 자산 enum 을
+    # 알려서 환각 image_asset_id 생성 차단 (이전엔 모든 카드 이미지가 빈
+    # placeholder 로 렌더링되던 버그).
     campaign = storage.get_latest_campaign_input(brand_id, keyword)
     attached_ids = campaign.attached_source_ids if campaign else []
     attached = storage.get_message_sources_by_ids(attached_ids)
     brand_sources = storage.list_message_sources(brand_id)
+    media_assets = storage.list_media_assets(brand_id)
     merged = asset_merge.merge_assets(
         campaign_input=campaign,
         attached_sources=attached,
         brand_sources=brand_sources,
+        media_assets=media_assets,
     )
 
     # 2) reuse_guard — 30일 윈도우 + 차단/경고 분리
@@ -247,6 +252,12 @@ def render_card_set(
     images_dir = base_dir / "images"
     work_dir = base_dir / "_work"
     cards_dir.mkdir(parents=True, exist_ok=True)
+
+    # 2026-05-11 — media_path_resolver 미지정 시 Supabase Storage 자동 다운로드
+    # resolver 생성. 이전엔 JobManager dispatch 가 resolver 를 안 넘겨 image_asset_id
+    # 가 채워져도 항상 None 으로 떨어져 빈 placeholder 로 렌더링되던 버그 차단.
+    if media_path_resolver is None:
+        media_path_resolver = _make_supabase_media_resolver(work_dir / "media")
 
     # [B7] 렌더 직전 최종 컴플라이언스 재검증 — 승인 후 텍스트가 안전한지 보증.
     # generate 시 1차 통과했어도, 사용자가 수동으로 텍스트를 수정한 케이스 대비.
@@ -436,6 +447,59 @@ def _resolve_image_url(
 
 
 # ── 내부 헬퍼 ─────────────────────────────────────────────────
+
+
+def _make_supabase_media_resolver(cache_dir: Path):  # type: ignore[no-untyped-def]
+    """asset_id → 로컬 file path. Supabase Storage 에서 다운로드 후 temp 저장.
+
+    2026-05-11 — image_asset_id 기반 카드 이미지가 빈 placeholder 로 렌더링되던
+    문제 해결. brand_media_assets 의 storage_path 를 download 해 local file 로
+    제공. renderer 가 file:// URL 로 chromium 에 로딩.
+
+    cache_dir 안에 sha256 기반 파일명으로 저장 — 같은 asset 두 번 호출 시
+    재다운로드 없음. render_card_set 종료 후 work_dir 정리 시 함께 삭제.
+    """
+    from domain.brand_card.storage_signed import download_object
+
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    resolved: dict[str, Path] = {}
+
+    def resolve(asset_id: str) -> Path | None:
+        if asset_id in resolved:
+            return resolved[asset_id]
+        asset = storage.get_media_asset(asset_id)
+        if asset is None:
+            logger.warning("media_resolver.asset_not_found id=%s", asset_id)
+            return None
+        # legacy: file_path 가 있고 실재하면 직접 사용
+        if asset.file_path and Path(asset.file_path).exists():
+            resolved[asset_id] = Path(asset.file_path)
+            return resolved[asset_id]
+        if not asset.storage_path:
+            logger.warning("media_resolver.no_storage_path id=%s", asset_id)
+            return None
+        try:
+            raw = download_object(
+                asset.storage_path,
+                bucket=settings.brand_media_bucket,
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "media_resolver.download_failed id=%s storage_path=%s",
+                asset_id,
+                asset.storage_path,
+                exc_info=True,
+            )
+            return None
+        suffix = Path(asset.storage_path).suffix or ".png"
+        # sha256 prefix 면 충돌 없음. 없으면 asset_id fallback.
+        name_seed = asset.file_sha256 or asset_id.replace("/", "_")
+        temp_path = cache_dir / f"media-{name_seed}{suffix}"
+        temp_path.write_bytes(raw)
+        resolved[asset_id] = temp_path
+        return temp_path
+
+    return resolve
 
 
 def _select_strategies(keyword: str, count: int) -> list[str]:

@@ -12,7 +12,7 @@ from unittest.mock import patch
 import pytest
 
 from domain.brand_card.asset_merge import MergedAssets
-from domain.brand_card.model import BrandCardPlan
+from domain.brand_card.model import BrandCardPlan, BrandMediaAsset, CardBlock
 from domain.brand_card.plan_generator import (
     PlanGenerationError,
     _build_system_prompt,
@@ -22,8 +22,10 @@ from domain.brand_card.plan_generator import (
     _format_assets,
     _format_compliance_rules,
     _format_expression_guide,
+    _format_media_assets,
     _format_reuse_constraints,
     _parse_plan,
+    _sanitize_image_fields,
     generate_brand_card_plan,
 )
 from domain.brand_card.reuse_guard import ReuseCheckResult
@@ -264,6 +266,118 @@ class TestParsePlan:
                 template_id="clinic_trust",
                 reuse_group_id=None,
             )
+
+
+class TestFormatMediaAssets:
+    """2026-05-11 — LLM 에게 미디어 자산 목록 전달 (환각 ID 차단)."""
+
+    def test_empty_lists_explicit_message(self) -> None:
+        out = _format_media_assets(MergedAssets())
+        assert "비어있음" in out
+        assert "image_asset_id 는 반드시 null" in out
+
+    def test_with_assets_lists_ids(self) -> None:
+        assets = [
+            BrandMediaAsset(
+                id="doctor-1",
+                brand_id="b-1",
+                type="doctor",
+                file_sha256="a" * 64,
+                title="원장 프로필",
+            ),
+            BrandMediaAsset(
+                id="facility-1",
+                brand_id="b-1",
+                type="facility",
+                file_sha256="b" * 64,
+                title="1층 대기실",
+            ),
+        ]
+        out = _format_media_assets(MergedAssets(media_assets=assets))
+        assert "id=doctor-1" in out
+        assert "원장 프로필" in out
+        assert "id=facility-1" in out
+
+
+class TestSanitizeImageFields:
+    """2026-05-11 — 환각 image_asset_id 제거 + 빈 ai_image_prompt 폴백."""
+
+    def _plan_with_blocks(self, blocks: list[CardBlock]) -> BrandCardPlan:
+        return BrandCardPlan(
+            brand_id="b-1",
+            keyword="kw",
+            strategy="trust_first",
+            expression_level="balanced",
+            template_id="clinic_trust",
+            angle="...",
+            blocks=blocks,
+            status="draft",
+        )
+
+    def test_hallucinated_id_removed_and_ai_prompt_inserted(self) -> None:
+        """미디어 라이브러리에 없는 ID → None 정정 + default ai_image_prompt 자동 채움."""
+        plan = self._plan_with_blocks(
+            [
+                CardBlock(
+                    card_type="hero",
+                    headline="안녕",
+                    image_asset_id="invented_id_001",
+                    ai_image_prompt=None,
+                    recommended_position="after_intro",
+                ),
+            ]
+        )
+        merged = MergedAssets()
+        fixed = _sanitize_image_fields(plan, merged)
+        assert fixed.blocks[0].image_asset_id is None
+        assert fixed.blocks[0].ai_image_prompt is not None
+        assert "no text" in (fixed.blocks[0].ai_image_prompt or "")
+        assert "no people" in (fixed.blocks[0].ai_image_prompt or "")
+
+    def test_valid_id_kept(self) -> None:
+        """미디어 라이브러리에 존재하는 ID 는 그대로 유지."""
+        plan = self._plan_with_blocks(
+            [
+                CardBlock(
+                    card_type="hero",
+                    headline="hi",
+                    image_asset_id="doctor-1",
+                    ai_image_prompt=None,
+                    recommended_position="after_intro",
+                ),
+            ]
+        )
+        merged = MergedAssets(
+            media_assets=[
+                BrandMediaAsset(
+                    id="doctor-1",
+                    brand_id="b-1",
+                    type="doctor",
+                    file_sha256="a" * 64,
+                ),
+            ]
+        )
+        fixed = _sanitize_image_fields(plan, merged)
+        assert fixed.blocks[0].image_asset_id == "doctor-1"
+        # 유효 asset_id 가 있으니 ai_image_prompt 는 폴백 안 함
+        assert fixed.blocks[0].ai_image_prompt is None
+
+    def test_empty_prompt_promoted_to_default(self) -> None:
+        """빈 문자열 ai_image_prompt 도 fallback 대상 (LLM 이 '' 로 채우는 경향 대응)."""
+        plan = self._plan_with_blocks(
+            [
+                CardBlock(
+                    card_type="problem",
+                    headline="hi",
+                    image_asset_id=None,
+                    ai_image_prompt="",
+                    recommended_position="after_intro",
+                ),
+            ]
+        )
+        fixed = _sanitize_image_fields(plan, MergedAssets())
+        assert fixed.blocks[0].ai_image_prompt is not None
+        assert len(fixed.blocks[0].ai_image_prompt or "") > 10
 
 
 class TestGenerateBrandCardPlanIntegration:
