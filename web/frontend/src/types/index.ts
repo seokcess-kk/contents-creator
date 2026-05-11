@@ -17,7 +17,17 @@ export type StageKey = (typeof PIPELINE_STAGES)[number]["key"];
 
 // "orphaned": Phase J2 PR3 — 컨테이너 재시작으로 in-memory 진행이 분실된 작업의
 // 자연 종결 상태. backend GET fallback 이 DB 에서 200 OK + status=orphaned 로 응답.
-export type JobStatus = "pending" | "running" | "succeeded" | "failed" | "orphaned";
+// "cancelled" / "timed_out": JobManager._arm_timeout / cancel_job 가 emit 하는
+// terminal status. 2026-05-11 frontend 동기화 — useJobPolling 의 TERMINAL_STATUSES
+// 와 brand-studio 카드 기획 polling effect 가 좁힘 검사에 사용.
+export type JobStatus =
+  | "pending"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | "timed_out"
+  | "orphaned";
 
 export interface Job {
   id: string;
