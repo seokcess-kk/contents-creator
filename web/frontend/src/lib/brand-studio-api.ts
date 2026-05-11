@@ -146,6 +146,10 @@ export function listSources(brandId: string): Promise<BrandMessageSource[]> {
   return request(`/brands/${encodeURIComponent(brandId)}/sources`);
 }
 
+export function deleteSource(sourceId: string): Promise<void> {
+  return request(`/sources/${encodeURIComponent(sourceId)}`, { method: "DELETE" });
+}
+
 // ── presigned upload (Vercel 함수 4.5MB 페이로드 한계 우회) ──
 //
 // 흐름: 1) /sources/init → signed PUT URL  2) PUT Supabase 직접  3) /sources/confirm

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
+  deleteSource,
   uploadSource,
   type BrandMessageSource,
 } from "@/lib/brand-studio-api";
@@ -12,6 +13,7 @@ interface BrandSourceUploadProps {
   existing: BrandMessageSource[];
   onClose: () => void;
   onUploaded: (source: BrandMessageSource) => void;
+  onDeleted?: (sourceId: string) => void;
 }
 
 const SOURCE_TYPES: { value: string; label: string }[] = [
@@ -27,11 +29,30 @@ export default function BrandSourceUpload({
   existing,
   onClose,
   onUploaded,
+  onDeleted,
 }: BrandSourceUploadProps) {
   const [sourceType, setSourceType] = useState("brand_common");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 2026-05-11 — 삭제 진행 중인 source id (UI disable 표시용).
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+
+  async function handleDelete(source: BrandMessageSource) {
+    if (!source.id) return;
+    const name = source.file_name ?? "(이름 없음)";
+    if (!confirm(`이 sources 파일을 삭제할까요?\n${name}`)) return;
+    setError(null);
+    setDeletingId(source.id);
+    try {
+      await deleteSource(source.id);
+      onDeleted?.(source.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "삭제 실패");
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -149,17 +170,29 @@ export default function BrandSourceUpload({
             <div className="text-xs text-gray-400">아직 업로드된 파일이 없습니다.</div>
           ) : (
             <ul className="space-y-1 text-xs max-h-[200px] overflow-auto">
-              {existing.map((s) => (
-                <li
-                  key={s.id ?? s.file_path ?? s.file_name}
-                  className="flex items-center justify-between border border-gray-100 rounded px-2 py-1"
-                >
-                  <span className="truncate max-w-[60%]" title={s.file_name ?? ""}>
-                    {s.file_name ?? "(이름 없음)"}
-                  </span>
-                  <span className="text-gray-500">{s.source_type}</span>
-                </li>
-              ))}
+              {existing.map((s) => {
+                const isDeleting = s.id !== null && s.id === deletingId;
+                return (
+                  <li
+                    key={s.id ?? s.file_path ?? s.file_name}
+                    className="flex items-center justify-between gap-2 border border-gray-100 rounded px-2 py-1"
+                  >
+                    <span className="truncate flex-1 min-w-0" title={s.file_name ?? ""}>
+                      {s.file_name ?? "(이름 없음)"}
+                    </span>
+                    <span className="text-gray-500 shrink-0">{s.source_type}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(s)}
+                      disabled={submitting || isDeleting || !s.id}
+                      className="shrink-0 text-[11px] text-red-700 border border-red-200 rounded px-1.5 py-0.5 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                      title={s.id ? "이 파일 삭제" : "삭제 불가 (id 없음)"}
+                    >
+                      {isDeleting ? "삭제 중…" : "삭제"}
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>

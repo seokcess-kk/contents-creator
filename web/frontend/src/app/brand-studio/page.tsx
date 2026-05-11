@@ -115,6 +115,9 @@ export default function BrandStudioListPage() {
           existing={activeSources}
           onClose={closeSourcesDialog}
           onUploaded={(s) => setActiveSources((prev) => [...prev, s])}
+          onDeleted={(id) =>
+            setActiveSources((prev) => prev.filter((s) => s.id !== id))
+          }
         />
       )}
 

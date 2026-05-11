@@ -436,6 +436,52 @@ class TestSourcesPresigned:
         assert record.source_type == "campaign"
         assert "안녕" in (record.content_text or "")
 
+    def test_delete_unknown_source_404(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """2026-05-11 — sources 삭제 API. 미존재 id → 404."""
+        from web.api.routers import brand_studio
+
+        monkeypatch.setattr(brand_studio.storage, "get_message_source", lambda _id: None)
+        resp = client.delete("/api/brand-studio/sources/missing")
+        assert resp.status_code == 404
+
+    def test_delete_source_removes_db_and_storage(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """2026-05-11 — sources 삭제: DB row 제거 + Supabase Storage 객체 제거."""
+        from web.api.routers import brand_studio
+
+        existing = BrandMessageSource(
+            id="s-1",
+            brand_id="brand-1",
+            source_type="brand_common",
+            file_name="원장 프로필.txt",
+            storage_path="brand-1/sources/abc.txt",
+            file_sha256="a" * 64,
+        )
+        monkeypatch.setattr(brand_studio.storage, "get_message_source", lambda _id: existing)
+
+        deleted: dict[str, str] = {}
+
+        def fake_delete(source_id: str) -> bool:
+            deleted["id"] = source_id
+            return True
+
+        monkeypatch.setattr(brand_studio.storage, "delete_message_source", fake_delete)
+
+        removed: dict[str, str] = {}
+        monkeypatch.setattr(
+            brand_studio.storage_signed,
+            "remove_object",
+            lambda path: removed.setdefault("path", path) is None or True,
+        )
+
+        resp = client.delete("/api/brand-studio/sources/s-1")
+        assert resp.status_code == 204
+        assert deleted["id"] == "s-1"
+        assert removed["path"] == "brand-1/sources/abc.txt"
+
     def test_confirm_preserves_unicode_filename(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:

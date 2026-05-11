@@ -353,6 +353,29 @@ def _validate_source_type(source_type: str) -> None:
         )
 
 
+@router.delete("/sources/{source_id}", status_code=204)
+def delete_source(source_id: str) -> Response:
+    """2026-05-11 — source hard delete. DB + Supabase Storage 객체 모두 정리.
+
+    media-asset 삭제와 동일 패턴. 디스크 파일 정리는 best-effort — DB 행만
+    제거되면 운영상 정합성은 깨지지 않는다 (frontend 가 더 이상 노출 안 함).
+    plan.attached_source_ids 가 dangling 될 수 있으나 asset_merge 가
+    `get_message_sources_by_ids` 호출 시 자동 누락 처리.
+    """
+    source = storage.get_message_source(source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source not found")
+    storage.delete_message_source(source_id)
+    if source.storage_path:
+        storage_signed.remove_object(source.storage_path)
+    if source.file_path:
+        try:
+            Path(source.file_path).unlink(missing_ok=True)
+        except OSError:
+            logger.warning("source.disk_unlink_failed path=%s", source.file_path)
+    return Response(status_code=204)
+
+
 # ── 4. campaign-inputs ──────────────────────────────────────
 
 

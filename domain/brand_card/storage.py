@@ -192,6 +192,30 @@ def get_message_sources_by_ids(ids: list[str]) -> list[BrandMessageSource]:
     return [_row_to_source(cast("dict[str, Any]", r)) for r in (result.data or [])]
 
 
+def get_message_source(source_id: str) -> BrandMessageSource | None:
+    """단건 조회 — 라우터의 존재/소속 검증용."""
+    client = get_client()
+    result = client.table(_SOURCES_TABLE).select("*").eq("id", source_id).limit(1).execute()
+    rows = result.data or []
+    if not rows:
+        return None
+    return _row_to_source(cast("dict[str, Any]", rows[0]))
+
+
+def delete_message_source(source_id: str) -> bool:
+    """소스 hard delete. 행이 삭제되면 True, 미존재면 False.
+
+    Supabase Storage 객체 / 디스크 파일 정리는 호출자 책임 (라우터가
+    storage_signed.remove_object 추가 호출). DB 와 storage 의 정합성은
+    best-effort — DB 삭제 성공이 storage 삭제 실패보다 우선이라 orphan
+    storage 객체가 잠시 남을 수 있으나, sha256 + brand_id 기반 storage_path
+    가 멱등이라 재업로드 시 덮어쓰기 가능.
+    """
+    client = get_client()
+    result = client.table(_SOURCES_TABLE).delete().eq("id", source_id).execute()
+    return bool(result.data)
+
+
 # ── card_campaign_inputs ────────────────────────────────────
 
 
