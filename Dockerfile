@@ -40,6 +40,10 @@ COPY config/ config/
 COPY web/__init__.py web/__init__.py
 COPY web/api/ web/api/
 
+# 2026-05-11 — 브랜드 카드 PNG 렌더에 사용하는 Pretendard 폰트 등 정적 자산.
+# 없으면 renderer 가 file:// URL 로 폰트 로딩 실패 → 카드 텍스트 깨짐.
+COPY assets/ assets/
+
 # output 디렉토리 (휘발성 — Supabase Storage 가 영속 백업, results.py 가 fallback 처리)
 RUN mkdir -p output
 
@@ -47,12 +51,19 @@ RUN mkdir -p output
 ENV PORT=8000
 EXPOSE 8000
 
-# 2026-05-11 — 컨테이너 startup 시 playwright 바이너리 존재 확인 + 자동 보강.
-# Render 빌드 cache 가 chromium install RUN 을 hit 으로 skip 하거나 일부
-# 바이너리가 누락된 환경에서도 첫 launch 전에 자동 다운로드. 이미 설치돼
-# 있으면 빠른 noop (수초). uvicorn 기동 전에 동기 실행.
-#
-# `2>/dev/null || true` 패턴은 첫 명령 실패해도 두 번째 시도. 둘 다 실패
-# 해도 uvicorn 은 기동 — renderer 가 launch 시점에 RendererSetupError 로
-# 표시할 수 있게 (앱 자체는 살아있음).
-CMD ["sh", "-c", "playwright install chromium-headless-shell 2>/dev/null || true; playwright install chromium 2>/dev/null || true; ls -la /ms-playwright/ || true; exec uvicorn web.api.main:app --host 0.0.0.0 --port ${PORT}"]
+# 2026-05-11 (v3) — 컨테이너 startup 시 playwright 바이너리 검증 + 보강.
+# v2 의 `2>/dev/null || true` 는 silent swallow 라 다운로드 실패가 묵살되어
+# 실제 렌더 시점에 터졌음. v3 는:
+#   - 명확한 로그 출력 (stderr 표시)
+#   - playwright 패키지 버전 확인 → 어떤 revision 을 요구하는지 가시화
+#   - 시작 전 install 결과 ls 로 확인
+# 그래도 install 자체 실패는 catch — 앱은 기동시켜 운영자가 /jobs/{id}
+# 에러 메시지로 인지 가능. renderer 의 _resolve_chromium_executable fallback
+# 과 결합되어 chromium 또는 chromium-headless-shell 중 하나만 있어도 동작.
+CMD ["sh", "-c", "\
+echo '[startup] playwright version:'; pip show playwright | grep -i version || true; \
+echo '[startup] /ms-playwright before install:'; ls -la /ms-playwright/ 2>/dev/null || echo '(missing)'; \
+echo '[startup] installing chromium-headless-shell...'; playwright install chromium-headless-shell || echo '[startup] chromium-headless-shell install failed'; \
+echo '[startup] installing chromium...'; playwright install chromium || echo '[startup] chromium install failed'; \
+echo '[startup] /ms-playwright after install:'; ls -la /ms-playwright/ || true; \
+exec uvicorn web.api.main:app --host 0.0.0.0 --port ${PORT}"]

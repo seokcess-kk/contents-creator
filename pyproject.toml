@@ -18,7 +18,11 @@ dependencies = [
     "requests>=2.32",
     "tenacity>=9.0",
     # 브랜드 카드 트랙 (SPEC-BRAND-CARD.md §11)
-    "playwright>=1.47",      # Chromium headless full-page PNG 렌더
+    # 2026-05-11 — 정확한 버전 핀. floating >=1.47 일 때 패키지 최신화로
+    # 요구 chromium revision 이 변동되어 `playwright install` 결과와
+    # 어긋나면 "Executable doesn't exist at /ms-playwright/chromium_headless_shell-XXXX"
+    # 에러 발생. 패키지와 브라우저 revision 의 정합성을 코드 레벨에서 보장.
+    "playwright==1.49.0",    # Chromium headless full-page PNG 렌더
     "jinja2>=3.1",           # HTML 템플릿 엔진
     "python-docx>=1.1",      # docx 브랜드 소스 파싱
     "pypdf>=5.0",            # pdf 브랜드 소스 파싱 (1차)
