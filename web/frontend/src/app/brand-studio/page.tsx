@@ -37,7 +37,12 @@ export default function BrandStudioListPage() {
 
   async function openSourcesDialog(brand: BrandProfile) {
     if (!brand.id) return;
+    // 2026-05-11 fix — prev brand 의 activeSources 잔존 차단.
+    // await listSources 가 끝나기 전까지 dialog 가 이전 brand 의 파일 목록을
+    // 잘못 표시하던 버그 (특히 신규 brand 의 sources 가 0건일 때 prev brand
+    // 목록이 그대로 보이는 현상).
     setActiveBrand(brand);
+    setActiveSources([]);
     setSourcesLoading(true);
     try {
       const items = await listSources(brand.id);
@@ -102,6 +107,9 @@ export default function BrandStudioListPage() {
 
       {activeBrand && activeBrand.id && (
         <BrandSourceUpload
+          // 2026-05-11 — brand 변경 시 강제 remount. 컴포넌트 내부 useState
+          // (file input ref 등) 가 prev brand 잔재로 오염되는 사고 차단.
+          key={activeBrand.id}
           brandId={activeBrand.id}
           brandName={activeBrand.name}
           existing={activeSources}
@@ -127,6 +135,10 @@ export default function BrandStudioListPage() {
 
       {mediaBrand && mediaBrand.id && (
         <BrandMediaLibrary
+          // 2026-05-11 — brand 변경 시 강제 remount. useState(null) 초기값이
+          // brand A → brand B 직접 전환 시 props 만 갱신되어 prev brand 의
+          // assets state 가 fetch 완료될 때까지 표시되던 버그 차단.
+          key={mediaBrand.id}
           brandId={mediaBrand.id}
           brandName={mediaBrand.name}
           onClose={() => setMediaBrand(null)}
