@@ -43,10 +43,14 @@ def cross_analyze(
     physicals: list[PhysicalAnalysis],
     semantics: list[SemanticAnalysis],
     appeals: list[AppealAnalysis],
+    page_intents: list[list[str]] | None = None,
 ) -> PatternCard:
-    """[3][4a][4b] 결과를 집계해 PatternCard 를 반환.
+    """[3][4a][4b][4c] 결과를 집계해 PatternCard 를 반환.
 
     LLM 호출 없음. 순수 코드 집계만 수행.
+
+    page_intents (P1, 2026-05-12): 페이지별 intent_extractor 결과. 빈도순 dedup
+    후 상위 5개를 PatternCard.intents 에 주입. None 또는 빈 리스트 → 빈 intents.
     """
     n = len(physicals)
     logger.info("cross_analyze keyword=%s n=%s", keyword, n)
@@ -66,7 +70,42 @@ def cross_analyze(
         aggregated_tags=_aggregate_tags(physicals, n),
         image_pattern=_aggregate_image_pattern(physicals),
         keyword_placement=_aggregate_keyword_placement(physicals),
+        intents=_dedupe_and_rank_intents(page_intents or []),
     )
+
+
+def _dedupe_and_rank_intents(page_intents: list[list[str]]) -> list[str]:
+    """페이지별 intent 리스트를 빈도순 dedup → 상위 5개.
+
+    동일 의도가 여러 글에 등장 → 더 신뢰도 높은 신호로 가중. case-insensitive 비교,
+    공백 정규화. 동률 시 처음 등장 순서.
+    """
+    if not page_intents:
+        return []
+
+    counter: Counter[str] = Counter()
+    canonical: dict[str, str] = {}  # 정규화된 키 → 첫 등장 원문
+    for intents in page_intents:
+        seen_in_page: set[str] = set()
+        for raw in intents:
+            cleaned = raw.strip()
+            if not cleaned:
+                continue
+            key = " ".join(cleaned.lower().split())
+            if key in seen_in_page:
+                continue  # 한 페이지 내 중복은 1회만 카운트
+            seen_in_page.add(key)
+            counter[key] += 1
+            canonical.setdefault(key, cleaned)
+
+    if not counter:
+        return []
+
+    ranked = sorted(
+        counter.items(),
+        key=lambda kv: (-kv[1], list(canonical).index(kv[0])),
+    )
+    return [canonical[k] for k, _ in ranked[:5]]
 
 
 def _classify_sections(semantics: list[SemanticAnalysis], n: int) -> SectionClassification:
@@ -166,7 +205,11 @@ def _aggregate_distributions(
 
 
 def _aggregate_dia_plus(physicals: list[PhysicalAnalysis], n: int) -> dict[str, float]:
-    """DIA+ 요소별 사용 비율."""
+    """DIA+ 요소별 사용 비율 (10종).
+
+    7종 기본 + 3종 AEO 신호 (P1, 2026-05-12). 이 비율이 outline 프롬프트에서
+    임계값 (필수 80% / 권장 50% / 차별화 30%) 적용 대상.
+    """
     if n == 0:
         return {}
     return {
@@ -177,6 +220,13 @@ def _aggregate_dia_plus(physicals: list[PhysicalAnalysis], n: int) -> dict[str, 
         "separators": round(sum(1 for p in physicals if p.dia_plus.separators > 0) / n, 2),
         "qa_sections": round(sum(1 for p in physicals if p.dia_plus.qa_sections) / n, 2),
         "statistics": round(sum(1 for p in physicals if p.dia_plus.statistics_data) / n, 2),
+        "direct_answer_blocks": round(
+            sum(1 for p in physicals if p.dia_plus.direct_answer_blocks > 0) / n, 2
+        ),
+        "cited_sources": round(sum(1 for p in physicals if p.dia_plus.cited_sources > 0) / n, 2),
+        "definition_blocks": round(
+            sum(1 for p in physicals if p.dia_plus.definition_blocks > 0) / n, 2
+        ),
     }
 
 

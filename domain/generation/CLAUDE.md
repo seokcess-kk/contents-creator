@@ -9,6 +9,7 @@
 - `generate_body()` 시그니처에 `intro_text`, `intro_md`, `full_intro`, `intro_content`, `intro_raw` 등 원문 파라미터 금지
 - 유일 허용: `intro_tone_hint: str` — 도입부 톤 힌트 문자열 (짧은 설명)
 - 프롬프트 문자열에도 도입부 원문 삽입 금지. 한글 "도입부" 리터럴도 프롬프트 안에 두지 말 것
+- **P1 (2026-05-12)**: `PatternCard.intents` 는 outline 프롬프트에만 주입. `body_writer.py` 에 `intents` 식별자 또는 "사용자 의도" 문자열 등장 시 post-edit-lint 자동 차단. body 는 outline.sections 와 intro_tone_hint 만 받음
 - 최종 조립은 `composer/assembler.py` 가 `intro + body_sections` 프로그래매틱 concat
 - `post-edit-lint.sh` 훅과 `seo-writer-guardian` 에이전트가 자동 차단
 
@@ -24,6 +25,7 @@
 ## 핵심 규칙
 
 - [6] 아웃라인 출력: 제목 + 섹션 구조 + 도입부 200~300자 + `suggested_tags` + **`image_prompts`**
+- [6] **첫 본문 섹션은 `PatternCard.intents[0]` 을 직접 답변** (P1, 2026-05-12). `outline_validator._check_first_section_intent` 가 kiwipiepy recall ≥0.4 로 hard 강제. 실패 시 outline 1회 재생성. intents 빈 리스트면 skip (graceful)
 - [7] 본문은 **2번째 섹션부터만** 생성. 도입부는 재생성하지 않음
 - 모델 정책 (하이브리드):
   - [6] 아웃라인·도입부·image_prompts — **Opus 4.7** (SEO 성과 최대 지렛대)

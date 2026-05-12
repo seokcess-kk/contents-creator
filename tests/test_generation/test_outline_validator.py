@@ -22,6 +22,7 @@ def _make_pattern_card(
     required: list[str] | None = None,
     frequent: list[str] | None = None,
     avg_images: float = 5.0,
+    intents: list[str] | None = None,
 ) -> PatternCard:
     return PatternCard(
         keyword="테스트",
@@ -37,6 +38,7 @@ def _make_pattern_card(
             keyword_density=RangeStats(avg=0.013, min=0.009, max=0.017),
         ),
         image_pattern=ImagePattern(avg_count_per_post=avg_images),
+        intents=intents or [],
     )
 
 
@@ -44,6 +46,8 @@ def _make_outline(
     section_count: int = 5,
     image_count: int = 5,
     intro_len: int = 250,
+    first_body_subtitle: str = "소제목 2",
+    first_body_summary: str = "",
 ) -> Outline:
     sections = [
         OutlineSection(index=1, role="도입/공감", subtitle="(도입)", is_intro=True),
@@ -53,7 +57,8 @@ def _make_outline(
             OutlineSection(
                 index=i + 2,
                 role="정보제공",
-                subtitle=f"소제목 {i + 2}",
+                subtitle=first_body_subtitle if i == 0 else f"소제목 {i + 2}",
+                summary=first_body_summary if i == 0 else "",
             )
         )
 
@@ -139,3 +144,46 @@ class TestValidateOutline:
         issues = validate_outline(outline, card)
         fields = [i.field for i in issues]
         assert "image_count" not in fields
+
+
+class TestFirstSectionIntent:
+    """P1 — 첫 본문 섹션의 intent 응답 검증.
+
+    kiwipiepy 미설치 환경에선 skip — title_validator 의 fallback 정책과 일관.
+    설치된 환경에서만 의미 있는 회귀.
+    """
+
+    def test_empty_intents_skipped(self) -> None:
+        """intents 빈 리스트 → 검증 skip (graceful)."""
+        card = _make_pattern_card(intents=[])
+        outline = _make_outline(first_body_subtitle="무관한 소제목")
+        issues = validate_outline(outline, card)
+        assert all(i.field != "first_section_intent" for i in issues)
+
+    def test_intent_match_passes(self) -> None:
+        """첫 본문 섹션 소제목·요약에 intent 핵심 명사 포함 → 통과."""
+        card = _make_pattern_card(intents=["임플란트 비용은 얼마인가요?"])
+        outline = _make_outline(
+            first_body_subtitle="임플란트 비용 알아보기",
+            first_body_summary="비용 구조를 정리한다.",
+        )
+        issues = validate_outline(outline, card)
+        # kiwipiepy 가 있으면 통과, 없으면 skip — 어느 쪽이든 issue 없어야 함
+        assert all(i.field != "first_section_intent" for i in issues)
+
+    def test_intent_mismatch_fails(self) -> None:
+        """첫 본문 섹션이 intent 와 관련 없는 내용 → 실패 (kiwipiepy 있을 때만)."""
+        from domain.generation.title_validator import _get_kiwi
+
+        if _get_kiwi() is None:
+            # kiwipiepy 미설치 — 정책상 skip, 테스트도 의미 없음
+            return
+
+        card = _make_pattern_card(intents=["임플란트 비용은 얼마인가요?"])
+        outline = _make_outline(
+            first_body_subtitle="다른 주제 소제목",
+            first_body_summary="전혀 관련 없는 설명.",
+        )
+        issues = validate_outline(outline, card)
+        fields = [i.field for i in issues]
+        assert "first_section_intent" in fields

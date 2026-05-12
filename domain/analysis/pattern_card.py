@@ -25,7 +25,7 @@ DIFFERENTIATING_MAX_RATIO = 0.3
 DIFFERENTIATING_MIN_COUNT = 2
 DIFFERENTIATING_MIN_SAMPLES = 10  # N<10 → differentiating: []
 MIN_ANALYZED_SAMPLES = 7
-PATTERN_CARD_SCHEMA_VERSION = "2.0"
+PATTERN_CARD_SCHEMA_VERSION = "2.1"
 
 
 # ── 서브모델 ──
@@ -123,6 +123,10 @@ class PatternCard(BaseModel):
     aggregated_tags: AggregatedTags = Field(default_factory=AggregatedTags)
     image_pattern: ImagePattern = Field(default_factory=ImagePattern)
     keyword_placement: KeywordPlacement = Field(default_factory=KeywordPlacement)
+    # P1 (2026-05-12) — 상위글이 답하는 사용자 진짜 질문/의도 2~5개.
+    # cross_analyzer 가 페이지별 intent_extractor 결과를 빈도순 dedup 후 직주입.
+    # outline_writer 가 intents[0] 을 첫 본문 섹션 응답 대상으로 강제.
+    intents: list[str] = Field(default_factory=list, max_length=5)
 
 
 # ── 저장 / 로드 ──
@@ -207,23 +211,30 @@ def load_pattern_card(path: Path) -> PatternCard:
 def migrate_pattern_card(raw: dict[str, Any], from_version: str, to_version: str) -> dict[str, Any]:
     """PatternCard JSON 을 구 스키마에서 신 스키마로 변환한다.
 
-    현재 지원 버전은 2.0 단일이므로 규칙이 비어 있지만, 필드 추가·이름 변경 시
-    이 함수에 분기를 추가한다. 알려지지 않은 버전이면 그대로 반환(best-effort).
-    Pydantic model_validate 가 최종 필드 검증을 담당하므로 허용 가능한 수준까지만
-    변환하면 된다.
+    필드 추가·이름 변경 시 분기를 추가한다. 알려지지 않은 버전은 passthrough
+    + schema_version 만 교체. Pydantic model_validate 가 최종 필드 검증.
 
-    예시 (향후):
-        if from_version == "2.0" and to_version == "2.1":
-            raw.setdefault("new_field", [])
+    지원 마이그레이션:
+    - 2.0 → 2.1 (P1, 2026-05-12): intents 필드 + DIA+ AEO 신호 3종 default 주입
     """
     if from_version == to_version:
         return raw
-    # 향후 마이그레이션 분기 추가 지점
+
+    if from_version == "2.0" and to_version == "2.1":
+        # P1: intents 필드 + DIA+ aggregated dict 의 3 신규 키 default 0.0
+        raw.setdefault("intents", [])
+        dia = raw.get("dia_plus")
+        if isinstance(dia, dict):
+            dia.setdefault("direct_answer_blocks", 0.0)
+            dia.setdefault("cited_sources", 0.0)
+            dia.setdefault("definition_blocks", 0.0)
+        raw["schema_version"] = to_version
+        return raw
+
     logger.warning(
         "pattern_card.migrate.unhandled from=%s to=%s — passthrough",
         from_version,
         to_version,
     )
-    # 최소한 schema_version 만 신 버전으로 교체해 Pydantic 이 model_validate 하도록
     raw["schema_version"] = to_version
     return raw

@@ -124,6 +124,7 @@ def _run_analysis_stages(
     from application.stage_runner import (
         run_stage_appeal_extraction,
         run_stage_cross_analysis,
+        run_stage_intent_extraction,
         run_stage_page_scraping,
         run_stage_physical_extraction,
         run_stage_semantic_extraction,
@@ -198,15 +199,16 @@ def _run_analysis_stages(
             error=f"물리 추출 실패: {exc}",
         ), None
 
-    # [4a] + [4b] 병렬 실행 (독립적인 LLM 호출).
+    # [4a] + [4b] + [4c] 병렬 실행 (독립적인 LLM 호출).
     # 각 워커는 격리된 contextvars 복사본에서 실행하고 자체 usage 리스트를 반환한다.
     # ThreadPoolExecutor 기본 동작은 부모 ContextVar 를 공유하지 않아, 이렇게 하지 않으면
-    # [4a]/[4b] 의 토큰 기록이 유실된다.
+    # [4a]/[4b]/[4c] 의 토큰 기록이 유실된다.
+    # P1 (2026-05-12): [4c] intent_extraction 추가 (Haiku 4.5). 분리 원칙 준수.
     from concurrent.futures import ThreadPoolExecutor
 
     try:
         reset_usage()
-        with ThreadPoolExecutor(max_workers=2) as executor:
+        with ThreadPoolExecutor(max_workers=3) as executor:
             sem_future = executor.submit(
                 run_in_isolated_usage_ctx,
                 run_stage_semantic_extraction,
@@ -225,28 +227,38 @@ def _run_analysis_stages(
                 output_dir,
                 reporter,
             )
+            intent_future = executor.submit(
+                run_in_isolated_usage_ctx,
+                run_stage_intent_extraction,
+                pages,
+                keyword,
+                output_dir,
+                reporter,
+            )
             semantics, sem_usage = sem_future.result()
             appeals, appeal_usage = appeal_future.result()
+            page_intents, intent_usage = intent_future.result()
 
-        for u in sem_usage + appeal_usage:
+        for u in sem_usage + appeal_usage + intent_usage:
             record_usage(u)
-        usage_summary = _harvest_usage("semantic_appeal", keyword)
+        usage_summary = _harvest_usage("semantic_appeal_intent", keyword)
         stages.append(
             StageResult(
                 name="semantic_extraction", status=StageStatus.SUCCEEDED, summary=usage_summary
             )
         )
         stages.append(StageResult(name="appeal_extraction", status=StageStatus.SUCCEEDED))
+        stages.append(StageResult(name="intent_extraction", status=StageStatus.SUCCEEDED))
     except Exception as exc:
         stages.append(
-            StageResult(name="semantic_appeal", status=StageStatus.FAILED, error=str(exc))
+            StageResult(name="semantic_appeal_intent", status=StageStatus.FAILED, error=str(exc))
         )
         return AnalyzeResult(
             status=StageStatus.FAILED,
             keyword=keyword,
             slug=slug,
             stages=stages,
-            error=f"의미/소구 추출 실패: {exc}",
+            error=f"의미/소구/의도 추출 실패: {exc}",
         ), None
 
     # 유효 샘플 검증 — URL intersection 기준.
@@ -270,7 +282,14 @@ def _run_analysis_stages(
     # [5] 교차 분석
     try:
         card, pattern_card_id = run_stage_cross_analysis(
-            keyword, slug, physicals, semantics, appeals, output_dir, reporter
+            keyword,
+            slug,
+            physicals,
+            semantics,
+            appeals,
+            output_dir,
+            reporter,
+            page_intents=page_intents,
         )
         stages.append(StageResult(name="cross_analysis", status=StageStatus.SUCCEEDED))
     except Exception as exc:

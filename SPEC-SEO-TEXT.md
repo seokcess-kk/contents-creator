@@ -42,6 +42,8 @@
     ↓
 [4b] 소구 포인트 + 홍보성 레벨 추출 (Sonnet)
     ↓
+[4c] 사용자 의도 추출 — 2~5개 (Haiku, P1 2026-05-12)
+    ↓
 [5] 교차 분석 → 패턴 카드 (비율 기반 임계값)
     ↓
 [6] 아웃라인 + 도입부 + image_prompts 생성 (Opus)
@@ -148,6 +150,9 @@ HTML 파싱으로 정량 데이터 추출. LLM 불필요.
 | `separators` | `<hr>` 태그 개수 |
 | `qa_sections` | 다음 중 **하나라도** true: (a) 소제목이 `Q.`, `Q:`, `Q)`, `질문)`, `[Q]` 접두어로 시작, (b) 연속된 H2/H3 페어에서 첫째가 의문형 + 둘째가 평서문이고 둘째 소제목이 첫째보다 1.5배 짧음, (c) 소제목에 `FAQ`, `자주 묻는`, `질문과 답` 키워드 포함 |
 | `statistics_data` | 본문에서 숫자+단위 패턴 3회 이상. 정규식: `\d+(?:\.\d+)?\s*(?:%\|명\|배\|년\|개월\|주\|일\|kg\|cm\|만원\|건)` |
+| `direct_answer_blocks` (P1) | 질문 직후 짧은 답이 오는 블록 카운트. (a) `?` 로 끝나거나 `Q.` 접두 heading 뒤 첫 `<p>` 가 60자 이하, 또는 (b) subtitles 페어가 (질문 / 60자 이하 평서) 조합. AEO Direct Answer 시그널 |
+| `cited_sources` (P1) | (a) `출처:`/`근거:`/`자료:`/`참고:` 마커 + (b) 네이버 내부 도메인 외 `<a href>` 카운트. AEO 신뢰도 시그널 |
+| `definition_blocks` (P1) | 정규식 `[가-힣A-Za-z0-9]{2,20}\s*(?:이란\|란\|은\|는)\s+[^.!?\n]{5,120}(?:이다\|입니다\|을 말한다\|를 말한다\|라고 한다\|라고 합니다)` 매치 카운트. AEO 발췌 답변 시그널 |
 
 **출력 형식:** 블로그 1개당 JSON 1개
 
@@ -263,9 +268,35 @@ HTML 파싱으로 정량 데이터 추출. LLM 불필요.
 
 **저장:** `output/{slug}/{timestamp}/analysis/appeal/{idx}.json`
 
+### [4c] 사용자 의도 추출 (LLM, Haiku 4.5 — P1, 2026-05-12)
+
+[4a]/[4b] 와 분리한 전용 LLM 호출. 키워드 검색이 의도 검색으로 빠르게 이동하는 흐름에 대응해, **상위 노출 블로그가 답하고 있는 사용자 진짜 질문/의도** 를 2~5개 추출한다. 표면 키워드 재배열이 아니라 독자가 글에서 얻고 싶어한 구체적 결정·정보 기준.
+
+**모델 선택**: 단순 분류·추출이므로 **Haiku 4.5** ($1/$5 per 1M tokens). Sonnet 대비 ~1/3, Opus 대비 ~1/15 비용. 페이지 1건당 약 $0.005.
+
+**추출 항목:**
+- `intents`: 사용자 진짜 질문/의도 2~5개. 60자 이내. 좋은 예 — "비용은 얼마인가요?", "회사 근처 점심시간 진료 가능?", "보철물 종류별 차이"
+
+**graceful 실패**: API 오류·tool_use 누락 시 빈 리스트 반환 (raise 금지). 분석 파이프라인 계속 진행.
+
+**출력 형식:**
+
+```json
+{
+  "url": "...",
+  "intents": [
+    "비용은 얼마인가요?",
+    "보철물 종류별 차이",
+    "회복 기간은 얼마나 걸리나요?"
+  ]
+}
+```
+
+**저장:** `output/{slug}/{timestamp}/analysis/intent/{idx}.json`
+
 ### [5] 교차 분석 → 패턴 카드 (코드 집계, LLM 불필요)
 
-상위 블로그들의 [3][4a][4b] 결과를 통합하여 패턴 카드 생성.
+상위 블로그들의 [3][4a][4b][4c] 결과를 통합하여 패턴 카드 생성.
 
 **임계값 — 비율 기반:**
 - **필수 섹션**: 수집 성공 수의 **80% 이상**
@@ -291,7 +322,7 @@ HTML 파싱으로 정량 데이터 추출. LLM 불필요.
 
 ```json
 {
-  "schema_version": "2.0",
+  "schema_version": "2.1",
   "keyword": "강남 다이어트 한의원",
   "slug": "gangnam-diet-hanuiwon",
   "analyzed_count": 8,
@@ -321,8 +352,17 @@ HTML 파싱으로 정량 데이터 추출. LLM 불필요.
     "tables": 0.8,
     "qa_sections": 0.6,
     "lists": 0.9,
-    "statistics": 0.5
+    "statistics": 0.5,
+    "direct_answer_blocks": 0.5,
+    "cited_sources": 0.4,
+    "definition_blocks": 0.6
   },
+  "intents": [
+    "다이어트 한의원 비용은 얼마인가요?",
+    "체질 분석 기반 처방의 효과",
+    "요요 방지 원리",
+    "부작용 가능성"
+  ],
   "target_reader": {
     "concerns": ["다이어트 반복 실패", "요요 고민", "부작용 걱정"],
     "search_intent": "정보 탐색",
@@ -347,6 +387,14 @@ HTML 파싱으로 정량 데이터 추출. LLM 불필요.
 ### [6] 아웃라인 + 도입부 확정 생성 (LLM, Opus 4.6)
 
 패턴 카드를 프롬프트로 변환하여 **아웃라인 + 도입부 본문 200~300자**를 동시 생성. 도입부는 **톤 락(tone lock)** 역할이며 [7]에서 재생성하지 않는다.
+
+**P1 추가 규칙 (2026-05-12) — 첫 본문 섹션 = `intents[0]` 응답:**
+
+- `prompt_builder` 가 `PatternCard.intents` 를 outline 프롬프트에 자연어 지시로 주입 (`_format_intent_instructions`). intents[0] 은 hard 강제 지시 ("첫 번째 본문 섹션은 위 의도를 직접 답변하도록 구성")
+- `outline_validator._check_first_section_intent` 가 kiwipiepy 형태소 recall ≥ 0.4 으로 검증. 첫 본문 섹션의 subtitle+summary 에 intents[0] 핵심 명사가 recall 0.4 미만으로 등장하면 outline 1회 재생성 (기존 validation 재시도 루프 재사용)
+- intents 빈 리스트 (Haiku 실패 등) → graceful skip. 검증 미수행, 프롬프트엔 "자체 판단" 안내문만
+- AEO 신호 3종 (`direct_answer_blocks` / `cited_sources` / `definition_blocks`) DIA+ ratio > 0.3 시 자연어 지시 자동 추가 (`_format_dia_instructions`)
+- **M2 보강**: intents 는 outline 프롬프트만 주입. body 프롬프트 절대 금지 (post-edit-lint 자동 차단)
 
 **프롬프트 구조:**
 
@@ -809,6 +857,7 @@ create index idx_generated_contents_card on generated_contents (pattern_card_id,
 |---|---|---|---|
 | [4a] 의미적 구조 추출 | **Sonnet 4.6** | 분류·구조화 출력 | 정확도·속도·비용 균형 |
 | [4b] 소구 포인트 추출 | **Sonnet 4.6** | 전용 분류 | [4a]와 분리해 품질 안정화 |
+| [4c] 사용자 의도 추출 (P1) | **Haiku 4.5** | 단순 분류·추출 | Sonnet 대비 1/3, Opus 대비 1/15 비용. 페이지당 ~$0.005 |
 | [6] 아웃라인 + 도입부 | **Opus 4.6** | 전체 구조·톤 확정 | 글 품질 좌우하는 핵심 판단 |
 | [7] 본문 생성 | **Opus 4.6** | 한국어 본문 작성 | 한국어 품질 최우선 |
 | [8] 의료법 검증·수정 | **Sonnet 4.6** | 규칙 판단·수정 제안 (본문+태그+이미지 prompt) | 정확도·비용 균형 |
@@ -865,9 +914,10 @@ contents-creator/
 │   │   └── page_scraper.py            ← Web Unlocker: 본문 HTML 수집 + 재시도
 │   ├── analysis/
 │   │   ├── CLAUDE.md
-│   │   ├── physical_extractor.py      ← DOM 파싱 (구조·키워드·DIA+·문단)
+│   │   ├── physical_extractor.py      ← DOM 파싱 (구조·키워드·DIA+ 10종·문단)
 │   │   ├── semantic_extractor.py      ← [4a] 역할·독자·제목·훅
 │   │   ├── appeal_extractor.py        ← [4b] 소구 포인트·홍보성
+│   │   ├── intent_extractor.py        ← [4c] 사용자 의도 2~5개 (Haiku 4.5, P1)
 │   │   ├── cross_analyzer.py          ← [5] 교차 분석 집계
 │   │   └── pattern_card.py            ← 패턴 카드 모델·저장·조회
 │   ├── generation/
@@ -928,6 +978,7 @@ contents-creator/
             │   ├── physical/          ← [3] 결과
             │   ├── semantic/          ← [4a] 결과
             │   ├── appeal/            ← [4b] 결과
+            │   ├── intent/            ← [4c] 결과 (P1)
             │   └── pattern-card.json
             ├── content/
             │   ├── outline.json

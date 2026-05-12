@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     model_editor: str = "claude-opus-4-7"
     # 분류·검증 ([4a][4b] 추출, [7] 본문 초안, [8] LLM 검증, [8] 이미지 prompt 재생성)
     model_sonnet: str = "claude-sonnet-4-6"
+    # 경량 분류·추출 — Intent 추출 등 단순 작업. Sonnet 대비 ~1/3, Opus 대비 ~1/15 비용.
+    # 1차 적용: P1 Intent 축 (사용자 진짜 질문 2~5개 추출).
+    model_haiku: str = "claude-haiku-4-5-20251001"
     image_model: str = "gemini-2.5-flash-image"
     image_size: str = "1024x1024"
 
@@ -124,6 +127,9 @@ class Settings(BaseSettings):
     cost_anthropic_editor_output: float = 75.0
     cost_anthropic_sonnet_input: float = 3.0
     cost_anthropic_sonnet_output: float = 15.0
+    # Haiku 4.5 (2026-04 기준). 단순 분류·추출 모듈 (P1 Intent 등) 비용 추적용.
+    cost_anthropic_haiku_input: float = 1.0
+    cost_anthropic_haiku_output: float = 5.0
     cost_gemini_image_per_request: float = 0.04
     cost_brightdata_per_request: float = 0.01
 
@@ -261,9 +267,7 @@ class Settings(BaseSettings):
     naver_username: str | None = Field(
         default=None, description="네이버 ID — RSA 폴백 로그인용. CDP 우선이면 미설정 가능"
     )
-    naver_password: str | None = Field(
-        default=None, description="네이버 PW — RSA 폴백 로그인용"
-    )
+    naver_password: str | None = Field(default=None, description="네이버 PW — RSA 폴백 로그인용")
     naver_chrome_profile: str | None = Field(
         default=None,
         description="CDP 로그인에 사용할 Chrome 프로필명 (예: 'Profile 2'). 5채널 시 채널별 오버라이드",

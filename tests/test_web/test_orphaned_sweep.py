@@ -17,7 +17,6 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-
 # 본 파일 테스트는 매 테스트가 직접 monkeypatch + TestClient(app) 으로 lifespan
 # 트리거. 공통 fixture 가 거의 없어 별도 추출 안 함.
 

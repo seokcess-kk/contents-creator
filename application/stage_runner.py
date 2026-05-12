@@ -341,6 +341,51 @@ def run_stage_appeal_extraction(
     return results
 
 
+# ── [4c] 사용자 의도 추출 (P1, 2026-05-12) ──
+
+
+def run_stage_intent_extraction(
+    pages: list[BlogPage],
+    keyword: str,
+    output_dir: Path,
+    reporter: ProgressReporter,
+) -> list[list[str]]:
+    """[4c] 페이지별 사용자 의도 추출 (Haiku 4.5). 실패 시 빈 리스트로 스킵.
+
+    반환은 페이지별 intent 리스트의 리스트. cross_analyzer 가 빈도순 dedup.
+    """
+    from domain.analysis.intent_extractor import extract_intents
+
+    reporter.stage_start("intent_extraction", total=len(pages))
+    results: list[list[str]] = []
+    intent_dir = output_dir / "analysis" / "intent"
+    intent_dir.mkdir(parents=True, exist_ok=True)
+
+    for i, page in enumerate(pages):
+        reporter.check_cancel()
+        try:
+            intents = extract_intents(page, keyword)
+            results.append(intents)
+            path = intent_dir / f"{page.idx}.json"
+            path.write_text(
+                json.dumps(
+                    {"url": str(page.url), "intents": intents}, ensure_ascii=False, indent=2
+                ),
+                encoding="utf-8",
+            )
+            reporter.stage_progress(i + 1, f"page {page.idx}")
+        except Exception:
+            logger.exception("intent_extraction failed page=%s", page.idx)
+            results.append([])
+
+    succeeded = sum(1 for r in results if r)
+    reporter.stage_end(
+        "intent_extraction",
+        {"succeeded": succeeded, "total": len(pages)},
+    )
+    return results
+
+
 # ── [5] 교차 분석 ──
 
 
@@ -352,16 +397,18 @@ def run_stage_cross_analysis(
     appeals: list[AppealAnalysis],
     output_dir: Path,
     reporter: ProgressReporter,
+    page_intents: list[list[str]] | None = None,
 ) -> tuple[PatternCard, str | None]:
     """[5] 교차 분석 → 패턴 카드 생성 + Supabase id 회수. LLM 불필요.
 
     Phase B7 — `save_pattern_card` 의 (path, supabase_id) 중 id 를 caller 에 전달.
+    P1 (2026-05-12) — page_intents 를 받아 PatternCard.intents 채움.
     """
     from domain.analysis.cross_analyzer import cross_analyze
 
     reporter.stage_start("cross_analysis")
 
-    card = cross_analyze(keyword, slug, physicals, semantics, appeals)
+    card = cross_analyze(keyword, slug, physicals, semantics, appeals, page_intents)
     _, pattern_card_id = save_pattern_card(card, output_dir)
 
     reporter.stage_end(
@@ -820,9 +867,7 @@ def run_stage_image_generation(
 # ── [10] 조립 ──
 
 
-def _mark_compliance_violations(
-    content_md: str, report: ComplianceReport
-) -> tuple[str, str]:
+def _mark_compliance_violations(content_md: str, report: ComplianceReport) -> tuple[str, str]:
     """강제 발행 모드: 본문 + 분리된 경고 배너 반환.
 
     Returns:
@@ -923,9 +968,7 @@ def run_stage_compose(
     # 네이버 에디터에 붙여넣어진다 → 분리 (compliance-warning.md).
     compliance_banner_md: str | None = None
     if not compliance_report.passed and compliance_report.violations:
-        marked_body, banner_md = _mark_compliance_violations(
-            content_md, compliance_report
-        )
+        marked_body, banner_md = _mark_compliance_violations(content_md, compliance_report)
         content_md = marked_body
         compliance_banner_md = banner_md
 
@@ -938,9 +981,7 @@ def run_stage_compose(
 
     # compliance-warning.md (강제 발행 케이스만 — frontend 가 별도 영역에 노출)
     if compliance_banner_md:
-        (content_dir / "compliance-warning.md").write_text(
-            compliance_banner_md, encoding="utf-8"
-        )
+        (content_dir / "compliance-warning.md").write_text(compliance_banner_md, encoding="utf-8")
 
     # seo-content.html
     html_doc = convert_to_naver_html(content_md, title)

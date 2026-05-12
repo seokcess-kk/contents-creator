@@ -19,6 +19,7 @@ from domain.analysis.pattern_card import (
     _extract_inserted_id,
     _save_to_supabase,
     load_pattern_card,
+    migrate_pattern_card,
     save_pattern_card,
 )
 
@@ -32,7 +33,7 @@ class TestConstants:
         assert DIFFERENTIATING_MIN_SAMPLES == 10
 
     def test_schema_version(self) -> None:
-        assert PATTERN_CARD_SCHEMA_VERSION == "2.0"
+        assert PATTERN_CARD_SCHEMA_VERSION == "2.1"
 
 
 def _card() -> PatternCard:
@@ -51,7 +52,7 @@ def _card() -> PatternCard:
 class TestPatternCardModel:
     def test_default_schema_version(self) -> None:
         card = _card()
-        assert card.schema_version == "2.0"
+        assert card.schema_version == "2.1"
 
     def test_roundtrip(self) -> None:
         card = _card()
@@ -59,6 +60,26 @@ class TestPatternCardModel:
         loaded = PatternCard.model_validate_json(j)
         assert loaded.keyword == card.keyword
         assert loaded.schema_version == card.schema_version
+
+    def test_intents_default_empty(self) -> None:
+        """P1 — intents 필드는 default 빈 리스트."""
+        card = _card()
+        assert card.intents == []
+
+    def test_intents_max_length(self) -> None:
+        """P1 — intents 는 max 5개. 6개 입력 시 Pydantic 검증 실패."""
+        import pytest
+        from pydantic import ValidationError
+
+        zero = RangeStats(avg=0, min=0, max=0)
+        with pytest.raises(ValidationError):
+            PatternCard(
+                keyword="x",
+                slug="x",
+                analyzed_count=7,
+                stats=PatternCardStats(chars=zero, subtitles=zero, keyword_density=zero),
+                intents=["a", "b", "c", "d", "e", "f"],
+            )
 
 
 class TestSaveLoad:
@@ -73,7 +94,68 @@ class TestSaveLoad:
         assert supabase_id is None or isinstance(supabase_id, str)
         loaded = load_pattern_card(path)
         assert loaded.keyword == "테스트"
-        assert loaded.schema_version == "2.0"
+        assert loaded.schema_version == "2.1"
+
+
+class TestMigratePatternCard:
+    """P1 — 2.0 → 2.1 migration. intents + DIA+ AEO 3종 default 주입."""
+
+    def test_2_0_to_2_1_adds_intents(self) -> None:
+        raw = {"schema_version": "2.0", "keyword": "x"}
+        migrated = migrate_pattern_card(raw, "2.0", "2.1")
+        assert migrated["intents"] == []
+        assert migrated["schema_version"] == "2.1"
+
+    def test_2_0_to_2_1_adds_dia_plus_aeo_keys(self) -> None:
+        raw = {
+            "schema_version": "2.0",
+            "keyword": "x",
+            "dia_plus": {"tables": 0.5},
+        }
+        migrated = migrate_pattern_card(raw, "2.0", "2.1")
+        assert migrated["dia_plus"]["direct_answer_blocks"] == 0.0
+        assert migrated["dia_plus"]["cited_sources"] == 0.0
+        assert migrated["dia_plus"]["definition_blocks"] == 0.0
+        # 기존 키 보존
+        assert migrated["dia_plus"]["tables"] == 0.5
+
+    def test_2_0_to_2_1_no_dia_plus_dict(self) -> None:
+        """dia_plus 가 dict 가 아니면 변형하지 않음."""
+        raw = {"schema_version": "2.0", "keyword": "x"}
+        migrated = migrate_pattern_card(raw, "2.0", "2.1")
+        assert "dia_plus" not in migrated or migrated.get("dia_plus") is None
+
+    def test_same_version_passthrough(self) -> None:
+        raw = {"schema_version": "2.1", "intents": ["a"]}
+        migrated = migrate_pattern_card(raw, "2.1", "2.1")
+        assert migrated is raw
+
+    def test_unknown_version_passthrough(self) -> None:
+        raw = {"schema_version": "1.0"}
+        migrated = migrate_pattern_card(raw, "1.0", "2.1")
+        assert migrated["schema_version"] == "2.1"
+
+    def test_load_2_0_file_auto_migrates(self, tmp_path: object) -> None:
+        """2.0 JSON 파일을 load 하면 자동으로 2.1 로 migrate 되어 PatternCard 반환."""
+        import json
+        from pathlib import Path
+
+        path = Path(str(tmp_path)) / "old.json"
+        raw = {
+            "schema_version": "2.0",
+            "keyword": "old",
+            "slug": "old",
+            "analyzed_count": 7,
+            "stats": {
+                "chars": {"avg": 0, "min": 0, "max": 0},
+                "subtitles": {"avg": 0, "min": 0, "max": 0},
+                "keyword_density": {"avg": 0, "min": 0, "max": 0},
+            },
+        }
+        path.write_text(json.dumps(raw), encoding="utf-8")
+        card = load_pattern_card(path)
+        assert card.schema_version == "2.1"
+        assert card.intents == []
 
 
 class TestExtractInsertedId:

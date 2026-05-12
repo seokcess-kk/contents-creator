@@ -51,6 +51,8 @@ violations=()
 # ============================================================
 if [[ "$REL_FILE" == domain/generation/body_writer.py ]]; then
   # 금지 식별자 패턴 (intro_tone_hint 는 허용이므로 제외)
+  # P1 (2026-05-12): 'intents' 도 차단. PatternCard.intents 는 outline 전용,
+  # body_writer 시그니처·프롬프트 텍스트에 누설되면 M2 위반.
   forbidden_identifiers=(
     'intro_text'
     'intro_md'
@@ -58,6 +60,7 @@ if [[ "$REL_FILE" == domain/generation/body_writer.py ]]; then
     'intro_content'
     'intro_body'
     'intro_raw'
+    'intents'
   )
 
   for pat in "${forbidden_identifiers[@]}"; do
@@ -69,6 +72,11 @@ if [[ "$REL_FILE" == domain/generation/body_writer.py ]]; then
   # 한글 '도입부' 키워드가 문자열 리터럴에 있는지 확인
   if grep -nE '"[^"]*도입부[^"]*"|\x27[^\x27]*도입부[^\x27]*\x27' "$FILE" > /dev/null 2>&1; then
     violations+=("[R1/M2] body_writer.py contains '도입부' in a string literal. Intro must not appear in body_writer prompts.")
+  fi
+
+  # P1: '사용자 의도' outline 전용 지시 문구가 body 프롬프트에 누설된 경우
+  if grep -nE '"[^"]*사용자 의도[^"]*"|\x27[^\x27]*사용자 의도[^\x27]*\x27' "$FILE" > /dev/null 2>&1; then
+    violations+=("[R1/M2/P1] body_writer.py contains '사용자 의도' in a string literal. Intent guidance is outline-only.")
   fi
 fi
 

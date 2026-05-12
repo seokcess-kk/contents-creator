@@ -308,6 +308,7 @@ def _build_outline_system(
     image_block = _format_image_instructions(pc)
     keyword_placement_block = _format_keyword_placement(pc)
     structure_directive = _build_structure_directive(pc)
+    intent_block = _format_intent_instructions(pc.intents)
 
     intro_type = _select_intro_type(pc.distributions)
 
@@ -338,6 +339,7 @@ def _build_outline_system(
         f"소제목: {_compute_subtitle_target(stats.subtitles.avg, sections)}개\n"
         f"도입 방식: {intro_type}\n\n"
         f"[DIA+ 요소 지시]\n{dia_instructions}\n\n"
+        f"{intent_block}\n\n"
         f"[키워드]\n"
         f"주: {pc.keyword}\n"
         f"연관: {pc.related_keywords}\n"
@@ -502,7 +504,11 @@ def _format_top_structures(pc: PatternCard) -> str:
 
 
 def _format_dia_instructions(dia: dict[str, float]) -> str:
-    """DIA+ 7개 요소 전체를 커버. 임계값 0.3 (30% 이상 사용 시 지시)."""
+    """DIA+ 10개 요소 전체를 커버. 임계값 0.3 (30% 이상 사용 시 지시).
+
+    7종 기본 + 3종 AEO 신호 (P1, 2026-05-12). AEO 신호는 AI 검색(Gemini/ChatGPT)
+    인용 적격성을 직접 끌어올리는 시그널 — 상위글에서 30%↑ 채택 시 outline 에 강제.
+    """
     lines: list[str] = []
     if dia.get("tables", 0.0) > 0.3:
         lines.append("- 표 1개 이상 포함")
@@ -522,7 +528,50 @@ def _format_dia_instructions(dia: dict[str, float]) -> str:
         lines.append("- 인용구 또는 핵심 요약에 > 인용 블록 사용")
     if dia.get("separators", 0.0) > 0.3:
         lines.append("- 섹션 간 구분선(---) 사용")
+    # ── AEO 신호 3종 (P1) ──
+    if dia.get("direct_answer_blocks", 0.0) > 0.3:
+        lines.append(
+            "- 직접 답변 블록 포함: 질문(`?`로 끝나는 소제목 또는 'Q.' 헤딩) "
+            "직후 1~2문장(60자 이내)의 명확한 답을 배치 (AEO 인용 적격성 향상)"
+        )
+    if dia.get("cited_sources", 0.0) > 0.3:
+        lines.append(
+            "- 외부 출처 인용 포함: '출처: ~' 또는 '근거: ~' 형태로 통계·연구·"
+            "공신력 있는 자료 1회 이상 명시 (AEO 신뢰도 시그널)"
+        )
+    if dia.get("definition_blocks", 0.0) > 0.3:
+        lines.append(
+            "- 정의 블록 포함: 핵심 용어 1개에 대해 'X 란 ~ 이다' 형식의 "
+            "명확한 정의 문장 1회 이상 (AEO 발췌 답변에 채택)"
+        )
     return "\n".join(lines) if lines else "- 특별 지시 없음"
+
+
+def _format_intent_instructions(intents: list[str]) -> str:
+    """P1 — 첫 본문 섹션의 intent 응답 강제 지시.
+
+    intents 가 빈 리스트면 안내문만. intents[0] 은 hard 강제 (outline_validator
+    가 recall ≥ 0.4 으로 검증, 미달 시 1회 재생성). 나머지 intents 는 권장.
+    """
+    if not intents:
+        return (
+            "[사용자 의도 응답]\n"
+            "- (분석에서 명확한 사용자 의도가 검출되지 않음 — "
+            "키워드 의도와 타겟 독자 고민에 기반해 자체 판단)"
+        )
+    primary = intents[0]
+    rest = intents[1:]
+    lines = [
+        "[사용자 의도 응답 — 최우선]",
+        f'- 상위 글이 답하는 사용자 진짜 질문 1순위: "{primary}"',
+        "- 🔴 첫 번째 본문 섹션(도입 다음 H2)은 위 의도를 **직접 답변하도록** 구성.",
+        f"  · 소제목에 의도의 핵심 명사를 포함 (예: \"{primary}\" 가 '비용' 이면 소제목에 '비용' 포함)",
+        "  · 첫 문단 1~2문장 내에 핵심 답을 명시 (AEO Direct Answer 패턴 권장)",
+    ]
+    if rest:
+        rest_str = ", ".join(f'"{i}"' for i in rest)
+        lines.append(f"- 추가 의도 (후속 섹션에서 다루기 권장): {rest_str}")
+    return "\n".join(lines)
 
 
 def _format_compliance(rules: str | None) -> str:

@@ -58,6 +58,95 @@ class TestBuildOutlinePrompt:
         assert "의료법" in shared_system
         assert "치료 효과 보장" in shared_system
 
+
+class TestIntentInstructions:
+    """P1 — intents 가 outline 프롬프트에 자연어 지시로 주입되는지."""
+
+    def test_empty_intents_renders_fallback_note(self, sample_pattern_card: PatternCard) -> None:
+        """intents 빈 리스트 → '명확한 사용자 의도 미검출' 안내문만."""
+        card = sample_pattern_card.model_copy(update={"intents": []})
+        shared_system, _, _ = build_outline_prompt(card)
+        assert "사용자 의도 응답" in shared_system
+        assert "미검출" in shared_system or "자체 판단" in shared_system
+
+    def test_primary_intent_injected_with_emphasis(self, sample_pattern_card: PatternCard) -> None:
+        """intents[0] 가 첫 본문 섹션 강제 지시와 함께 프롬프트에 주입."""
+        card = sample_pattern_card.model_copy(
+            update={"intents": ["다이어트 비용은 얼마인가요?", "체질 분석 방법은?"]}
+        )
+        shared_system, _, _ = build_outline_prompt(card)
+        assert "다이어트 비용은 얼마인가요?" in shared_system
+        assert "첫 번째 본문 섹션" in shared_system
+        # 추가 intent 도 후속 섹션 권장으로 등장
+        assert "체질 분석 방법은?" in shared_system
+
+    def test_single_intent_no_rest_block(self, sample_pattern_card: PatternCard) -> None:
+        card = sample_pattern_card.model_copy(update={"intents": ["하나뿐인 의도"]})
+        shared_system, _, _ = build_outline_prompt(card)
+        assert "하나뿐인 의도" in shared_system
+        # "추가 의도" 블록은 없음
+        assert "추가 의도" not in shared_system
+
+
+class TestAeoSignalsInDiaInstructions:
+    """P1 — AEO 신호 3종 임계값 (>0.3) 통과 시 dia 지시 추가."""
+
+    def test_direct_answer_blocks_threshold(self, sample_pattern_card: PatternCard) -> None:
+        dia = dict(sample_pattern_card.dia_plus)
+        dia["direct_answer_blocks"] = 0.6
+        card = sample_pattern_card.model_copy(update={"dia_plus": dia})
+        shared_system, _, _ = build_outline_prompt(card)
+        assert "직접 답변 블록" in shared_system
+        assert "AEO" in shared_system
+
+    def test_cited_sources_threshold(self, sample_pattern_card: PatternCard) -> None:
+        dia = dict(sample_pattern_card.dia_plus)
+        dia["cited_sources"] = 0.5
+        card = sample_pattern_card.model_copy(update={"dia_plus": dia})
+        shared_system, _, _ = build_outline_prompt(card)
+        assert "외부 출처 인용" in shared_system or "출처" in shared_system
+
+    def test_definition_blocks_threshold(self, sample_pattern_card: PatternCard) -> None:
+        dia = dict(sample_pattern_card.dia_plus)
+        dia["definition_blocks"] = 0.4
+        card = sample_pattern_card.model_copy(update={"dia_plus": dia})
+        shared_system, _, _ = build_outline_prompt(card)
+        assert "정의 블록" in shared_system
+
+    def test_below_threshold_not_injected(self, sample_pattern_card: PatternCard) -> None:
+        """0.3 이하 → 지시 미주입."""
+        dia = dict(sample_pattern_card.dia_plus)
+        dia["direct_answer_blocks"] = 0.2
+        dia["cited_sources"] = 0.1
+        dia["definition_blocks"] = 0.0
+        card = sample_pattern_card.model_copy(update={"dia_plus": dia})
+        shared_system, _, _ = build_outline_prompt(card)
+        assert "직접 답변 블록" not in shared_system
+        assert "외부 출처 인용" not in shared_system
+
+    def test_intents_absent_from_body_prompt(
+        self,
+        sample_pattern_card: PatternCard,
+        outline_without_intro: Outline,
+    ) -> None:
+        """M2 — body 프롬프트에 intent 지시가 절대 들어가지 않음.
+
+        intents 가 PatternCard 에 있어도 body_writer 의 system/user 텍스트에 흘러가면
+        M2 위반. body 는 outline.sections 와 intro_tone_hint 만 받아야 함.
+        """
+        card = sample_pattern_card.model_copy(
+            update={"intents": ["테스트 의도가 본문에 누설되면 안됨"]}
+        )
+        messages, _ = build_body_prompt(
+            outline_without_intro,
+            intro_tone_hint="공감형 톤",
+            pattern_card=card,
+        )
+        body_prompt_text = "\n".join(m["content"] for m in messages)
+        assert "테스트 의도가 본문에 누설되면 안됨" not in body_prompt_text
+        assert "사용자 의도 응답" not in body_prompt_text
+        assert "첫 번째 본문 섹션" not in body_prompt_text
+
     def test_dia_plus_instructions(self, sample_pattern_card: PatternCard) -> None:
         shared_system, _, _ = build_outline_prompt(sample_pattern_card)
         # tables > 0.5, lists > 0.7 이므로 관련 지시 포함

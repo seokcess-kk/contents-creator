@@ -8,6 +8,7 @@ from domain.analysis.cross_analyzer import (
     _aggregate_stats,
     _aggregate_tags,
     _classify_sections,
+    _dedupe_and_rank_intents,
     _extract_top_structures,
     cross_analyze,
 )
@@ -181,6 +182,62 @@ class TestAggregateDiaPlus:
         assert result["tables"] == 1.0
         assert result["statistics"] == 1.0
 
+    def test_aeo_signals_present(self) -> None:
+        """P1 — AEO 신호 3종 키가 집계 결과에 포함."""
+        ps = [_physical()] * 5
+        result = _aggregate_dia_plus(ps, 5)
+        assert "direct_answer_blocks" in result
+        assert "cited_sources" in result
+        assert "definition_blocks" in result
+        # default DiaPlus 의 3 필드는 0 → 비율 0.0
+        assert result["direct_answer_blocks"] == 0.0
+        assert result["cited_sources"] == 0.0
+        assert result["definition_blocks"] == 0.0
+
+    def test_aeo_signals_ratio_with_partial(self) -> None:
+        """P1 — 일부 글에만 신호 있을 때 ratio 정확."""
+        ps_with = [
+            PhysicalAnalysis(
+                url="https://blog.naver.com/x/100000001",  # type: ignore[arg-type]
+                title="t",
+                total_chars=2000,
+                total_paragraphs=10,
+                subtitle_count=3,
+                keyword_analysis=KeywordAnalysis(
+                    main_keyword="k",
+                    first_appearance_sentence=1,
+                    total_count=5,
+                    density=0.01,
+                    subtitle_keyword_ratio=0.5,
+                    title_keyword_position="front",
+                ),
+                dia_plus=DiaPlus(
+                    tables=0,
+                    lists=0,
+                    blockquotes=0,
+                    bold_count=0,
+                    separators=0,
+                    qa_sections=False,
+                    statistics_data=False,
+                    direct_answer_blocks=2,
+                    cited_sources=3,
+                    definition_blocks=1,
+                ),
+                paragraph_stats=ParagraphStats(
+                    avg_paragraph_chars=100.0,
+                    avg_sentence_chars=30.0,
+                    short_paragraph_ratio=0.1,
+                ),
+                section_ratios=SectionRatios(intro=0.15, body=0.7, conclusion=0.15),
+            )
+        ]
+        ps_without = [_physical()] * 4
+        result = _aggregate_dia_plus(ps_with + ps_without, 5)
+        # 5 글 중 1 글만 신호 보유 → 0.2
+        assert result["direct_answer_blocks"] == 0.2
+        assert result["cited_sources"] == 0.2
+        assert result["definition_blocks"] == 0.2
+
 
 class TestAggregateTags:
     def test_all_empty_fallback(self) -> None:
@@ -234,4 +291,76 @@ class TestCrossAnalyze:
         sems = [_semantic()] * 7
         apps = [_appeal()] * 7
         card = cross_analyze("kw", "slug", ps, sems, apps)
-        assert card.schema_version == "2.0"
+        assert card.schema_version == "2.1"
+
+    def test_intents_default_empty(self) -> None:
+        """P1 — page_intents 미지정 시 intents 빈 리스트."""
+        ps = [_physical()] * 7
+        sems = [_semantic()] * 7
+        apps = [_appeal()] * 7
+        card = cross_analyze("kw", "slug", ps, sems, apps)
+        assert card.intents == []
+
+    def test_intents_populated_from_page_intents(self) -> None:
+        """P1 — page_intents 가 dedupe + 빈도순 순위로 PatternCard.intents 에 주입."""
+        ps = [_physical()] * 3
+        sems = [_semantic()] * 3
+        apps = [_appeal()] * 3
+        page_intents = [
+            ["비용", "보철물 종류", "회복 기간"],
+            ["비용", "회복 기간"],
+            ["비용", "사후 관리"],
+        ]
+        card = cross_analyze("kw", "slug", ps, sems, apps, page_intents=page_intents)
+        # 비용 3회 > 회복 기간 2회 > 보철물 종류 1회 = 사후 관리 1회 (첫 등장 순)
+        assert card.intents[0] == "비용"
+        assert card.intents[1] == "회복 기간"
+
+
+class TestDedupeAndRankIntents:
+    """P1 — 페이지별 intent 빈도순 dedup."""
+
+    def test_empty(self) -> None:
+        assert _dedupe_and_rank_intents([]) == []
+
+    def test_all_empty_pages(self) -> None:
+        assert _dedupe_and_rank_intents([[], [], []]) == []
+
+    def test_frequency_order(self) -> None:
+        result = _dedupe_and_rank_intents(
+            [
+                ["A", "B"],
+                ["A", "C"],
+                ["A"],
+            ]
+        )
+        # A:3, B:1, C:1 → A 가 첫번째, B/C 는 첫 등장 순
+        assert result[0] == "A"
+        assert "B" in result and "C" in result
+
+    def test_case_insensitive_dedup(self) -> None:
+        """대소문자·공백 정규화로 동일 의도 카운트."""
+        result = _dedupe_and_rank_intents(
+            [
+                ["비용 정보"],
+                [" 비용  정보 "],  # 공백 차이 → 동일
+            ]
+        )
+        # 1개로 dedupe
+        assert len(result) == 1
+
+    def test_max_5(self) -> None:
+        page_intents = [["a", "b", "c", "d", "e", "f", "g"]]
+        result = _dedupe_and_rank_intents(page_intents)
+        assert len(result) == 5
+
+    def test_same_intent_in_one_page_counted_once(self) -> None:
+        """한 페이지 내 중복은 1회만."""
+        result = _dedupe_and_rank_intents(
+            [
+                ["A", "A", "A", "B"],  # A 1회로 카운트
+                ["A", "B"],
+            ]
+        )
+        # A:2, B:2 → 첫 등장 A 우선
+        assert result == ["A", "B"]

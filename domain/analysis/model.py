@@ -49,7 +49,14 @@ class KeywordAnalysis(BaseModel):
 
 
 class DiaPlus(BaseModel):
-    """DIA+ 요소 7종 감지 결과 (SPEC §3 [3])."""
+    """DIA+ 요소 감지 결과 (SPEC §3 [3]).
+
+    7종 기본 + 3종 AEO 신호 (P1, 2026-05-12 추가):
+    - direct_answer_blocks: 질문 직후 짧은 답이 오는 블록 (FAQ/Q-A 패턴)
+    - cited_sources: 외부 출처·근거 인용 카운트 ("출처:" + 외부 도메인 링크)
+    - definition_blocks: 정의문 ("X 란 ~ 이다" 형태) 카운트
+    AI 검색 인용 적격성(AEO) 시그널로 cross_analyzer 가 ratio 화해 임계값 적용.
+    """
 
     tables: int = Field(ge=0)
     lists: int = Field(ge=0)
@@ -58,6 +65,9 @@ class DiaPlus(BaseModel):
     separators: int = Field(ge=0)
     qa_sections: bool
     statistics_data: bool
+    direct_answer_blocks: int = Field(default=0, ge=0)
+    cited_sources: int = Field(default=0, ge=0)
+    definition_blocks: int = Field(default=0, ge=0)
 
 
 class ParagraphStats(BaseModel):

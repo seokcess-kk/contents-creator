@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from bs4 import BeautifulSoup
 from pydantic import HttpUrl
 
 from domain.analysis.physical_extractor import (
@@ -16,6 +17,9 @@ from domain.analysis.physical_extractor import (
     _count_keyword,
     _detect_body_font_size,
     _detect_qa_sections,
+    _extract_cited_sources,
+    _extract_definition_blocks,
+    _extract_direct_answer_blocks,
     _extract_tags,
     _extract_title,
     _find_first_sentence_with_keyword,
@@ -248,6 +252,106 @@ class TestQaSectionDetection:
 
     def test_no_qa_pattern(self) -> None:
         assert _detect_qa_sections(["일반 소제목", "또 다른 소제목"]) is False
+
+
+class TestAeoSignals:
+    """P1 (2026-05-12) — AEO 신호 3종 추출.
+
+    direct_answer_blocks, cited_sources, definition_blocks 각각의 단위 검증.
+    """
+
+    def _container(self, html: str) -> object:
+        return BeautifulSoup(f"<div>{html}</div>", "html.parser").div
+
+    # ── direct_answer_blocks ──
+
+    def test_direct_answer_question_heading_short_paragraph(self) -> None:
+        c = self._container("<h3>임플란트 비용은 얼마인가요?</h3><p>200만원입니다.</p>")
+        assert _extract_direct_answer_blocks(c, []) == 1  # type: ignore[arg-type]
+
+    def test_direct_answer_long_paragraph_not_counted(self) -> None:
+        long_answer = "임플란트 비용은 다양한 요소에 따라 결정됩니다. " * 10
+        c = self._container(f"<h3>비용?</h3><p>{long_answer}</p>")
+        assert _extract_direct_answer_blocks(c, []) == 0  # type: ignore[arg-type]
+
+    def test_direct_answer_q_prefix(self) -> None:
+        c = self._container("<h3>Q. 보철물 종류는?</h3><p>지르코니아, 메탈 두 가지.</p>")
+        assert _extract_direct_answer_blocks(c, []) == 1  # type: ignore[arg-type]
+
+    def test_direct_answer_subtitle_pair_fallback(self) -> None:
+        c = self._container("<p>plain text</p>")
+        subs = ["비용은 얼마인가요?", "약 200만원 수준입니다."]
+        assert _extract_direct_answer_blocks(c, subs) == 1  # type: ignore[arg-type]
+
+    def test_direct_answer_no_signal(self) -> None:
+        c = self._container("<p>일반 본문</p><h3>소제목</h3><p>설명</p>")
+        assert _extract_direct_answer_blocks(c, []) == 0  # type: ignore[arg-type]
+
+    # ── cited_sources ──
+
+    def test_cited_sources_marker(self) -> None:
+        c = self._container("<p>본문 본문 본문</p>")
+        text = "어쩌고 저쩌고. 출처: 건강보험심사평가원. 추가 설명."
+        assert _extract_cited_sources(c, text) == 1  # type: ignore[arg-type]
+
+    def test_cited_sources_multiple_markers(self) -> None:
+        c = self._container("<p>본문</p>")
+        text = "근거: A. 자료: B. 참고: C."
+        assert _extract_cited_sources(c, text) == 3  # type: ignore[arg-type]
+
+    def test_cited_sources_external_link(self) -> None:
+        c = self._container('<p>본문</p><a href="https://hira.or.kr/stats">출처</a>')
+        # 마커 0 + 외부 링크 1
+        assert _extract_cited_sources(c, "본문") == 1  # type: ignore[arg-type]
+
+    def test_cited_sources_internal_naver_link_excluded(self) -> None:
+        c = self._container('<a href="https://blog.naver.com/abc/123">내부</a>')
+        assert _extract_cited_sources(c, "본문") == 0  # type: ignore[arg-type]
+
+    def test_cited_sources_anchor_and_javascript_excluded(self) -> None:
+        c = self._container('<a href="#top">위로</a><a href="javascript:void(0)">x</a>')
+        assert _extract_cited_sources(c, "본문") == 0  # type: ignore[arg-type]
+
+    # ── definition_blocks ──
+
+    def test_definition_blocks_ran_pattern(self) -> None:
+        text = "임플란트란 인공치근을 식립하는 시술이다."
+        assert _extract_definition_blocks(text) == 1
+
+    def test_definition_blocks_eun_neun_pattern(self) -> None:
+        text = "탈모는 모낭이 점차 위축되어 모발이 가늘어지는 현상을 말한다."
+        assert _extract_definition_blocks(text) == 1
+
+    def test_definition_blocks_polite_ending(self) -> None:
+        text = "다이어트는 체중 감량을 목적으로 식단을 조절하는 활동입니다."
+        assert _extract_definition_blocks(text) == 1
+
+    def test_definition_blocks_multiple(self) -> None:
+        text = (
+            "임플란트란 인공치근을 식립하는 시술이다. 보철물은 임플란트 상부의 인공 치아를 말한다."
+        )
+        assert _extract_definition_blocks(text) == 2
+
+    def test_definition_blocks_no_match_for_general_sentences(self) -> None:
+        text = "오늘은 강남에 갔다. 점심도 먹었다. 좋은 하루였다."
+        assert _extract_definition_blocks(text) == 0
+
+    def test_definition_blocks_too_short_body_filtered(self) -> None:
+        # 본문 5자 미만 → 매칭 안 됨
+        text = "X란 짧다."
+        assert _extract_definition_blocks(text) == 0
+
+    # ── dia_plus 통합 — 3 신규 필드가 결과에 포함되는지 ──
+
+    def test_dia_plus_includes_aeo_fields(self) -> None:
+        body = _se_text("임플란트란 인공치근을 식립하는 시술이다. 자세한 내용을 살펴보자.")
+        html = _wrap_naver(body)
+        result = extract_physical(_page(html), "임플란트")
+        assert hasattr(result.dia_plus, "direct_answer_blocks")
+        assert hasattr(result.dia_plus, "cited_sources")
+        assert hasattr(result.dia_plus, "definition_blocks")
+        # 정의문 1개 검출
+        assert result.dia_plus.definition_blocks >= 1
 
 
 class TestKeywordAnalysis:

@@ -50,6 +50,30 @@ _INVISIBLE_CHARS = re.compile(r"[\u200b\u200c\u200d\ufeff]")
 QA_PREFIX_RE = re.compile(r"^\s*(?:Q\.|Q:|Q\)|질문\)|\[Q\])", re.IGNORECASE)
 QA_KEYWORD_RE = re.compile(r"FAQ|자주\s*묻는|질문과\s*답", re.IGNORECASE)
 
+# ── P1 (2026-05-12): AEO 신호 3종 ──
+# direct_answer_blocks: "Q." 또는 "?" 로 끝나는 라인 직후 짧은 답변 (60자 이하)
+DIRECT_ANSWER_SHORT_CHARS = 60
+DIRECT_ANSWER_PREFIX_RE = re.compile(r"^\s*(?:A\.|A:|A\)|답\)|\[A\])", re.IGNORECASE)
+# cited_sources: 명시적 출처/근거 마커
+CITED_SOURCE_RE = re.compile(r"(?:출처|근거|자료|참고)\s*[:：]")
+# 외부 도메인 (블로그 내부·네이버 자체 도메인 외 카운트)
+_NAVER_INTERNAL_HOSTS = (
+    "blog.naver.com",
+    "m.blog.naver.com",
+    "naver.com",
+    "search.naver.com",
+    "blogfiles.naver.net",
+    "blogfiles.pstatic.net",
+    "postfiles.pstatic.net",
+    "ssl.pstatic.net",
+)
+# definition_blocks: "X 란/은/는 ~ 이다/입니다/말한다" 패턴
+# 보수적: 명사 2~20자 + 정의 종결어미. 5~120자 본문 제약으로 false positive 최소화.
+DEFINITION_RE = re.compile(
+    r"[가-힣A-Za-z0-9]{2,20}\s*(?:이란|란|은|는)\s+[^.!?\n]{5,120}"
+    r"(?:이다|입니다|을 말한다|를 말한다|라고 한다|라고 합니다)"
+)
+
 # 연관 키워드 추출 — 한국어 토큰 + 조사 제거
 _KOREAN_TOKEN_RE = re.compile(r"[가-힣]{2,6}")
 _PARTICLE_SUFFIXES = (
@@ -521,7 +545,10 @@ def _looks_like_heading(component: Tag, text: str, body_font_size: int) -> bool:
 
 
 def _extract_dia_plus(container: Tag, subtitles: list[str], full_text: str) -> DiaPlus:
-    """DIA+ 7종 감지. 표준 태그 + se-* 클래스 OR 방식."""
+    """DIA+ 10종 감지. 표준 태그 + se-* 클래스 OR 방식.
+
+    7종 기본 + 3종 AEO 신호 (P1, 2026-05-12).
+    """
     tables = len(container.select("table")) + len(container.select("div.se-table"))
     lists = len(container.select("ul")) + len(container.select("ol"))
     blockquotes = len(container.select("blockquote")) + len(container.select("div.se-quotation"))
@@ -529,6 +556,9 @@ def _extract_dia_plus(container: Tag, subtitles: list[str], full_text: str) -> D
     separators = len(container.select("hr")) + len(container.select("div.se-horizontalLine"))
     qa_sections = _detect_qa_sections(subtitles)
     statistics_data = len(STATISTICS_RE.findall(full_text)) >= STATISTICS_MIN_MATCHES
+    direct_answer_blocks = _extract_direct_answer_blocks(container, subtitles)
+    cited_sources = _extract_cited_sources(container, full_text)
+    definition_blocks = _extract_definition_blocks(full_text)
 
     return DiaPlus(
         tables=tables,
@@ -538,7 +568,77 @@ def _extract_dia_plus(container: Tag, subtitles: list[str], full_text: str) -> D
         separators=separators,
         qa_sections=qa_sections,
         statistics_data=statistics_data,
+        direct_answer_blocks=direct_answer_blocks,
+        cited_sources=cited_sources,
+        definition_blocks=definition_blocks,
     )
+
+
+def _extract_direct_answer_blocks(container: Tag, subtitles: list[str]) -> int:
+    """질문 직후 짧은 답이 오는 블록 카운트 (AEO Direct Answer 시그널).
+
+    감지 패턴:
+    (a) `?` 로 끝나는 heading 직후 가장 가까운 <p> 가 DIRECT_ANSWER_SHORT_CHARS 이하
+    (b) "Q." 헤딩 직후 "A." 헤딩 또는 짧은 <p>
+    """
+    count = 0
+    headings = container.select("h1, h2, h3, h4, h5, h6, p.se-fs-fs28, p.se-fs-fs26")
+    for h in headings:
+        text = h.get_text(strip=True)
+        if not text:
+            continue
+        is_question = text.endswith("?") or QA_PREFIX_RE.match(text)
+        if not is_question:
+            continue
+        nxt = h.find_next_sibling()
+        while nxt is not None:
+            if not isinstance(nxt, Tag):
+                nxt = nxt.find_next_sibling() if hasattr(nxt, "find_next_sibling") else None
+                continue
+            if nxt.name in ("p", "div") and nxt.get_text(strip=True):
+                answer_text = nxt.get_text(strip=True)
+                if len(answer_text) <= DIRECT_ANSWER_SHORT_CHARS or DIRECT_ANSWER_PREFIX_RE.match(
+                    answer_text
+                ):
+                    count += 1
+                break
+            if nxt.name and nxt.name.startswith("h"):
+                break
+            nxt = nxt.find_next_sibling()
+    # 보조: subtitles 기반 페어 (heading 컨테이너 외부에 답이 있는 케이스)
+    for i in range(len(subtitles) - 1):
+        first = subtitles[i].strip()
+        second = subtitles[i + 1].strip()
+        if first.endswith("?") and second and len(second) <= DIRECT_ANSWER_SHORT_CHARS:
+            count += 1
+    return count
+
+
+def _extract_cited_sources(container: Tag, full_text: str) -> int:
+    """외부 출처·근거 인용 카운트 (AEO 신뢰도 시그널).
+
+    (a) "출처:" "근거:" "자료:" "참고:" 마커 카운트
+    (b) <a href> 중 외부 도메인 (네이버 내부 호스트 제외) 카운트
+    """
+    marker_count = len(CITED_SOURCE_RE.findall(full_text))
+    external_link_count = 0
+    for a in container.select("a[href]"):
+        href = str(a.get("href") or "").strip().lower()
+        if not href or href.startswith("#") or href.startswith("javascript:"):
+            continue
+        if href.startswith("//"):
+            href = "https:" + href
+        if not href.startswith(("http://", "https://")):
+            continue
+        if any(host in href for host in _NAVER_INTERNAL_HOSTS):
+            continue
+        external_link_count += 1
+    return marker_count + external_link_count
+
+
+def _extract_definition_blocks(full_text: str) -> int:
+    """정의문 "X 란/은/는 ~ 이다/입니다/말한다" 카운트 (AEO 정의 시그널)."""
+    return len(DEFINITION_RE.findall(full_text))
 
 
 def _detect_qa_sections(subtitles: list[str]) -> bool:
