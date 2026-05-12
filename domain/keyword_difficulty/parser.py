@@ -89,21 +89,54 @@ def parse_serp(html: str) -> SerpComposition:
     return SerpComposition(section_counts=dict(counts), total_cards=total, smartblock=smartblock)
 
 
+# 명시적 sub-topic 헤더(`h2`/`h3`) 텍스트에 다음 키워드가 포함되면 스마트블록 X.
+# 일반 통합검색 위젯·기능 영역 + 사용자 정의에 따라 인플루언서·인기글 제외.
+# 2026-05-12 v2: 사용자 운영 정의 — "강남역 다이어트 맛집", "관련 브랜드 콘텐츠"
+# 같은 sub-topic 헤더만 스마트블록으로 카운트.
+_SMARTBLOCK_EXCLUDE_KEYWORDS: tuple[str, ...] = (
+    "광고",
+    "플레이스",
+    "지도",
+    "장소",
+    "쇼핑",
+    "가격비교",
+    "스토어",
+    "지식백과",
+    "약학정보",
+    "백과사전",
+    "위키",
+    "지식iN",
+    "지식 iN",
+    "뉴스",
+    "이미지",
+    "동영상",
+    "클립",
+    "VIEW",
+    "인플루언서",
+    "인기글",
+)
+
+
 def _is_smartblock(sec: Tag) -> bool:
-    """`sc_new` 섹션이 스마트블록인지 판정.
+    """`sc_new` 가 명시적 sub-topic 헤더 스마트블록인지 판정.
 
-    실측 (2026-05-12, 87개 fixture) 결과 스마트블록 컨테이너는 다음 중
-    하나의 마커를 갖는다:
-    - `data-block-id` 가 `ugc/` 로 시작 (예: `ugc/prs_template_v2_ugc_*`)
-    - `data-meta-area` 가 `ugB_` prefix (UGC Block 계열)
+    SEO 운영 정의 (2026-05-12 v2): 스마트블록 = `<h2>`/`<h3>` 에
+    sub-topic 헤더가 있는 콘텐츠 영역. 단, 다음은 제외:
+    - 일반 기능 위젯: 광고/플레이스/쇼핑/가격비교/지식백과/뉴스 등
+    - 인플루언서·인기글 (운영자 정의)
 
-    한 섹션이 둘 중 하나만 만족해도 스마트블록으로 카운트.
+    예시 (강남역다이어트 SERP):
+      포함 → "강남역 다이어트 맛집", "강남역 다이어트약",
+              "'강남역다이어트' 관련 브랜드 콘텐츠"
+      제외 → "관련 광고", "플레이스", "'강남역다이어트' 인기글"
     """
-    block_id = str(sec.get("data-block-id") or "")
-    if block_id.startswith("ugc/"):
-        return True
-    meta_area = str(sec.get("data-meta-area") or "")
-    return meta_area.startswith("ugB_")
+    title_el = sec.find(["h2", "h3"])
+    if title_el is None:
+        return False
+    title = title_el.get_text(strip=True)
+    if not title:
+        return False
+    return not any(kw in title for kw in _SMARTBLOCK_EXCLUDE_KEYWORDS)
 
 
 def _classify_section(sec: Tag) -> SerpSection:

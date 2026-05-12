@@ -126,53 +126,68 @@ class TestParseSerp:
         comp = parse_serp(html)
         assert comp.section_counts.get(SerpSection.KNOWLEDGE_IN, 0) == 2
 
-    def test_no_smartblock_default(self) -> None:
-        """일반 섹션만 있는 SERP — smartblock.present=False."""
+    def test_smartblock_h2_subtopic_counted(self) -> None:
+        """명시적 sub-topic 헤더 (h2) 가 있는 섹션 → 스마트블록."""
         html = _wrap(
-            '<div class="sc_new"><h2>블로그</h2>'
-            '<a href="https://blog.naver.com/x/111111111">b</a></div>'
+            '<div class="sc_new"><h2>강남역 다이어트 맛집</h2></div>'
+            '<div class="sc_new"><h2>강남역 다이어트약</h2></div>'
+            "<div class=\"sc_new\"><h2>'강남역다이어트' 관련 브랜드 콘텐츠</h2></div>"
+        )
+        comp = parse_serp(html)
+        assert comp.smartblock.present is True
+        assert comp.smartblock.count == 3
+
+    def test_smartblock_excludes_ads_and_widgets(self) -> None:
+        """광고/플레이스/가격비교/스토어/지식백과/뉴스 등 위젯 헤더는 제외."""
+        html = _wrap(
+            '<div class="sc_new ad_section"><h2>관련 광고</h2></div>'
+            '<div class="sc_new"><h2>플레이스</h2></div>'
+            '<div class="sc_new"><h2>네이버 가격비교</h2></div>'
+            '<div class="sc_new"><h2>네이버플러스 스토어</h2></div>'
+            '<div class="sc_new"><h2>지식백과</h2></div>'
+            '<div class="sc_new"><h2>뉴스</h2></div>'
         )
         comp = parse_serp(html)
         assert comp.smartblock.present is False
         assert comp.smartblock.count == 0
 
-    def test_smartblock_detected_by_block_id_ugc(self) -> None:
-        """`data-block-id` 가 `ugc/` 로 시작하는 섹션 → 스마트블록."""
+    def test_smartblock_excludes_influencer_and_popular(self) -> None:
+        """사용자 운영 정의 — 인플루언서·인기글 헤더는 명시적으로 제외."""
         html = _wrap(
-            '<div class="sc_new" data-block-id="ugc/prs_template_v2_ugc_default_desk.ts">'
-            "<h2>건강관리 인기글</h2></div>"
-            '<div class="sc_new" data-block-id="ugc/prs_template_v2_ugc_powercontents_desk.ts">'
-            "<h2>다이어트 정보</h2></div>"
-        )
-        comp = parse_serp(html)
-        assert comp.smartblock.present is True
-        assert comp.smartblock.count == 2
-
-    def test_smartblock_detected_by_meta_area_ug_block(self) -> None:
-        """`data-meta-area` 가 `ugB_` prefix 인 섹션 → 스마트블록."""
-        html = _wrap('<div class="sc_new" data-meta-area="ugB_bsR"><h2>인기글</h2></div>')
-        comp = parse_serp(html)
-        assert comp.smartblock.present is True
-        assert comp.smartblock.count == 1
-
-    def test_smartblock_does_not_double_count(self) -> None:
-        """`data-block-id=ugc/...` + `data-meta-area=ugB_...` 동시 보유해도 1회만 카운트."""
-        html = _wrap(
-            '<div class="sc_new" data-block-id="ugc/prs_template_v2_ugc_default_desk.ts" '
-            'data-meta-area="ugB_bsR"><h2>인기글</h2></div>'
-        )
-        comp = parse_serp(html)
-        assert comp.smartblock.count == 1
-
-    def test_smartblock_not_triggered_by_unrelated_marker(self) -> None:
-        """`sds-rego-web-badge` 같은 (작성자 인증 배지) 마커는 스마트블록 X."""
-        html = _wrap(
-            '<div class="sc_new"><h2>블로그</h2>'
-            '<svg class="sds-comps-svg sds-rego-web-badge"></svg>'
-            '<a href="https://blog.naver.com/x/111111111">b</a></div>'
+            '<div class="sc_new"><h2>인플루언서</h2></div>'
+            "<div class=\"sc_new\"><h2>'강남역다이어트' 인기글</h2></div>"
+            '<div class="sc_new"><h2>건강·의학 인기글</h2></div>'
         )
         comp = parse_serp(html)
         assert comp.smartblock.present is False
+        assert comp.smartblock.count == 0
+
+    def test_smartblock_skips_sections_without_h2(self) -> None:
+        """h2/h3 가 없는 sc_new (단순 카드 컨테이너) 는 스마트블록 X."""
+        html = _wrap(
+            '<div class="sc_new" data-meta-area="rrB_bdR">'
+            '<a href="https://blog.naver.com/x/111111111">card1</a>'
+            "</div>"
+            '<div class="sc_new" data-meta-area="rrB_bdR">'
+            '<a href="https://blog.naver.com/y/222222222">card2</a>'
+            "</div>"
+        )
+        comp = parse_serp(html)
+        assert comp.smartblock.present is False
+        assert comp.smartblock.count == 0
+
+    def test_smartblock_mixed_real_world_subset(self) -> None:
+        """실측 강남역다이어트 SERP 의 h2 6종 — 광고/플레이스/인기글 제외하면 3개."""
+        html = _wrap(
+            '<div class="sc_new ad_section"><h2>강남역다이어트관련 광고</h2></div>'
+            '<div class="sc_new"><h2>플레이스</h2></div>'
+            '<div class="sc_new"><h2>강남역 다이어트 맛집</h2></div>'
+            "<div class=\"sc_new\"><h2>'강남역다이어트' 인기글</h2></div>"
+            '<div class="sc_new"><h2>강남역 다이어트약</h2></div>'
+            "<div class=\"sc_new\"><h2>'강남역다이어트' 관련 브랜드 콘텐츠</h2></div>"
+        )
+        comp = parse_serp(html)
+        assert comp.smartblock.count == 3
 
     def test_total_aggregates_across_sections(self) -> None:
         html = _wrap(
@@ -202,8 +217,9 @@ _FIXTURE_DIR = pathlib.Path(__file__).resolve().parents[1] / "fixtures" / "integ
 class TestSmartblockRegressionLiveFixtures:
     """실측 네이버 통합검색 HTML fixture 기반 스마트블록 감지 regression.
 
-    2026-05-12 실측 결과 의료 키워드 SERP 의 약 1/3 ~ 1/2 에 스마트블록이
-    노출된다. 셀렉터 회귀 시 0개로 떨어지면 즉시 알람.
+    2026-05-12 v2 운영 정의: 명시적 sub-topic 헤더(h2/h3), 인플루언서·인기글
+    제외. 89개 의료 키워드 fixture 중 8개에서 1+개 감지 (강남역다이어트=3 최대).
+    이 영역은 키워드별 변동성이 큰 영역이므로 회귀 임계값은 보수적으로 둠.
     """
 
     def test_at_least_some_fixtures_have_smartblock(self) -> None:
@@ -214,8 +230,16 @@ class TestSmartblockRegressionLiveFixtures:
             comp = parse_serp(f.read_text(encoding="utf-8", errors="ignore"))
             if comp.smartblock.present:
                 hit += 1
-        # 의료 키워드 87+ 개 중 10개 미만이면 셀렉터가 깨졌을 가능성
-        assert hit >= 10, f"스마트블록 감지 키워드 {hit}개 — 셀렉터 회귀 의심"
+        # 새 정의 (h2 sub-topic) 는 sparse. 3개 미만이면 셀렉터 회귀 의심.
+        assert hit >= 3, f"스마트블록 감지 키워드 {hit}개 — 셀렉터 회귀 의심"
+
+    def test_known_keyword_gangnam_dieat_has_three(self) -> None:
+        """강남역다이어트 — 사용자 검증 ground truth. 3개 sub-topic 헤더 유지."""
+        p = _FIXTURE_DIR / "강남역다이어트.html"
+        if not p.exists():
+            pytest.skip("강남역다이어트.html fixture 없음")
+        comp = parse_serp(p.read_text(encoding="utf-8", errors="ignore"))
+        assert comp.smartblock.count == 3
 
     def test_present_count_consistency(self) -> None:
         """present 와 count 는 정합 — present=True 면 count>=1, present=False 면 count==0."""
