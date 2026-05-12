@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ChevronDown, ChevronsUpDown, ChevronUp, RefreshCw, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronsUpDown, ChevronUp, Download, RefreshCw, Trash2 } from "lucide-react";
 import {
   analyzeKeywordDifficulty,
   batchAnalyzeKeywordDifficulty,
@@ -228,6 +228,102 @@ export default function KeywordsPage() {
     }
   };
 
+  const handleBulkRefresh = async () => {
+    const keywords = visible.map((r) => r.keyword);
+    if (keywords.length === 0) return;
+    const msg =
+      keywords.length >= 50
+        ? `현재 보이는 ${keywords.length}개 키워드를 모두 재분석합니다. Bright Data 호출이 발생하고 시간이 걸립니다. 진행하시겠어요?`
+        : `현재 보이는 ${keywords.length}개 키워드를 모두 재분석합니다. 진행하시겠어요?`;
+    if (!window.confirm(msg)) return;
+
+    setBusy(true);
+    setError(null);
+    setProgress({ done: 0, total: keywords.length });
+    try {
+      const chunks: string[][] = [];
+      for (let i = 0; i < keywords.length; i += CHUNK_SIZE) {
+        chunks.push(keywords.slice(i, i + CHUNK_SIZE));
+      }
+      let done = 0;
+      for (const chunk of chunks) {
+        await batchAnalyzeKeywordDifficulty(chunk);
+        done += chunk.length;
+        setProgress({ done, total: keywords.length });
+        await reload();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+      setProgress(null);
+    }
+  };
+
+  const handleDownloadCsv = () => {
+    if (visible.length === 0) return;
+    // 운영자가 화면에서 본 그대로 (검색/필터/정렬 적용된 결과) 다운로드
+    const headers = [
+      "키워드",
+      "노출 등급",
+      "SOV 가치",
+      "점수",
+      "월 검색량",
+      "PC 검색량",
+      "모바일 검색량",
+      "경쟁",
+      "블로그 슬롯",
+      "도배 카드",
+      "총 카드",
+      "스마트블록",
+      "스마트블록 개수",
+      "분석일",
+    ];
+    const csvEscape = (v: unknown): string => {
+      const s = v === null || v === undefined ? "" : String(v);
+      if (s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r")) {
+        return `"${s.replace(/"/g, '""')}"`;
+      }
+      return s;
+    };
+    const lines = [
+      headers.map(csvEscape).join(","),
+      ...visible.map((r) =>
+        [
+          r.keyword,
+          GRADE_LABELS[r.grade],
+          SOV_LABELS[r.sov_grade],
+          r.score,
+          r.monthly_total_search ?? "",
+          r.monthly_pc_search ?? "",
+          r.monthly_mobile_search ?? "",
+          r.competition_idx ?? "",
+          r.blog_slots,
+          r.spam_cards,
+          r.total_cards,
+          r.smartblock_present ? "있음" : "없음",
+          r.smartblock_count,
+          r.checked_at ? formatDate(r.checked_at) : "",
+        ]
+          .map(csvEscape)
+          .join(","),
+      ),
+    ];
+    // UTF-8 BOM — Excel 한글 깨짐 방지. CRLF 줄바꿈 = Excel 표준.
+    const blob = new Blob(["﻿" + lines.join("\r\n")], {
+      type: "text/csv;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const today = new Date().toISOString().slice(0, 10);
+    a.download = `keyword_difficulty_${today}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const handleDelete = async (keyword: string) => {
     if (!window.confirm(`'${keyword}' 의 모든 분석 기록을 삭제하시겠습니까?`)) return;
     setDeleting((prev) => new Set(prev).add(keyword));
@@ -443,7 +539,43 @@ export default function KeywordsPage() {
           </button>
         ))}
         <span className="ml-auto text-sm text-gray-500">{visible.length}개</span>
+        <button
+          type="button"
+          onClick={() => void handleBulkRefresh()}
+          disabled={busy || visible.length === 0}
+          className="inline-flex items-center gap-1 rounded border px-3 py-1 text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+          title="현재 보이는 키워드를 모두 재분석"
+        >
+          <RefreshCw size={14} className={busy && progress ? "animate-spin" : ""} />
+          <span>전체 재분석</span>
+        </button>
+        <button
+          type="button"
+          onClick={handleDownloadCsv}
+          disabled={visible.length === 0}
+          className="inline-flex items-center gap-1 rounded border px-3 py-1 text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+          title="현재 필터된 결과를 CSV 로 다운로드 (Excel 호환)"
+        >
+          <Download size={14} />
+          <span>CSV 다운로드</span>
+        </button>
       </div>
+
+      {busy && progress && (
+        <div className="mb-3 flex items-center gap-2 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+          <RefreshCw size={14} className="animate-spin" />
+          <span>재분석 진행 중…</span>
+          <div className="h-2 flex-1 max-w-xs overflow-hidden rounded bg-blue-100">
+            <div
+              className="h-full bg-blue-600 transition-all"
+              style={{ width: `${(progress.done / progress.total) * 100}%` }}
+            />
+          </div>
+          <span className="tabular-nums">
+            {progress.done} / {progress.total}
+          </span>
+        </div>
+      )}
 
       <div className="overflow-x-auto rounded-lg border bg-white">
         <table className="w-full text-sm">
