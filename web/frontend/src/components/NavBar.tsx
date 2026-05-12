@@ -61,6 +61,23 @@ const NAV_ITEMS: NavItem[] = [
       p.startsWith("/insights") ||
       p.startsWith("/performance") ||
       p.startsWith("/keywords"),
+    children: [
+      {
+        label: "인사이트",
+        href: "/insights",
+        matches: (p) => p.startsWith("/insights"),
+      },
+      {
+        label: "성과",
+        href: "/performance",
+        matches: (p) => p.startsWith("/performance"),
+      },
+      {
+        label: "키워드 분석",
+        href: "/keywords",
+        matches: (p) => p.startsWith("/keywords"),
+      },
+    ],
   },
   {
     label: "브랜드",
