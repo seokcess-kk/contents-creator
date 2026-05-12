@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ChevronDown, ChevronsUpDown, ChevronUp, RefreshCw } from "lucide-react";
+import { ChevronDown, ChevronsUpDown, ChevronUp, RefreshCw, Trash2 } from "lucide-react";
 import {
   analyzeKeywordDifficulty,
   batchAnalyzeKeywordDifficulty,
+  deleteKeywordDifficulty,
   listKeywordDifficulty,
 } from "@/lib/api";
 import type { DifficultyGrade, KeywordDifficulty, SovValueGrade } from "@/types";
@@ -206,8 +207,9 @@ export default function KeywordsPage() {
   // 초기 정렬 = 기존 동작 유지 (등급 유리부터). 헤더 클릭으로 변경 가능.
   const [sortKey, setSortKey] = useState<SortKey>("grade");
   const [sortDir, setSortDir] = useState<SortDirection>("asc");
-  // 행별 재분석 중 표시 — 여러 행 동시 재분석 허용
+  // 행별 재분석/삭제 중 표시 — 여러 행 동시 액션 허용
   const [refreshing, setRefreshing] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState<Set<string>>(new Set());
 
   const handleRefresh = async (keyword: string) => {
     setRefreshing((prev) => new Set(prev).add(keyword));
@@ -219,6 +221,24 @@ export default function KeywordsPage() {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setRefreshing((prev) => {
+        const next = new Set(prev);
+        next.delete(keyword);
+        return next;
+      });
+    }
+  };
+
+  const handleDelete = async (keyword: string) => {
+    if (!window.confirm(`'${keyword}' 의 모든 분석 기록을 삭제하시겠습니까?`)) return;
+    setDeleting((prev) => new Set(prev).add(keyword));
+    setError(null);
+    try {
+      await deleteKeywordDifficulty(keyword);
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDeleting((prev) => {
         const next = new Set(prev);
         next.delete(keyword);
         return next;
@@ -521,7 +541,7 @@ export default function KeywordsPage() {
               />
             </tr>
           </thead>
-          <tbody>
+          <tbody className="whitespace-nowrap">
             {visible.length === 0 ? (
               <tr>
                 <td colSpan={12} className="px-3 py-6 text-center text-gray-500">
@@ -580,7 +600,9 @@ export default function KeywordsPage() {
                       <button
                         type="button"
                         onClick={() => void handleRefresh(row.keyword)}
-                        disabled={busy || refreshing.has(row.keyword)}
+                        disabled={
+                          busy || refreshing.has(row.keyword) || deleting.has(row.keyword)
+                        }
                         className="text-gray-400 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
                         title="재분석"
                         aria-label={`${row.keyword} 재분석`}
@@ -588,6 +610,21 @@ export default function KeywordsPage() {
                         <RefreshCw
                           size={12}
                           className={refreshing.has(row.keyword) ? "animate-spin" : ""}
+                        />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDelete(row.keyword)}
+                        disabled={
+                          busy || deleting.has(row.keyword) || refreshing.has(row.keyword)
+                        }
+                        className="text-gray-400 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                        title="삭제 (모든 히스토리)"
+                        aria-label={`${row.keyword} 삭제`}
+                      >
+                        <Trash2
+                          size={12}
+                          className={deleting.has(row.keyword) ? "animate-pulse" : ""}
                         />
                       </button>
                     </div>

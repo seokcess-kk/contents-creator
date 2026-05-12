@@ -138,6 +138,14 @@ def list_recent(
     return [_to_response(s) for s in snapshots]
 
 
+@router.delete("")
+def delete_by_keyword(keyword: str = Query(min_length=1, max_length=120)) -> dict[str, int]:
+    """단일 키워드의 모든 스냅샷 삭제 — 히스토리 전체 제거."""
+    deleted = storage.delete_by_keyword(keyword.strip())
+    logger.info("keyword_difficulty.deleted keyword=%s rows=%d", keyword, deleted)
+    return {"deleted": deleted}
+
+
 @router.get("/diagnose")
 def diagnose() -> dict[str, object]:
     """검색광고 API 환경 변수 + 라이브 호출 진단.

@@ -91,6 +91,20 @@ def list_by_grade(grade: DifficultyGrade, *, limit: int = 100) -> list[KeywordDi
     return [_row_to_diff(cast("dict[str, Any]", r)) for r in (result.data or [])]
 
 
+def delete_by_keyword(keyword: str) -> int:
+    """단일 키워드의 모든 스냅샷 삭제 — 히스토리 전체 제거.
+
+    `publications.keyword_difficulty_snapshot_id` FK 는 `on delete set null`
+    이므로 발행 이력은 보존되고 연결만 끊어진다.
+
+    Returns: 삭제된 row 수.
+    """
+    client = get_client()
+    result = client.table(_TABLE).delete().eq("keyword", keyword).execute()
+    rows = result.data or []
+    return len(rows)
+
+
 def list_keyword_history(keyword: str, *, limit: int = 30) -> list[KeywordDifficulty]:
     """단일 키워드의 분석 히스토리 (최근순)."""
     client = get_client()

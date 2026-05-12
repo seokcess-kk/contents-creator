@@ -552,6 +552,12 @@ export function listKeywordDifficulty(
   return fetchJson(`/keyword-difficulty/list?${params.toString()}`);
 }
 
+export function deleteKeywordDifficulty(keyword: string): Promise<{ deleted: number }> {
+  return fetchJson(`/keyword-difficulty?keyword=${encodeURIComponent(keyword)}`, {
+    method: "DELETE",
+  });
+}
+
 // ── Batch Pipeline (SPEC-BATCH.md Phase 1) ──
 
 export interface BatchSummary {
