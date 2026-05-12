@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { ChevronDown, ChevronsUpDown, ChevronUp, RefreshCw } from "lucide-react";
 import {
   analyzeKeywordDifficulty,
   batchAnalyzeKeywordDifficulty,
@@ -47,6 +48,126 @@ const GRADE_FILTER_OPTIONS: { key: DifficultyGrade | "all"; label: string }[] = 
   { key: "low", label: "유리" },
 ];
 
+// 정렬 가능한 컬럼 키 — 행 데이터의 필드명과 일치 (compareBy 분기용)
+type SortKey =
+  | "keyword"
+  | "grade"
+  | "sov_grade"
+  | "score"
+  | "monthly_total_search"
+  | "monthly_pc_search"
+  | "competition_idx"
+  | "blog_slots"
+  | "spam_cards"
+  | "total_cards"
+  | "smartblock_count"
+  | "checked_at";
+
+type SortDirection = "asc" | "desc";
+
+// 컬럼별 기본 정렬 방향 — 운영자 관점에서 자연스러운 첫 클릭 동작
+// (숫자/날짜 = 큰 값 먼저 보고 싶음, 등급 = 유리/낮음 먼저)
+const DEFAULT_DIRECTION: Record<SortKey, SortDirection> = {
+  keyword: "asc",
+  grade: "asc",
+  sov_grade: "asc",
+  score: "asc",
+  monthly_total_search: "desc",
+  monthly_pc_search: "desc",
+  competition_idx: "asc",
+  blog_slots: "desc",
+  spam_cards: "asc",
+  total_cards: "desc",
+  smartblock_count: "desc",
+  checked_at: "desc",
+};
+
+// 등급은 enum 의미 순서로 정렬 (유리 → 보통 → 어려움 → 미노출)
+const GRADE_ORDER: Record<DifficultyGrade, number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+  missing: 3,
+};
+
+// SOV 가치 (유리 → 보통 → 낮음 → 과열 → 미수신)
+const SOV_ORDER: Record<SovValueGrade, number> = {
+  high_value: 0,
+  moderate: 1,
+  low_value: 2,
+  overheated: 3,
+  unknown: 4,
+};
+
+// 경쟁 강도 한국어 enum 정렬 — 미수신/공란은 마지막
+const COMPETITION_ORDER: Record<string, number> = {
+  낮음: 0,
+  중간: 1,
+  높음: 2,
+};
+
+function compareRows(a: KeywordDifficulty, b: KeywordDifficulty, key: SortKey): number {
+  switch (key) {
+    case "keyword":
+      return a.keyword.localeCompare(b.keyword, "ko");
+    case "grade":
+      return GRADE_ORDER[a.grade] - GRADE_ORDER[b.grade];
+    case "sov_grade":
+      return SOV_ORDER[a.sov_grade] - SOV_ORDER[b.sov_grade];
+    case "competition_idx": {
+      const va = COMPETITION_ORDER[a.competition_idx ?? ""] ?? 99;
+      const vb = COMPETITION_ORDER[b.competition_idx ?? ""] ?? 99;
+      return va - vb;
+    }
+    case "checked_at":
+      return (a.checked_at ?? "").localeCompare(b.checked_at ?? "");
+    default: {
+      // 숫자 컬럼 — null 은 가장 작게 취급
+      const va = (a[key] ?? Number.NEGATIVE_INFINITY) as number;
+      const vb = (b[key] ?? Number.NEGATIVE_INFINITY) as number;
+      return va - vb;
+    }
+  }
+}
+
+interface SortHeaderProps {
+  label: string;
+  sortKey: SortKey;
+  currentKey: SortKey;
+  currentDir: SortDirection;
+  onSort: (key: SortKey) => void;
+  align?: "left" | "right";
+}
+
+function SortHeader({
+  label,
+  sortKey,
+  currentKey,
+  currentDir,
+  onSort,
+  align = "left",
+}: SortHeaderProps) {
+  const active = currentKey === sortKey;
+  const Icon = active ? (currentDir === "asc" ? ChevronUp : ChevronDown) : ChevronsUpDown;
+  return (
+    <th
+      className={`px-3 py-2 whitespace-nowrap ${align === "right" ? "text-right" : "text-left"}`}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className={`inline-flex items-center gap-1 hover:text-gray-900 ${
+          active ? "text-gray-900 font-semibold" : "text-gray-600"
+        }`}
+        aria-label={`${label} 기준 정렬`}
+      >
+        {label}
+        <Icon size={12} className={active ? "" : "opacity-40"} />
+      </button>
+    </th>
+  );
+}
+
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
   try {
@@ -82,6 +203,37 @@ export default function KeywordsPage() {
   const [snapshots, setSnapshots] = useState<KeywordDifficulty[]>([]);
   const [filter, setFilter] = useState<DifficultyGrade | "all">("all");
   const [search, setSearch] = useState("");
+  // 초기 정렬 = 기존 동작 유지 (등급 유리부터). 헤더 클릭으로 변경 가능.
+  const [sortKey, setSortKey] = useState<SortKey>("grade");
+  const [sortDir, setSortDir] = useState<SortDirection>("asc");
+  // 행별 재분석 중 표시 — 여러 행 동시 재분석 허용
+  const [refreshing, setRefreshing] = useState<Set<string>>(new Set());
+
+  const handleRefresh = async (keyword: string) => {
+    setRefreshing((prev) => new Set(prev).add(keyword));
+    setError(null);
+    try {
+      await analyzeKeywordDifficulty(keyword);
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRefreshing((prev) => {
+        const next = new Set(prev);
+        next.delete(keyword);
+        return next;
+      });
+    }
+  };
+
+  const handleSort = (key: SortKey) => {
+    if (key === sortKey) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir(DEFAULT_DIRECTION[key]);
+    }
+  };
 
   // F4: 청크 분할 — 청크 단위 결과를 즉시 표에 반영.
   // 2026-05-04: 8 → 4 로 축소. 첫 결과를 ~3초 안에 보여주는 게 사용자 체감에서 가장 큼.
@@ -157,14 +309,12 @@ export default function KeywordsPage() {
   const visible = snapshots
     .filter((s) => (filter === "all" ? true : s.grade === filter))
     .filter((s) => (search ? s.keyword.includes(search) : true))
+    .slice()
     .sort((a, b) => {
-      const order: Record<DifficultyGrade, number> = {
-        low: 0,
-        medium: 1,
-        high: 2,
-        missing: 3,
-      };
-      return order[a.grade] - order[b.grade] || a.score - b.score;
+      const cmp = compareRows(a, b, sortKey);
+      const primary = sortDir === "asc" ? cmp : -cmp;
+      // 동률 시 키워드 asc 로 안정적 보조 정렬
+      return primary !== 0 ? primary : a.keyword.localeCompare(b.keyword, "ko");
     });
 
   return (
@@ -277,20 +427,98 @@ export default function KeywordsPage() {
 
       <div className="overflow-x-auto rounded-lg border bg-white">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-left">
+          <thead className="bg-gray-50 text-left whitespace-nowrap">
             <tr>
-              <th className="px-3 py-2">키워드</th>
-              <th className="px-3 py-2">노출 등급</th>
-              <th className="px-3 py-2">SOV 가치</th>
-              <th className="px-3 py-2 text-right">점수</th>
-              <th className="px-3 py-2 text-right">월 검색량</th>
-              <th className="px-3 py-2 text-right">PC / 모바일</th>
-              <th className="px-3 py-2">경쟁</th>
-              <th className="px-3 py-2 text-right">블로그 슬롯</th>
-              <th className="px-3 py-2 text-right">도배 카드</th>
-              <th className="px-3 py-2 text-right">총 카드</th>
-              <th className="px-3 py-2">스마트블록</th>
-              <th className="px-3 py-2">분석일</th>
+              <SortHeader
+                label="키워드"
+                sortKey="keyword"
+                currentKey={sortKey}
+                currentDir={sortDir}
+                onSort={handleSort}
+              />
+              <SortHeader
+                label="노출 등급"
+                sortKey="grade"
+                currentKey={sortKey}
+                currentDir={sortDir}
+                onSort={handleSort}
+              />
+              <SortHeader
+                label="SOV 가치"
+                sortKey="sov_grade"
+                currentKey={sortKey}
+                currentDir={sortDir}
+                onSort={handleSort}
+              />
+              <SortHeader
+                label="점수"
+                sortKey="score"
+                currentKey={sortKey}
+                currentDir={sortDir}
+                onSort={handleSort}
+                align="right"
+              />
+              <SortHeader
+                label="월 검색량"
+                sortKey="monthly_total_search"
+                currentKey={sortKey}
+                currentDir={sortDir}
+                onSort={handleSort}
+                align="right"
+              />
+              <SortHeader
+                label="PC / 모바일"
+                sortKey="monthly_pc_search"
+                currentKey={sortKey}
+                currentDir={sortDir}
+                onSort={handleSort}
+                align="right"
+              />
+              <SortHeader
+                label="경쟁"
+                sortKey="competition_idx"
+                currentKey={sortKey}
+                currentDir={sortDir}
+                onSort={handleSort}
+              />
+              <SortHeader
+                label="블로그 슬롯"
+                sortKey="blog_slots"
+                currentKey={sortKey}
+                currentDir={sortDir}
+                onSort={handleSort}
+                align="right"
+              />
+              <SortHeader
+                label="도배 카드"
+                sortKey="spam_cards"
+                currentKey={sortKey}
+                currentDir={sortDir}
+                onSort={handleSort}
+                align="right"
+              />
+              <SortHeader
+                label="총 카드"
+                sortKey="total_cards"
+                currentKey={sortKey}
+                currentDir={sortDir}
+                onSort={handleSort}
+                align="right"
+              />
+              <SortHeader
+                label="스마트블록"
+                sortKey="smartblock_count"
+                currentKey={sortKey}
+                currentDir={sortDir}
+                onSort={handleSort}
+              />
+              <SortHeader
+                label="분석일"
+                sortKey="checked_at"
+                currentKey={sortKey}
+                currentDir={sortDir}
+                onSort={handleSort}
+              />
             </tr>
           </thead>
           <tbody>
@@ -346,7 +574,24 @@ export default function KeywordsPage() {
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-xs text-gray-500">{formatDate(row.checked_at)}</td>
+                  <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap">
+                    <div className="flex items-center gap-2">
+                      <span>{formatDate(row.checked_at)}</span>
+                      <button
+                        type="button"
+                        onClick={() => void handleRefresh(row.keyword)}
+                        disabled={busy || refreshing.has(row.keyword)}
+                        className="text-gray-400 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+                        title="재분석"
+                        aria-label={`${row.keyword} 재분석`}
+                      >
+                        <RefreshCw
+                          size={12}
+                          className={refreshing.has(row.keyword) ? "animate-spin" : ""}
+                        />
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))
             )}
