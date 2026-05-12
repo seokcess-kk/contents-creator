@@ -88,5 +88,9 @@ export interface KeywordDifficulty {
   monthly_total_search: number | null;
   competition_idx: string | null;
   sov_grade: SovValueGrade;
+  /** 통합검색 스마트블록 (UGC 블록) 존재 여부 — 점수 무영향, 운영자 판단용. */
+  smartblock_present: boolean;
+  /** 스마트블록 개수 (0 = 없음). */
+  smartblock_count: number;
   checked_at: string | null;
 }

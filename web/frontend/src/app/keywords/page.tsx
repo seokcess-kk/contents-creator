@@ -289,13 +289,14 @@ export default function KeywordsPage() {
               <th className="px-3 py-2 text-right">블로그 슬롯</th>
               <th className="px-3 py-2 text-right">도배 카드</th>
               <th className="px-3 py-2 text-right">총 카드</th>
+              <th className="px-3 py-2">스마트블록</th>
               <th className="px-3 py-2">분석일</th>
             </tr>
           </thead>
           <tbody>
             {visible.length === 0 ? (
               <tr>
-                <td colSpan={11} className="px-3 py-6 text-center text-gray-500">
+                <td colSpan={12} className="px-3 py-6 text-center text-gray-500">
                   분석된 키워드 없음
                 </td>
               </tr>
@@ -334,6 +335,17 @@ export default function KeywordsPage() {
                   <td className="px-3 py-2 text-right tabular-nums">{row.blog_slots}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{row.spam_cards}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{row.total_cards}</td>
+                  <td className="px-3 py-2">
+                    {row.smartblock_present ? (
+                      <span className="rounded bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">
+                        있음 · {row.smartblock_count}
+                      </span>
+                    ) : (
+                      <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
+                        없음
+                      </span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-xs text-gray-500">{formatDate(row.checked_at)}</td>
                 </tr>
               ))

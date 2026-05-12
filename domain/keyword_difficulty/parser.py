@@ -25,7 +25,7 @@ from collections import Counter
 
 from bs4 import BeautifulSoup, Tag
 
-from domain.keyword_difficulty.model import SerpComposition, SerpSection
+from domain.keyword_difficulty.model import SerpComposition, SerpSection, SmartblockInfo
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +67,7 @@ def parse_serp(html: str) -> SerpComposition:
         return SerpComposition(section_counts={}, total_cards=0)
 
     counts: Counter[SerpSection] = Counter()
+    smartblock_count = 0
     for sc in main.find_all("div", class_="sc_new", recursive=True):
         if not isinstance(sc, Tag):
             continue
@@ -74,14 +75,35 @@ def parse_serp(html: str) -> SerpComposition:
         n = _count_section_items(sc, kind)
         if n > 0:
             counts[kind] += n
+        if _is_smartblock(sc):
+            smartblock_count += 1
 
     total = sum(counts.values())
+    smartblock = SmartblockInfo(present=smartblock_count > 0, count=smartblock_count)
     logger.info(
-        "keyword_difficulty.parsed total=%d sections=%s",
+        "keyword_difficulty.parsed total=%d sections=%s smartblock=%d",
         total,
         {s.value: c for s, c in counts.items()},
+        smartblock_count,
     )
-    return SerpComposition(section_counts=dict(counts), total_cards=total)
+    return SerpComposition(section_counts=dict(counts), total_cards=total, smartblock=smartblock)
+
+
+def _is_smartblock(sec: Tag) -> bool:
+    """`sc_new` 섹션이 스마트블록인지 판정.
+
+    실측 (2026-05-12, 87개 fixture) 결과 스마트블록 컨테이너는 다음 중
+    하나의 마커를 갖는다:
+    - `data-block-id` 가 `ugc/` 로 시작 (예: `ugc/prs_template_v2_ugc_*`)
+    - `data-meta-area` 가 `ugB_` prefix (UGC Block 계열)
+
+    한 섹션이 둘 중 하나만 만족해도 스마트블록으로 카운트.
+    """
+    block_id = str(sec.get("data-block-id") or "")
+    if block_id.startswith("ugc/"):
+        return True
+    meta_area = str(sec.get("data-meta-area") or "")
+    return meta_area.startswith("ugB_")
 
 
 def _classify_section(sec: Tag) -> SerpSection:

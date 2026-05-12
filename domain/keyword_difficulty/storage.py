@@ -16,6 +16,7 @@ from domain.keyword_difficulty.model import (
     SearchVolume,
     SerpComposition,
     SerpSection,
+    SmartblockInfo,
     SovValueGrade,
 )
 
@@ -43,6 +44,8 @@ def insert_snapshot(diff: KeywordDifficulty) -> KeywordDifficulty:
         payload["monthly_total_search"] = diff.search_volume.monthly_total
         payload["competition_idx"] = diff.search_volume.competition_idx
     payload["sov_grade"] = diff.sov_grade.value
+    payload["smartblock_present"] = diff.composition.smartblock.present
+    payload["smartblock_count"] = diff.composition.smartblock.count
     result = client.table(_TABLE).insert(payload).execute()
     rows = result.data or []
     if not rows:
@@ -111,9 +114,15 @@ def _row_to_diff(row: dict[str, Any]) -> KeywordDifficulty:
         except ValueError:
             continue  # 알려지지 않은 섹션 키는 무시
 
+    # 스마트블록 — 컬럼이 아직 없는 옛 row (마이그레이션 이전) 는 default 적용
+    smartblock = SmartblockInfo(
+        present=bool(row.get("smartblock_present") or False),
+        count=int(row.get("smartblock_count") or 0),
+    )
     composition = SerpComposition(
         section_counts=section_counts,
         total_cards=int(row.get("total_cards") or 0),
+        smartblock=smartblock,
     )
     checked_at_raw = row.get("checked_at")
     checked_at: datetime | None = None

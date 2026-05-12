@@ -58,6 +58,9 @@ class _DifficultyResponse(BaseModel):
     monthly_total_search: int | None = None
     competition_idx: str | None = None
     sov_grade: str = "unknown"
+    # 통합검색 스마트블록 (UGC 블록) — 운영자 판단용 보조 지표 (점수 무영향)
+    smartblock_present: bool = False
+    smartblock_count: int = 0
     checked_at: datetime | None
 
 
@@ -76,6 +79,8 @@ def _to_response(diff: KeywordDifficulty) -> _DifficultyResponse:
         monthly_total_search=sv.monthly_total if sv else None,
         competition_idx=sv.competition_idx if sv else None,
         sov_grade=diff.sov_grade.value,
+        smartblock_present=diff.composition.smartblock.present,
+        smartblock_count=diff.composition.smartblock.count,
         checked_at=diff.checked_at,
     )
 

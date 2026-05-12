@@ -485,7 +485,10 @@ alter table keyword_difficulty_snapshots
     add column if not exists monthly_total_search int,
     add column if not exists competition_idx text,
     -- 2026-04-29 추가: SOV 점유 가치 등급 (검색량 × 경쟁강도)
-    add column if not exists sov_grade text;
+    add column if not exists sov_grade text,
+    -- 2026-05-12 추가: 통합검색 스마트블록 (UGC 블록) 존재 여부 + 개수
+    add column if not exists smartblock_present boolean not null default false,
+    add column if not exists smartblock_count int not null default 0;
 
 do $$
 begin

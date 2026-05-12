@@ -44,6 +44,21 @@ SPAM_SECTIONS: tuple[SerpSection, ...] = (
 )
 
 
+class SmartblockInfo(BaseModel):
+    """통합검색 스마트블록 (UGC 블록) 존재 여부 + 개수.
+
+    스마트블록 = 키워드별 동적 sub-topic 으로 묶인 UGC 콘텐츠 섹션
+    (예: "건강관리 인기글", "OO 다이어트 정보"). 실측 마크업 기준
+    `data-block-id` 가 `ugc/` 로 시작하거나, `data-meta-area` 가
+    `ugB_` prefix 인 `sc_new` 섹션을 카운트한다.
+
+    난이도 점수에는 영향 없음 — 운영자 판단용 보조 지표.
+    """
+
+    present: bool = False
+    count: int = 0
+
+
 class SerpComposition(BaseModel):
     """SERP 1페이지의 섹션별 카드 수 + 총합.
 
@@ -52,6 +67,7 @@ class SerpComposition(BaseModel):
 
     section_counts: dict[SerpSection, int] = Field(default_factory=dict)
     total_cards: int = 0
+    smartblock: SmartblockInfo = Field(default_factory=SmartblockInfo)
 
     @property
     def blog_slots(self) -> int:
