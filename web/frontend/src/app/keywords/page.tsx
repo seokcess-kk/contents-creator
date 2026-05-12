@@ -531,7 +531,7 @@ export default function KeywordsPage() {
             ) : (
               visible.map((row) => (
                 <tr key={row.keyword} className="border-t hover:bg-gray-50">
-                  <td className="px-3 py-2 font-medium">{row.keyword}</td>
+                  <td className="px-3 py-2 font-medium whitespace-nowrap">{row.keyword}</td>
                   <td className="px-3 py-2">
                     <span
                       className={`rounded px-2 py-0.5 text-xs font-medium ${GRADE_COLORS[row.grade]}`}
