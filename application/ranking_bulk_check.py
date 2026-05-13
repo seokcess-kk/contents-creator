@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 from application.ranking_orchestrator import check_rankings_for_publication
 from config.settings import settings
 from domain.ranking import storage as ranking_storage
-from domain.ranking.model import RankingCheckSummary, RankingMatchError
+from domain.ranking.model import RankingCheckSummary
 
 if TYPE_CHECKING:
     from application.progress import ProgressReporter
@@ -61,13 +61,18 @@ def bulk_check_rankings(
                     f"{snap.section} {snap.position}위" if snap.position is not None else "미노출"
                 )
                 reporter.stage_progress(idx, f"{pub.keyword} → {pos_str}")
-        except (RankingMatchError, ValueError) as exc:
+        except Exception as exc:  # noqa: BLE001
+            # 개별 publication 실패 격리. BrightDataError / Supabase RuntimeError /
+            # 기타 네트워크 예외도 모두 잡아 다음 publication 으로 진행한다.
+            # (이전엔 (RankingMatchError, ValueError) 만 잡아 BrightData 4xx/5xx 한 건이
+            #  전체 bulk 를 중단시켜 캘린더 기록 누락을 일으켰음)
             errors += 1
             logger.warning(
                 "bulk_check.failed publication_id=%s keyword=%r err=%s",
                 pub.id,
                 pub.keyword,
                 exc,
+                exc_info=True,
             )
             if reporter is not None:
                 reporter.stage_progress(idx, f"{pub.keyword} 실패: {exc}")

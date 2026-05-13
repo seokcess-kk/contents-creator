@@ -131,3 +131,23 @@ class TestBulkCheckRankings:
         ranking_bulk_check.bulk_check_rankings(publication_ids=["p1"])
         assert check_mock.call_count == 1
         check_mock.assert_called_with("p1")
+
+    def test_non_ranking_exception_isolated(
+        self, storage_mock: MagicMock, check_mock: MagicMock, no_sleep: None
+    ) -> None:
+        """BrightDataError / RuntimeError / 네트워크 예외도 개별 격리 (전체 중단 X).
+
+        과거 except 가 (RankingMatchError, ValueError) 만 잡아 BrightData 4xx/5xx
+        한 건이 bulk 전체를 중단시켜 캘린더 기록 누락이 발생한 회귀 방지.
+        """
+        storage_mock.list_publications.return_value = [_pub("p1"), _pub("p2"), _pub("p3")]
+        check_mock.side_effect = [
+            RankingSnapshot(publication_id="p1", section="인플루언서", position=1),
+            RuntimeError("brightdata 503"),  # 이전엔 여기서 루프 중단
+            RankingSnapshot(publication_id="p3", section="VIEW", position=5),
+        ]
+        summary = ranking_bulk_check.bulk_check_rankings()
+        assert check_mock.call_count == 3
+        assert summary.checked_count == 2
+        assert summary.found_count == 2
+        assert summary.errors_count == 1

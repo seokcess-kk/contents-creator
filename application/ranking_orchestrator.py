@@ -28,7 +28,6 @@ from domain.ranking.model import (
     RankingCalendar,
     RankingCheckSummary,
     RankingDuplicateUrlError,
-    RankingMatchError,
     RankingSnapshot,
     RankingTimeline,
     Top10Snapshot,
@@ -553,13 +552,16 @@ def check_all_active_rankings() -> RankingCheckSummary:
             checked += 1
             if snap.position is not None:
                 found += 1
-        except (RankingMatchError, ValueError) as exc:
+        except Exception as exc:  # noqa: BLE001
+            # 개별 publication 실패 격리. BrightDataError / Supabase RuntimeError /
+            # 기타 네트워크 예외까지 모두 catch 해 배치 전체 중단을 차단한다.
             errors += 1
             logger.warning(
                 "ranking.check_failed publication_id=%s keyword=%r err=%s",
                 pub.id,
                 pub.keyword,
                 exc,
+                exc_info=True,
             )
         time.sleep(settings.ranking_check_sleep_seconds)
 
