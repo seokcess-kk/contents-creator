@@ -1114,11 +1114,101 @@ def recompute_batch_status(batch_id: str) -> KeywordBatch | None:
     return refreshed
 
 
+def recover_stuck_items_on_startup(*, queued_grace_minutes: int = 5) -> dict[str, int]:
+    """startup hook — 컨테이너 재시작으로 worker thread 가 죽어 dispatch 가
+    멈춘 batch item 들을 자동 회복.
+
+    회복 정책:
+    - status='running' item: worker 가 진짜로 살아있을 가능성 거의 없으므로
+      retry_count >= max_retries → 'failed' 마킹, 그 외 → 'queued' 마킹 +
+      re-dispatch (`_dispatch_item_safely`).
+    - status='queued' + started_at 이 N분 이상 전 + retry_count > 0 (한 번이라도
+      dispatch 됐던 흔적): worker 가 잊어버린 stale 로 보고 re-dispatch.
+      started_at == null 인 신규 queued 는 새 batch 시작 흐름이 처리하므로 건드리지
+      않는다.
+    - 위 처리로 영향받은 batch 들은 마지막에 `recompute_batch_status` 호출해
+      counters/status 동기화.
+
+    Returns: {"running_redispatched": N, "running_failed": N,
+              "queued_redispatched": N, "batches_recomputed": N}
+    """
+    from datetime import timedelta
+
+    now = datetime.now(UTC)
+    affected_batch_ids: set[str] = set()
+    counts = {
+        "running_redispatched": 0,
+        "running_failed": 0,
+        "queued_redispatched": 0,
+        "batches_recomputed": 0,
+    }
+    try:
+        running = storage.list_items_by_global_status("running", limit=1000)
+    except Exception:
+        logger.warning("batch.recovery.list_running_failed", exc_info=True)
+        running = []
+    for it in running:
+        if it.id is None:
+            continue
+        affected_batch_ids.add(it.batch_id)
+        if it.retry_count >= it.max_retries:
+            storage.update_item_status(
+                it.id,
+                "failed",
+                error=(
+                    f"startup recovery: worker 죽음 (retry {it.retry_count}/"
+                    f"{it.max_retries} 초과)"
+                ),
+                completed_at=now,
+            )
+            counts["running_failed"] += 1
+        else:
+            storage.update_item_status(it.id, "queued")
+            try:
+                batch_job_manager.get_default_manager().submit(_dispatch_item_safely, it.id)
+                counts["running_redispatched"] += 1
+            except Exception:
+                logger.warning(
+                    "batch.recovery.resubmit_failed item_id=%s", it.id, exc_info=True
+                )
+
+    grace = timedelta(minutes=max(1, queued_grace_minutes))
+    try:
+        queued = storage.list_items_by_global_status("queued", limit=1000)
+    except Exception:
+        logger.warning("batch.recovery.list_queued_failed", exc_info=True)
+        queued = []
+    for it in queued:
+        if it.id is None:
+            continue
+        if it.started_at is None or it.retry_count == 0:
+            continue  # 새 batch 의 신규 queued — startup 회복 대상 아님
+        if now - it.started_at < grace:
+            continue
+        affected_batch_ids.add(it.batch_id)
+        try:
+            batch_job_manager.get_default_manager().submit(_dispatch_item_safely, it.id)
+            counts["queued_redispatched"] += 1
+        except Exception:
+            logger.warning(
+                "batch.recovery.queued_resubmit_failed item_id=%s", it.id, exc_info=True
+            )
+
+    for bid in affected_batch_ids:
+        try:
+            recompute_batch_status(bid)
+            counts["batches_recomputed"] += 1
+        except Exception:
+            logger.warning("batch.recovery.recompute_failed batch_id=%s", bid, exc_info=True)
+    return counts
+
+
 __all__ = [
     "enqueue_from_csv",
     "retry_item",
     "cancel_batch",
     "recompute_batch_status",
+    "recover_stuck_items_on_startup",
     "_dispatch_item_safely",  # tests
 ]
 

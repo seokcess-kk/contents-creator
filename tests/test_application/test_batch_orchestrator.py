@@ -979,6 +979,102 @@ class TestDispatchOvernightBatches:
         assert result["dispatched_items"] == 1
 
 
+class TestRecoverStuckItemsOnStartup:
+    def test_running_within_retries_redispatched(
+        self, storage_mock: Any, manager_mock: Any
+    ) -> None:
+        """retry_count < max_retries 인 running item 은 queued + re-dispatch."""
+        it = _item(id="i-1", batch_id="b-1", status="running", retry_count=1, max_retries=2)
+        storage_mock.list_items_by_global_status.side_effect = [
+            [it],  # running
+            [],  # queued
+        ]
+        storage_mock.get_batch.return_value = _batch(id="b-1", total_count=1)
+        storage_mock.count_items_by_status.return_value = {
+            "succeeded_count": 0,
+            "failed_count": 0,
+            "skipped_count": 0,
+            "needs_review_count": 0,
+            "ready_to_publish_count": 0,
+        }
+        counts = batch_orchestrator.recover_stuck_items_on_startup()
+        assert counts["running_redispatched"] == 1
+        assert counts["running_failed"] == 0
+        storage_mock.update_item_status.assert_any_call("i-1", "queued")
+        manager_mock.get_default_manager.return_value.submit.assert_called_once()
+
+    def test_running_retries_exhausted_failed(
+        self, storage_mock: Any, manager_mock: Any
+    ) -> None:
+        """retry_count >= max_retries 인 running item 은 failed 확정."""
+        it = _item(id="i-1", batch_id="b-1", status="running", retry_count=2, max_retries=2)
+        storage_mock.list_items_by_global_status.side_effect = [[it], []]
+        storage_mock.get_batch.return_value = _batch(id="b-1", total_count=1)
+        storage_mock.count_items_by_status.return_value = {
+            "succeeded_count": 0,
+            "failed_count": 1,
+            "skipped_count": 0,
+            "needs_review_count": 0,
+            "ready_to_publish_count": 0,
+        }
+        counts = batch_orchestrator.recover_stuck_items_on_startup()
+        assert counts["running_failed"] == 1
+        assert counts["running_redispatched"] == 0
+        call = storage_mock.update_item_status.call_args
+        assert call.args == ("i-1", "failed")
+        assert "startup recovery" in call.kwargs["error"]
+        manager_mock.get_default_manager.return_value.submit.assert_not_called()
+
+    def test_queued_stale_redispatched(
+        self, storage_mock: Any, manager_mock: Any
+    ) -> None:
+        """started_at 이 grace 초과 + retry_count > 0 인 queued 는 re-dispatch."""
+        from datetime import UTC, datetime, timedelta
+
+        old = datetime.now(UTC) - timedelta(hours=2)
+        it = _item(
+            id="i-1",
+            batch_id="b-1",
+            status="queued",
+            retry_count=1,
+            started_at=old,
+        )
+        storage_mock.list_items_by_global_status.side_effect = [[], [it]]
+        storage_mock.get_batch.return_value = _batch(id="b-1", total_count=1)
+        storage_mock.count_items_by_status.return_value = {
+            "succeeded_count": 0,
+            "failed_count": 0,
+            "skipped_count": 0,
+            "needs_review_count": 0,
+            "ready_to_publish_count": 0,
+        }
+        counts = batch_orchestrator.recover_stuck_items_on_startup()
+        assert counts["queued_redispatched"] == 1
+        manager_mock.get_default_manager.return_value.submit.assert_called_once()
+
+    def test_queued_fresh_item_skipped(
+        self, storage_mock: Any, manager_mock: Any
+    ) -> None:
+        """retry_count=0 인 신규 queued 는 건드리지 않음 (새 batch 흐름이 처리)."""
+        it = _item(id="i-1", batch_id="b-1", status="queued", retry_count=0)
+        storage_mock.list_items_by_global_status.side_effect = [[], [it]]
+        counts = batch_orchestrator.recover_stuck_items_on_startup()
+        assert counts["queued_redispatched"] == 0
+        manager_mock.get_default_manager.return_value.submit.assert_not_called()
+
+    def test_no_stuck_items_noop(
+        self, storage_mock: Any, manager_mock: Any
+    ) -> None:
+        storage_mock.list_items_by_global_status.side_effect = [[], []]
+        counts = batch_orchestrator.recover_stuck_items_on_startup()
+        assert counts == {
+            "running_redispatched": 0,
+            "running_failed": 0,
+            "queued_redispatched": 0,
+            "batches_recomputed": 0,
+        }
+
+
 class TestBackfillUnlinkedItems:
     """Phase B10 PR4 — fire-and-forget 회수 실패 사후 백필."""
 

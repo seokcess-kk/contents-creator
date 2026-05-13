@@ -101,6 +101,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 )
         except Exception:
             logger.exception("startup.mark_orphaned_failed")
+
+    # 배치 도메인 startup 회복 — 컨테이너 재시작으로 worker thread 죽은 stuck
+    # batch item 자동 재처리. running 은 retry/failed, stale queued 는 re-dispatch.
+    # batch_orchestrator.py:797 주석의 "운영자 수동 처리" 부담을 해소한다.
+    try:
+        from application.batch_orchestrator import recover_stuck_items_on_startup
+
+        batch_recovery = recover_stuck_items_on_startup()
+        if any(v > 0 for v in batch_recovery.values()):
+            logger.warning("startup.batch_recovery instance=%s %s", instance_id, batch_recovery)
+    except Exception:
+        logger.exception("startup.batch_recovery_failed")
     try:
         if orphaned_count > 0:
             notifier.send_text(
