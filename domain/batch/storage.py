@@ -87,10 +87,18 @@ def update_item_status(
     completed_at: datetime | None = None,
     retry_count: int | None = None,
 ) -> None:
-    """item status + 메타 갱신. None 인 인자는 변경 안 함."""
+    """item status + 메타 갱신. None 인 인자는 변경 안 함.
+
+    error 컬럼은 예외 — status 가 'failed' 외 다른 상태로 전환될 때 자동으로
+    NULL 로 clear 한다. 재시도 후 정상 발행 시 옛 실패 메시지(예: 'SERP 수집
+    실패...')가 운영 화면에 잔존하던 사고 차단. failed 로 전환 시에만 error 가
+    None 이면 옛 메시지 보존 (호출자가 명시 전달 안 한 경우).
+    """
     payload: dict[str, Any] = {"status": status}
     if error is not None:
         payload["error"] = error
+    elif status != "failed":
+        payload["error"] = None
     if job_id is not None:
         payload["job_id"] = job_id
     if started_at is not None:
