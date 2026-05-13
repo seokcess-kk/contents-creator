@@ -304,19 +304,34 @@ def list_snapshots_in_range(
     """captured_at 이 [start_utc, end_utc) 인 모든 snapshot.
 
     캘린더 뷰 집계용. publication_id 무관하게 한 번에 가져온 뒤 application
-    레이어에서 group-by 한다 (월 단위라 row 수가 한정적, 1만 건 안전 상한).
+    레이어에서 group-by 한다.
+
+    Supabase PostgREST 의 `db-max-rows` (기본 1000) 가 단일 응답을 잘라낸다.
+    `.limit(10_000)` 만으로는 ORDER BY captured_at ASC 의 오래된 1000건만
+    돌아와 그 달 후반(가장 최근 측정) 이 통째로 누락되는 silent-failure 사고가
+    발생했다. 페이지네이션(.range)으로 limit 까지 안전하게 모두 가져온다.
     """
     client = get_client()
-    result = (
-        client.table(_SNAP_TABLE)
-        .select("*")
-        .gte("captured_at", start_utc.isoformat())
-        .lt("captured_at", end_utc.isoformat())
-        .order("captured_at", desc=False)
-        .limit(limit)
-        .execute()
-    )
-    return [_row_to_snapshot(cast("dict[str, Any]", r)) for r in (result.data or [])]
+    page_size = 1000  # PostgREST default db-max-rows
+    out: list[RankingSnapshot] = []
+    offset = 0
+    while offset < limit:
+        upper = min(offset + page_size, limit) - 1
+        result = (
+            client.table(_SNAP_TABLE)
+            .select("*")
+            .gte("captured_at", start_utc.isoformat())
+            .lt("captured_at", end_utc.isoformat())
+            .order("captured_at", desc=False)
+            .range(offset, upper)
+            .execute()
+        )
+        rows = result.data or []
+        out.extend(_row_to_snapshot(cast("dict[str, Any]", r)) for r in rows)
+        if len(rows) < (upper - offset + 1):
+            break  # 마지막 페이지
+        offset += page_size
+    return out
 
 
 def _publication_to_payload(p: Publication) -> dict[str, Any]:
