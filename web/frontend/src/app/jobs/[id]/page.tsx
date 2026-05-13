@@ -1,7 +1,8 @@
 "use client";
 
-import { use } from "react";
+import { use, useEffect, useRef } from "react";
 import Link from "next/link";
+import { mutate } from "swr";
 import { useJobProgress } from "@/lib/useJobProgress";
 import { useJobPolling } from "@/lib/useJobPolling";
 import ErrorBanner from "@/components/ui/ErrorBanner";
@@ -17,6 +18,30 @@ export default function JobDetailPage({
   const { id } = use(params);
   const { job, error, aborted } = useJobPolling(id);
   const { events } = useJobProgress(id);
+
+  // ranking_bulk_check job 이 succeeded 가 되면 캘린더 / 운영 summary·queue 의
+  // SWR 캐시를 모두 무효화해 다음 캘린더 방문 시 즉시 새 측정 결과를 보여준다.
+  // (이전엔 mutate 호출이 없어 DB 에는 들어갔지만 캘린더 UI 가 stale 로 보이는
+  //  '기록 안 됨' 오인을 일으켰음)
+  const bulkCheckInvalidatedRef = useRef(false);
+  useEffect(() => {
+    if (bulkCheckInvalidatedRef.current) return;
+    if (job?.type !== "ranking_bulk_check") return;
+    if (job.status !== "succeeded") return;
+    bulkCheckInvalidatedRef.current = true;
+    // 월 prefix 매칭 — 사용자가 본 모든 월에 대해 강제 revalidate.
+    void mutate(
+      (key) => typeof key === "string" && key.startsWith("/rankings/calendar"),
+      undefined,
+      { revalidate: true },
+    );
+    void mutate("/rankings/summary");
+    void mutate(
+      (key) => typeof key === "string" && key.startsWith("/rankings/queue"),
+      undefined,
+      { revalidate: true },
+    );
+  }, [job?.type, job?.status]);
 
   if (aborted) {
     return (
