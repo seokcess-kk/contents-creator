@@ -97,11 +97,11 @@ def test_scrape_pages_all_success(tmp_path: object) -> None:
 
 
 def test_scrape_pages_partial_failure_above_minimum() -> None:
-    serp = _make_serp(9)
+    serp = _make_serp(7)
     mapping = {
-        f"https://m.blog.naver.com/u{i}/10000000{i:02d}": f"<html>body{i}</html>" for i in range(9)
+        f"https://m.blog.naver.com/u{i}/10000000{i:02d}": f"<html>body{i}</html>" for i in range(7)
     }
-    # 2개 실패 → 성공 7 = MIN_COLLECTED_PAGES 딱 맞음
+    # 2개 실패 → 성공 5 = MIN_COLLECTED_PAGES 딱 맞음
     failing = {
         "https://m.blog.naver.com/u0/1000000000",
         "https://m.blog.naver.com/u1/1000000001",
@@ -110,7 +110,7 @@ def test_scrape_pages_partial_failure_above_minimum() -> None:
 
     result = scrape_pages(serp, client)  # type: ignore[arg-type]
 
-    assert len(result.successful) == 7
+    assert len(result.successful) == 5
     assert len(result.failed) == 2
     assert {f.idx for f in result.failed} == {0, 1}
 
@@ -120,14 +120,14 @@ def test_scrape_pages_insufficient_raises() -> None:
     mapping = {
         f"https://m.blog.naver.com/u{i}/10000000{i:02d}": f"<html>body{i}</html>" for i in range(8)
     }
-    # 3개 실패 → 성공 5 < 7 → 예외
-    failing = {f"https://m.blog.naver.com/u{i}/10000000{i:02d}" for i in range(3)}
+    # 4개 실패 → 성공 4 < 5 → 예외
+    failing = {f"https://m.blog.naver.com/u{i}/10000000{i:02d}" for i in range(4)}
     client = StubClient(mapping, failing=failing)
 
     with pytest.raises(InsufficientCollectionError) as exc_info:
         scrape_pages(serp, client)  # type: ignore[arg-type]
 
-    assert exc_info.value.actual == 5
+    assert exc_info.value.actual == 4
     assert exc_info.value.stage == "scrape"
 
 

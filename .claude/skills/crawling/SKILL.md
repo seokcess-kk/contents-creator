@@ -1,6 +1,6 @@
 ---
 name: crawling
-description: Bright Data Web Unlocker 단일 zone 으로 네이버 블로그 상위 노출 글을 크롤링한다. 검색 결과 페이지와 본문 HTML 을 모두 Web Unlocker 로 fetch 한 뒤 BeautifulSoup 으로 파싱한다. 재시도 2회, 최소 7개 수집. 'Bright Data', 'SERP 수집', '네이버 블로그 크롤링', '본문 수집', '상위글 가져와' 요청 시 반드시 이 스킬을 사용할 것.
+description: Bright Data Web Unlocker 단일 zone 으로 네이버 블로그 상위 노출 글을 크롤링한다. 검색 결과 페이지와 본문 HTML 을 모두 Web Unlocker 로 fetch 한 뒤 BeautifulSoup 으로 파싱한다. 재시도 2회, 최소 5개 수집. 'Bright Data', 'SERP 수집', '네이버 블로그 크롤링', '본문 수집', '상위글 가져와' 요청 시 반드시 이 스킬을 사용할 것.
 ---
 
 # Crawling Skill — Bright Data Web Unlocker
@@ -35,7 +35,7 @@ BRIGHT_DATA_WEB_UNLOCKER_ZONE=...   # SERP 수집 + 본문 수집 공용
 2. **Step 2 — 블로그 탭 보충** (`build_blog_tab_serp_url`):
    통합검색 합계 < `MAX_RESULTS(10)` 이면 `search.naver.com/search.naver?ssc=tab.blog.all&query={kw}&start=1` fetch. 한 페이지에 40개 이상 서버 렌더링되므로 중복 제거 후 남은 슬롯 채움. **단, 블로그 탭 보충은 최대 5개**.
 
-3. **Step 3 — 검증**: 합계 < `MIN_COLLECTED_PAGES(7)` → `InsufficientCollectionError`.
+3. **Step 3 — 검증**: 합계 < `MIN_COLLECTED_PAGES(5)` → `InsufficientCollectionError`.
 
 ### 파서 규칙 (양 트랙 공통)
 - **포스트 URL 은 `a[href]` 뿐 아니라 `*[data-url]` 속성에도 들어 있다** (네이버 신버전 UI `<button data-url="...">`). 파서는 둘 다 순회

@@ -177,7 +177,7 @@ def test_parse_serp_html_skips_ads() -> None:
 
 
 def test_collect_serp_raises_on_insufficient() -> None:
-    # 3개만 있는 HTML → 7개 미만 → InsufficientCollectionError
+    # 3개만 있는 HTML → 5개 미만 → InsufficientCollectionError
     html = """
     <html><body>
       <a href="https://blog.naver.com/a/100000001">a</a>
@@ -191,7 +191,7 @@ def test_collect_serp_raises_on_insufficient() -> None:
         collect_serp("테스트", client)  # type: ignore[arg-type]
 
     assert exc_info.value.actual == 3
-    assert exc_info.value.minimum == 7
+    assert exc_info.value.minimum == 5
     assert exc_info.value.stage == "serp"
 
 
@@ -308,15 +308,15 @@ def test_collect_serp_dedup_across_tracks() -> None:
 
 
 def test_collect_serp_boost_still_insufficient_raises() -> None:
-    """통합 2개 + 블로그 탭에도 3개만 있으면 합 5 < 7 → InsufficientCollectionError."""
+    """통합 2개 + 블로그 탭에도 2개만 있으면 합 4 < 5 → InsufficientCollectionError."""
     integrated = _html_with_posts("int", 2)
-    blog_tab = _html_with_posts("tab", 3)
+    blog_tab = _html_with_posts("tab", 2)
     client = TrackStubClient(integrated_html=integrated, blog_tab_html=blog_tab)
 
     with pytest.raises(InsufficientCollectionError) as exc_info:
         collect_serp("테스트", client)  # type: ignore[arg-type]
 
-    assert exc_info.value.actual == 5
+    assert exc_info.value.actual == 4
     assert exc_info.value.stage == "serp"
 
 

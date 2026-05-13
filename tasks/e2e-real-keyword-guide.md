@@ -44,7 +44,7 @@ ls output/dieteu-hanui-won/<latest-timestamp>/analysis/
 
 **검증 포인트**:
 - [ ] 11 단계 모두 logger INFO 로 진행 노출
-- [ ] InsufficientCollectionError 없음 (최소 7개 수집)
+- [ ] InsufficientCollectionError 없음 (최소 5개 수집)
 - [ ] PatternCard `schema_version: "2.0"` 확인
 - [ ] DIA+ 7 요소 (tables/lists/blockquotes/bold_count/separators/qa_sections/statistics_data) 추출됨
 
