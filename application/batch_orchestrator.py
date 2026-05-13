@@ -186,7 +186,15 @@ def enqueue_from_csv(
 
 
 def _dispatch_item_safely(item_id: str) -> None:
-    """worker thread 진입점 — _dispatch_item 의 모든 예외를 흡수해 status='failed'."""
+    """worker thread 진입점 — _dispatch_item 의 모든 예외를 흡수해 status='failed'.
+
+    finally 절에서 batch 의 recompute_batch_status 를 자동 호출해 마지막 item
+    완료 후 batch.status 가 'running' 으로 stuck 되는 사고를 차단한다. 이전엔
+    HTTP `POST /batches/{id}/recompute-status` 수동 호출에만 의존해, 호출이
+    누락된 batch (실측 3건) 가 모든 item 종료 후에도 영원히 'running' 상태로
+    남아 있었음. recompute 자체는 idempotent — 두 worker 가 동시 호출해도
+    동일 결과.
+    """
     try:
         _dispatch_item(item_id)
     except Exception as exc:
@@ -200,6 +208,17 @@ def _dispatch_item_safely(item_id: str) -> None:
             )
         except Exception:
             logger.exception("batch.dispatch_failed_status_update item_id=%s", item_id)
+    finally:
+        try:
+            it = storage.get_item(item_id)
+            if it is not None:
+                recompute_batch_status(it.batch_id)
+        except Exception:
+            logger.warning(
+                "batch.recompute_after_item_failed item_id=%s — 다음 item 처리에 영향 없음",
+                item_id,
+                exc_info=True,
+            )
 
 
 def _dispatch_item(item_id: str) -> None:
