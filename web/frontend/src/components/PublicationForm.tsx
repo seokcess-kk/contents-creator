@@ -4,7 +4,7 @@
 // variant=create  → 신규 등록 (단일 결과 페이지의 jobId/slug 또는 외부 URL 모두 지원)
 // variant=edit    → 기존 publication 수정 (PublicationEditDialog 동등)
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import {
@@ -92,13 +92,27 @@ export default function PublicationForm({
   const [blogChannelId, setBlogChannelId] = useState<string>(
     source?.blog_channel_id ?? "",
   );
-  // SWR 가 채널 목록을 가져온 뒤, 사용자가 아직 안 골랐으면 default 자동 선택.
-  // editing variant 의 source.blog_channel_id 가 있으면 건너뜀.
+  // SWR 가 채널 목록을 가져온 뒤, create variant 에서만 default 를 한 번만 적용.
+  // - edit variant 는 publication.blog_channel_id 의 명시값(null 포함)을 그대로 존중
+  // - create variant 도 ref 가드로 1회만 — 사용자가 "— 미지정 —" 을 명시적으로 골랐을 때
+  //   useEffect 가 매번 default 로 덮어쓰던 사고 차단
+  const defaultAppliedRef = useRef(false);
   useEffect(() => {
-    if (blogChannelId) return;
-    if (source?.blog_channel_id) return;
-    if (defaultChannelId) setBlogChannelId(defaultChannelId);
-  }, [defaultChannelId, blogChannelId, source?.blog_channel_id]);
+    if (variant === "edit") return;
+    if (defaultAppliedRef.current) return;
+    if (blogChannelId) {
+      defaultAppliedRef.current = true;
+      return;
+    }
+    if (source?.blog_channel_id) {
+      defaultAppliedRef.current = true;
+      return;
+    }
+    if (defaultChannelId) {
+      setBlogChannelId(defaultChannelId);
+      defaultAppliedRef.current = true;
+    }
+  }, [variant, defaultChannelId, blogChannelId, source?.blog_channel_id]);
 
   const effectiveTone = tone ?? (variant === "edit" ? "blue" : slug ? "amber" : "emerald");
 
