@@ -296,6 +296,42 @@ def list_latest_snapshots_batch(pub_ids: list[str]) -> dict[str, RankingSnapshot
     return out
 
 
+def list_latest_snapshots_per_day_in_range(
+    start_utc: datetime,
+    end_utc: datetime,
+    limit: int = 10_000,
+) -> list[RankingSnapshot]:
+    """캘린더 전용 — publication × KST_day 별 가장 최근 snapshot 1건씩만.
+
+    append-only 원칙은 유지하면서 SQL DISTINCT ON 으로 같은 publication 의
+    같은 KST 일자 다회 측정을 1셀로 압축한다. RPC `latest_ranking_snapshot_per_day`
+    가 server-side 에서 추리므로 PostgREST 응답 row 수가 publication × 측정 일수
+    근방으로 줄어든다 (2026-05 실측: 1412 → ~1860 → 페이지네이션 안전).
+
+    동일 RPC 결과도 PostgREST `db-max-rows` 제한을 받으므로 페이지네이션 유지.
+    """
+    client = get_client()
+    page_size = 1000
+    out: list[RankingSnapshot] = []
+    offset = 0
+    while offset < limit:
+        upper = min(offset + page_size, limit) - 1
+        result = (
+            client.rpc(
+                "latest_ranking_snapshot_per_day",
+                {"start_utc": start_utc.isoformat(), "end_utc": end_utc.isoformat()},
+            )
+            .range(offset, upper)
+            .execute()
+        )
+        rows = cast("list[dict[str, Any]]", result.data or [])
+        out.extend(_row_to_snapshot(r) for r in rows)
+        if len(rows) < (upper - offset + 1):
+            break
+        offset += page_size
+    return out
+
+
 def list_snapshots_in_range(
     start_utc: datetime,
     end_utc: datetime,

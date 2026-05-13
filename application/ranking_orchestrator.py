@@ -605,7 +605,9 @@ def get_monthly_calendar(year: int, month: int) -> RankingCalendar:
         raise ValueError(f"월은 1~12 범위: {month}")
 
     start_utc, end_utc = _kst_month_bounds(year, month)
-    snapshots = storage.list_snapshots_in_range(start_utc, end_utc)
+    # publication × KST_day 별 최신 1건씩만 가져온다 (SQL DISTINCT ON RPC).
+    # append-only 원칙은 유지 — 캘린더가 어차피 일말 상태만 쓰니 원천에서 압축.
+    snapshots = storage.list_latest_snapshots_per_day_in_range(start_utc, end_utc)
     publications = storage.list_publications(limit=10_000)
 
     rows: list[CalendarRow] = []

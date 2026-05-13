@@ -382,7 +382,7 @@ class TestGetMonthlyCalendar:
             position=None,
             captured_at=datetime(2026, 4, 11, 9, 0, tzinfo=kst),
         )
-        storage_mock.list_snapshots_in_range.return_value = [s1, s2, s3]
+        storage_mock.list_latest_snapshots_per_day_in_range.return_value = [s1, s2, s3]
         storage_mock.list_publications.return_value = [
             _publication(id="pub-1"),
             _publication(id="pub-2", slug=None),
@@ -403,14 +403,14 @@ class TestGetMonthlyCalendar:
     def test_invalid_month_raises(self, storage_mock: MagicMock) -> None:
         with pytest.raises(ValueError, match="월은 1~12"):
             ranking_orchestrator.get_monthly_calendar(2026, 13)
-        storage_mock.list_snapshots_in_range.assert_not_called()
+        storage_mock.list_latest_snapshots_per_day_in_range.assert_not_called()
 
     def test_kst_boundary_to_utc(self, storage_mock: MagicMock) -> None:
         """KST 월 경계 — UTC 환산값을 storage 에 전달."""
-        storage_mock.list_snapshots_in_range.return_value = []
+        storage_mock.list_latest_snapshots_per_day_in_range.return_value = []
         storage_mock.list_publications.return_value = []
         ranking_orchestrator.get_monthly_calendar(2026, 4)
-        call = storage_mock.list_snapshots_in_range.call_args
+        call = storage_mock.list_latest_snapshots_per_day_in_range.call_args
         start_utc, end_utc = call.args[0], call.args[1]
         # 2026-04-01 00:00 KST == 2026-03-31 15:00 UTC
         assert start_utc.isoformat().startswith("2026-03-31T15:00")

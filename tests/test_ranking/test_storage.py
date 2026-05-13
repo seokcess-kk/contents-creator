@@ -231,8 +231,10 @@ class TestListSnapshotsInRange:
     def test_passes_iso_bounds(self, mock_client: MagicMock) -> None:
         from datetime import datetime
 
+        # PostgREST db-max-rows(1000) 우회용 페이지네이션(.range) 으로 변경됨.
+        # 단일 페이지(rows < page_size)면 한 번에 break 한다.
         table = MagicMock()
-        table.select.return_value.gte.return_value.lt.return_value.order.return_value.limit.return_value.execute.return_value = MagicMock(
+        table.select.return_value.gte.return_value.lt.return_value.order.return_value.range.return_value.execute.return_value = MagicMock(
             data=[_snapshot_row()]
         )
         mock_client.table.return_value = table
