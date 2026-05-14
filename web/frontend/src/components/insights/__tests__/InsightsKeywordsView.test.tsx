@@ -1,14 +1,31 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 import type { KeywordInsightPage, KeywordInsightRow } from "@/lib/api";
 
-// useSWR 모듈 mock — 실제 fetch 호출 회피.
+// useSWR + useSWRConfig mock — 실제 fetch 호출 회피.
+const mutateMock = vi.fn();
 vi.mock("swr", () => ({
   default: vi.fn(),
+  useSWRConfig: () => ({ mutate: mutateMock }),
 }));
 
+// API 호출 mock — 액션 버튼 클릭 시 실제 호출 회피.
+vi.mock("@/lib/api", async (orig) => {
+  const actual = (await orig()) as Record<string, unknown>;
+  return {
+    ...actual,
+    retryBatchItem: vi.fn().mockResolvedValue({
+      batch_id: "b-1",
+      item_id: "i-1",
+      status: "queued",
+    }),
+    triggerRankingCheck: vi.fn().mockResolvedValue({}),
+  };
+});
+
 import useSWR from "swr";
+import { retryBatchItem, triggerRankingCheck } from "@/lib/api";
 
 import InsightsKeywordsView from "../InsightsKeywordsView";
 
@@ -44,7 +61,7 @@ describe("InsightsKeywordsView", () => {
     vi.clearAllMocks();
   });
 
-  it("정상 데이터 → 키워드 + 권장액션 렌더링", () => {
+  it("정상 데이터 → 키워드 + 액션 link 렌더링", () => {
     vi.mocked(useSWR).mockReturnValue({
       data: _page([_row()]),
       error: undefined,
@@ -54,7 +71,9 @@ describe("InsightsKeywordsView", () => {
     render(<InsightsKeywordsView />);
 
     expect(screen.getAllByText("강남 다이어트").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("발행 진행").length).toBeGreaterThan(0);
+    // succeeded + 미발행 → "발행 진행 →" link (테스트 텍스트는 부분 매칭으로 검증)
+    const links = screen.getAllByRole("link", { name: /발행 진행/ });
+    expect(links.length).toBeGreaterThan(0);
   });
 
   it("실패 사유는 한글 라벨로 표시", () => {
@@ -127,5 +146,107 @@ describe("InsightsKeywordsView", () => {
 
     render(<InsightsKeywordsView />);
     expect(screen.getByText("로딩 중...")).toBeInTheDocument();
+  });
+
+  it("재시도 버튼 클릭 → retryBatchItem 호출 + SWR mutate", async () => {
+    vi.mocked(useSWR).mockReturnValue({
+      data: _page([
+        _row({
+          analysis_status: "failed",
+          failure_category: "SERP_INSUFFICIENT",
+          recommended_action: "키워드를 더 일반적인 표현으로 분해",
+        }),
+      ]),
+      error: undefined,
+      isLoading: false,
+    } as any);
+    // confirm 자동 승인
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(<InsightsKeywordsView />);
+    // 데스크톱 + 모바일 양쪽에 버튼 → 첫 번째만 클릭
+    const buttons = screen.getAllByRole("button", { name: "재시도" });
+    expect(buttons.length).toBeGreaterThan(0);
+    fireEvent.click(buttons[0]);
+
+    await waitFor(() => {
+      expect(retryBatchItem).toHaveBeenCalledWith("b-1", "i-1");
+    });
+    expect(mutateMock).toHaveBeenCalled();
+  });
+
+  it("지금 측정 버튼 클릭 → triggerRankingCheck 호출", async () => {
+    vi.mocked(useSWR).mockReturnValue({
+      data: _page([
+        _row({
+          publication_id: "p-99",
+          publication_status: "published",
+          diagnosis_category: "no_measurement",
+          analysis_status: "ready_to_publish",
+        }),
+      ]),
+      error: undefined,
+      isLoading: false,
+    } as any);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(<InsightsKeywordsView />);
+    const buttons = screen.getAllByRole("button", { name: "지금 측정" });
+    fireEvent.click(buttons[0]);
+
+    await waitFor(() => {
+      expect(triggerRankingCheck).toHaveBeenCalledWith("p-99");
+    });
+  });
+
+  it("confirm 취소 시 API 호출 안 함", async () => {
+    vi.mocked(useSWR).mockReturnValue({
+      data: _page([
+        _row({ analysis_status: "failed", failure_category: "EXCEPTION" }),
+      ]),
+      error: undefined,
+      isLoading: false,
+    } as any);
+    vi.mocked(retryBatchItem).mockClear();
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+
+    render(<InsightsKeywordsView />);
+    const buttons = screen.getAllByRole("button", { name: "재시도" });
+    fireEvent.click(buttons[0]);
+
+    // 짧게 기다린 뒤에도 호출되지 않아야 함.
+    await new Promise((r) => setTimeout(r, 30));
+    expect(retryBatchItem).not.toHaveBeenCalled();
+  });
+
+  it("발행 진행 → Link 렌더링 (api 호출 없음)", () => {
+    vi.mocked(useSWR).mockReturnValue({
+      data: _page([_row({ analysis_status: "ready_to_publish" })]),
+      error: undefined,
+      isLoading: false,
+    } as any);
+
+    render(<InsightsKeywordsView />);
+    // Link 컴포넌트는 role="button" 이 아닌 <a> 로 렌더링됨.
+    const links = screen.getAllByRole("link", { name: /발행 진행/ });
+    expect(links.length).toBeGreaterThan(0);
+    expect(links[0].getAttribute("href")).toContain("batch_id=b-1");
+  });
+
+  it("PREFILTER_VOLUME → 액션 버튼 대신 hint 텍스트", () => {
+    vi.mocked(useSWR).mockReturnValue({
+      data: _page([
+        _row({ analysis_status: "skipped", failure_category: "PREFILTER_VOLUME" }),
+      ]),
+      error: undefined,
+      isLoading: false,
+    } as any);
+
+    render(<InsightsKeywordsView />);
+    // 액션 버튼 없음. hint 가 표시 (절단되어도 일부 포함).
+    expect(screen.queryByRole("button", { name: "재시도" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "발행 진행" })).toBeNull();
+    // hint = "키워드 변경 또는 배치 임계값 조정 필요" 의 일부 (24자 이내라 그대로 표시)
+    expect(screen.getAllByText(/키워드 변경/).length).toBeGreaterThan(0);
   });
 });
