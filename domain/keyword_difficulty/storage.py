@@ -91,6 +91,78 @@ def list_by_grade(grade: DifficultyGrade, *, limit: int = 100) -> list[KeywordDi
     return [_row_to_diff(cast("dict[str, Any]", r)) for r in (result.data or [])]
 
 
+# 키워드별 dedupe 시 PostgREST 단일 호출로 가져올 raw row 상한.
+# Supabase max-rows default 1000. 키워드당 평균 history 깊이 × unique 키워드 수
+# 보다 충분히 크게 잡아 dedupe 결과가 잘리지 않도록 한다.
+_DEDUPE_FETCH_LIMIT = 1000
+
+
+def list_latest_per_keyword(
+    *,
+    limit: int = 200,
+    fetch_limit: int = _DEDUPE_FETCH_LIMIT,
+) -> list[KeywordDifficulty]:
+    """키워드별 최신 스냅샷 1개만 — 최근 분석된 unique 키워드 limit 개.
+
+    `list_recent` 는 snapshot row 기준이라 같은 키워드의 옛 스냅샷이 섞여
+    화면 상에서 unique 키워드가 잘리는 문제가 있다. 본 함수는 raw row 를
+    fetch_limit 만큼 최근순으로 가져온 뒤 키워드별 최신만 in-memory dedupe
+    해 keyword 기준의 최신 limit 개를 반환한다.
+    """
+    client = get_client()
+    result = (
+        client.table(_TABLE)
+        .select("*")
+        .order("checked_at", desc=True)
+        .limit(fetch_limit)
+        .execute()
+    )
+    rows = result.data or []
+    seen: set[str] = set()
+    out: list[KeywordDifficulty] = []
+    for r in rows:
+        row = cast("dict[str, Any]", r)
+        kw = row.get("keyword")
+        if not kw or kw in seen:
+            continue
+        seen.add(kw)
+        out.append(_row_to_diff(row))
+        if len(out) >= limit:
+            break
+    return out
+
+
+def list_latest_per_keyword_by_grade(
+    grade: DifficultyGrade,
+    *,
+    limit: int = 100,
+    fetch_limit: int = _DEDUPE_FETCH_LIMIT,
+) -> list[KeywordDifficulty]:
+    """등급 필터 + 키워드별 최신 1개만."""
+    client = get_client()
+    result = (
+        client.table(_TABLE)
+        .select("*")
+        .eq("grade", grade.value)
+        .order("checked_at", desc=True)
+        .limit(fetch_limit)
+        .execute()
+    )
+    rows = result.data or []
+    seen: set[str] = set()
+    out: list[KeywordDifficulty] = []
+    for r in rows:
+        row = cast("dict[str, Any]", r)
+        kw = row.get("keyword")
+        if not kw or kw in seen:
+            continue
+        seen.add(kw)
+        out.append(_row_to_diff(row))
+        if len(out) >= limit:
+            break
+    return out
+
+
 def delete_by_keyword(keyword: str) -> int:
     """단일 키워드의 모든 스냅샷 삭제 — 히스토리 전체 제거.
 

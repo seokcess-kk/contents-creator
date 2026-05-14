@@ -123,7 +123,11 @@ def list_recent(
     grade: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
 ) -> list[_DifficultyResponse]:
-    """등록된 분석 스냅샷 최근순. grade 지정 시 해당 등급만."""
+    """최근 분석된 unique 키워드 limit 개 (키워드별 최신 1개).
+
+    grade 지정 시 해당 등급으로 필터링. limit 는 키워드(=row) 기준이라
+    snapshot 히스토리가 깊은 키워드도 1개씩만 반환된다.
+    """
     if grade:
         try:
             grade_enum = DifficultyGrade(grade)
@@ -132,9 +136,9 @@ def list_recent(
                 status_code=400,
                 detail="grade 는 missing/high/medium/low 중 하나",
             ) from exc
-        snapshots = storage.list_by_grade(grade_enum, limit=limit)
+        snapshots = storage.list_latest_per_keyword_by_grade(grade_enum, limit=limit)
     else:
-        snapshots = storage.list_recent(limit=limit)
+        snapshots = storage.list_latest_per_keyword(limit=limit)
     return [_to_response(s) for s in snapshots]
 
 
