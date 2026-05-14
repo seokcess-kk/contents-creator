@@ -5,9 +5,15 @@
 import {
   listJobs,
   listPipelineItems,
+  listPublications,
   type BatchItem,
+  type Publication,
 } from "@/lib/api";
 import type { Job } from "@/types";
+
+// 단일 row 의 publication 매칭을 위해 fetch 할 최대 publication 수.
+// 운영 publication 1000건 미만 가정 (사용자 결정, P5 통합 큐 운영 규모).
+const SINGLE_PUBLICATION_LOOKUP_LIMIT = 200;
 
 export type QueueSource = "single" | "batch";
 export type UnifiedStatus =
@@ -84,8 +90,42 @@ export async function getUnifiedQueue(
     );
   }
 
-  const results = await Promise.all(promises);
+  // 단일 row 의 publication_id 매칭을 위해 publication 목록 병행 fetch.
+  // 단일 흐름은 listJobs 결과에 publication 매핑 정보가 없으므로 사후 매칭.
+  const publicationsPromise: Promise<Publication[]> = wantSingle
+    ? listPublications(undefined, SINGLE_PUBLICATION_LOOKUP_LIMIT)
+        .then((res) => res.items)
+        .catch(() => [])
+    : Promise.resolve([]);
+
+  const [results, publications] = await Promise.all([
+    Promise.all(promises),
+    publicationsPromise,
+  ]);
   let merged = results.flat();
+
+  // 단일 row 에 publication_id 채우기 — job_id 매칭이 1순위, slug 매칭이 폴백
+  // (구 publication 의 job_id 가 null 인 경우 흡수)
+  if (publications.length > 0) {
+    const pubByJobId = new Map<string, Publication>();
+    const pubBySlug = new Map<string, Publication>();
+    for (const pub of publications) {
+      if (pub.job_id) pubByJobId.set(pub.job_id, pub);
+      if (pub.slug) pubBySlug.set(pub.slug, pub);
+    }
+    merged = merged.map((it) => {
+      if (it.source !== "single" || it.publication_id) return it;
+      const matched =
+        pubByJobId.get(it.id) ?? (it.slug ? pubBySlug.get(it.slug) : undefined);
+      if (!matched) return it;
+      return {
+        ...it,
+        publication_id: matched.id,
+        url: it.url ?? matched.url,
+        blog_channel_id: it.blog_channel_id ?? matched.blog_channel_id ?? null,
+      };
+    });
+  }
 
   // batch_id 필터
   if (filters.batch_id) {
@@ -111,11 +151,11 @@ export async function getUnifiedQueue(
     return true;
   });
 
-  // 2026-05-11 — publication 등록된 batch item 은 검수·발행 큐에서 자동 제외.
+  // 2026-05-11 — publication 등록된 row 는 검수·발행 큐에서 자동 제외 (출처 무관).
   // 운영 철학: URL 등록 = 발행 완료, /queue 는 "검수·발행 대기" 만 표시.
-  // batch_items.status 가 publication 등록 후에도 ready_to_publish 그대로 남기 때문에
-  // status 전이 대신 UI 단에서 hide 하는 보수적 접근 (DB enum 무변경).
-  return deduped.filter((it) => !(it.source === "batch" && it.publication_id));
+  // batch: batch_items.publication_id 가 채워지면 hide.
+  // single: 위에서 listPublications 매칭으로 publication_id 가 채워졌으면 hide.
+  return deduped.filter((it) => !it.publication_id);
 }
 
 function _batchItemToUnified(item: BatchItem): UnifiedQueueItem {

@@ -4,16 +4,20 @@ import { getUnifiedQueue } from "@/lib/unifiedQueue";
 vi.mock("@/lib/api", () => ({
   listJobs: vi.fn(),
   listPipelineItems: vi.fn(),
+  listPublications: vi.fn(),
 }));
 
-import { listJobs, listPipelineItems } from "@/lib/api";
+import { listJobs, listPipelineItems, listPublications } from "@/lib/api";
 const mockedJobs = vi.mocked(listJobs);
 const mockedPipeline = vi.mocked(listPipelineItems);
+const mockedPublications = vi.mocked(listPublications);
 
 describe("getUnifiedQueue", () => {
   beforeEach(() => {
     mockedJobs.mockReset();
     mockedPipeline.mockReset();
+    mockedPublications.mockReset();
+    mockedPublications.mockResolvedValue({ count: 0, items: [] });
     mockedJobs.mockResolvedValue([
       {
         id: "job-1",
@@ -193,5 +197,45 @@ describe("getUnifiedQueue", () => {
     const keywords = items.map((it) => it.keyword);
     expect(keywords).toContain("발행대기-키워드");
     expect(keywords).not.toContain("발행완료-키워드");
+  });
+
+  it("single job — publication.job_id 매칭 시 큐에서 자동 제외", async () => {
+    // 단일 키워드 생성 후 URL 등록한 row 는 /queue 에서 사라져야 한다.
+    mockedPublications.mockResolvedValue({
+      count: 1,
+      items: [
+        {
+          id: "pub-job-match",
+          job_id: "job-1",
+          keyword: "탈모치료",
+          slug: "hair",
+          url: "https://blog.example.com/abc",
+          published_at: null,
+          created_at: "2026-05-03T00:00:00Z",
+        },
+      ],
+    });
+    const items = await getUnifiedQueue({ source: "single" });
+    expect(items.every((it) => it.keyword !== "탈모치료")).toBe(true);
+  });
+
+  it("single job — publication.slug 폴백 매칭 시 큐에서 자동 제외 (구 publication 의 job_id null)", async () => {
+    // 옛 publication 은 job_id 가 null 일 수 있다 — slug fallback 으로 흡수.
+    mockedPublications.mockResolvedValue({
+      count: 1,
+      items: [
+        {
+          id: "pub-slug-match",
+          job_id: null,
+          keyword: "탈모치료",
+          slug: "hair",
+          url: "https://blog.example.com/xyz",
+          published_at: null,
+          created_at: "2026-05-03T00:00:00Z",
+        },
+      ],
+    });
+    const items = await getUnifiedQueue({ source: "single" });
+    expect(items.every((it) => it.keyword !== "탈모치료")).toBe(true);
   });
 });

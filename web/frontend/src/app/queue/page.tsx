@@ -216,6 +216,7 @@ function QueuePageInner() {
               compact
               defaultKeyword={drawerItem.keyword}
               slug={drawerItem.slug ?? undefined}
+              jobId={drawerItem.source === "single" ? drawerItem.id : undefined}
               onSubmitted={() => {
                 setDrawerItem(null);
                 void load();
@@ -245,6 +246,7 @@ function QueuePageInner() {
               variant="create"
               defaultKeyword={registerItem.keyword}
               slug={registerItem.slug ?? undefined}
+              jobId={registerItem.source === "single" ? registerItem.id : undefined}
               onSubmitted={() => {
                 setRegisterItem(null);
                 void load();
