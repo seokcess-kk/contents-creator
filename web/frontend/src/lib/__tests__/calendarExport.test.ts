@@ -76,12 +76,13 @@ describe("classifySource", () => {
 });
 
 describe("calendarToCsv", () => {
-  it("BOM + 헤더 + CRLF 줄바꿈", () => {
+  it("BOM + 헤더(일자만) + CRLF 줄바꿈", () => {
     const cal: RankingCalendar = { month: "2026-05", rows: [] };
     const csv = calendarToCsv(cal);
     expect(csv.startsWith(BOM)).toBe(true);
-    expect(csv).toContain("keyword,url,source,2026-05-01,");
-    expect(csv).toContain("2026-05-31");
+    // 헤더 일자 컬럼은 화면과 동일하게 "1, 2, ..., 31" (zero-pad 없음)
+    expect(csv).toContain("keyword,url,source,1,2,3,");
+    expect(csv).toContain(",30,31\r\n");
     expect(csv.endsWith("\r\n")).toBe(true);
   });
 
@@ -92,7 +93,7 @@ describe("calendarToCsv", () => {
     expect(lines).toHaveLength(1); // 헤더만
   });
 
-  it("position 숫자 → 그대로, null → '100+', 미측정 → 빈 칸", () => {
+  it("position 숫자 → 그대로, null → '—', 미측정 → 빈 칸", () => {
     const cal: RankingCalendar = {
       month: "2026-05",
       rows: [
@@ -113,7 +114,7 @@ describe("calendarToCsv", () => {
     expect(fields[0]).toBe("강남 다이어트");
     expect(fields[2]).toBe("자체");
     expect(fields[3]).toBe("12"); // 05-01
-    expect(fields[4]).toBe("100+"); // 05-02
+    expect(fields[4]).toBe("—"); // 05-02 (100위 밖, 화면 셀과 동일)
     expect(fields[5]).toBe(""); // 05-03 미측정
   });
 

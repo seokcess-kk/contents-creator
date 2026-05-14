@@ -3,11 +3,12 @@
 // 운영 원칙:
 // - Excel 한글 깨짐 방지: UTF-8 BOM (`﻿`) 선두 삽입
 // - 줄바꿈: `\r\n` (RFC 4180, Excel 호환)
-// - 셀 표기:
+// - 셀 표기 (화면 셀과 1:1 일치):
 //   - position 숫자  → 숫자 그대로 (`12`)
-//   - position null  → `"100+"` (100위 밖, 시각 셀의 `—` 대응)
+//   - position null  → `"—"` (em dash, 100위 밖 = 화면 셀과 동일)
 //   - 키 미존재     → 빈 문자열 (미측정)
-// - 컬럼: `keyword,url,source,YYYY-MM-01,...,YYYY-MM-31`
+// - 헤더 일자 컬럼: `1, 2, ..., 31` (화면 `<th>` 와 동일하게 일자만)
+// - 컬럼: `keyword,url,source,1,2,...,31`
 // - source 라벨: CalendarTable 의 분류와 동일 — 자체/외부/초안/재발행중
 
 import type { CalendarRow, RankingCalendar } from "@/lib/api";
@@ -52,9 +53,11 @@ export function calendarToCsv(
   rows?: CalendarRow[],
 ): string {
   const dataRows = rows ?? cal.rows;
-  const dayKeys = dayKeysForMonth(cal.month);
+  const dayKeys = dayKeysForMonth(cal.month); // "YYYY-MM-DD" — body 매핑용 키
+  // 헤더는 화면과 동일하게 "1, 2, ..., 31" 일자만
+  const dayLabels = dayKeys.map((k) => String(Number(k.slice(-2))));
 
-  const header = ["keyword", "url", "source", ...dayKeys].map(csvField).join(",");
+  const header = ["keyword", "url", "source", ...dayLabels].map(csvField).join(",");
 
   const body = dataRows
     .map((r) => {
@@ -66,7 +69,7 @@ export function calendarToCsv(
         ...dayKeys.map((k) => {
           const cell = r.days[k];
           if (!cell) return ""; // 미측정
-          if (cell.position === null) return "100+"; // 100위 밖
+          if (cell.position === null) return "—"; // 100위 밖 — 화면 셀과 동일
           return String(cell.position);
         }),
       ];
