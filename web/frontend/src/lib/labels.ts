@@ -125,3 +125,36 @@ const VOLUME_LABELS: Record<string, string> = {
 export function getVolumeLabel(bucket: string): string {
   return VOLUME_LABELS[bucket] ?? bucket;
 }
+
+// ── failure category (keyword_batch_items.failure_category) ──────────────────
+// 2026-05-14 — /insights 키워드 단위 행 뷰 + 집계용. error 컬럼은 원문 보존.
+// FAILURE_CATEGORY_LABELS 는 사용자 표시용, FAILURE_CATEGORY_RECOMMENDED_ACTION 은
+// 백엔드 통합 권장액션 매퍼의 fallback 용 (insights_view 가 우선 채워서 내려보냄).
+
+const FAILURE_CATEGORY_LABELS: Record<string, string> = {
+  PREFILTER_VOLUME: "검색량 미달",
+  PREFILTER_DIFFICULTY: "난이도 초과",
+  SERP_INSUFFICIENT: "상위글 수집 부족",
+  SCRAPE_INSUFFICIENT: "본문 수집 부족",
+  COMPLIANCE_FAILED: "의료법 수정 실패",
+  BODY_SIMILARITY_HIGH: "본문 차별화 부족",
+  EXCEPTION: "기타 예외",
+};
+
+export function getFailureCategoryLabel(category: string): string {
+  return FAILURE_CATEGORY_LABELS[category] ?? category;
+}
+
+const FAILURE_CATEGORY_RECOMMENDED_ACTION: Record<string, string> = {
+  PREFILTER_VOLUME: "검색량 조건 완화 또는 키워드 변경",
+  PREFILTER_DIFFICULTY: "난이도 조건 완화 또는 키워드 변경",
+  SERP_INSUFFICIENT: "키워드를 더 일반적인 표현으로 분해",
+  SCRAPE_INSUFFICIENT: "재시도 또는 키워드 변경",
+  COMPLIANCE_FAILED: "원문 검토 후 수동 교정",
+  BODY_SIMILARITY_HIGH: "다른 cluster 로 재배치 또는 본문 재생성",
+  EXCEPTION: "error 원문 확인 후 수동 분류",
+};
+
+export function getFailureCategoryRecommendedAction(category: string): string {
+  return FAILURE_CATEGORY_RECOMMENDED_ACTION[category] ?? "";
+}

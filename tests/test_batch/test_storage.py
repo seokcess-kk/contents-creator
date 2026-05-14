@@ -94,7 +94,12 @@ def test_get_batch_returns_none_for_missing(mock_client: MagicMock) -> None:
 
 
 def test_update_item_status_includes_only_provided_fields(mock_client: MagicMock) -> None:
-    """None 인자는 update payload 에서 제외."""
+    """None 인자는 update payload 에서 제외.
+
+    단, error / failure_category 는 예외 — failure 외 status 로 전환될 때 자동
+    NULL clear (ea2bf28, 2026-05-14). 운영 화면에 잔존 메시지·카테고리가 남지
+    않도록 보장.
+    """
     with patch("domain.batch.storage.get_client", return_value=mock_client):
         storage.update_item_status(
             "i-1",
@@ -105,8 +110,11 @@ def test_update_item_status_includes_only_provided_fields(mock_client: MagicMock
     payload = update_call.args[0]
     assert payload["status"] == "running"
     assert "started_at" in payload
-    assert "error" not in payload  # 안 넣었으니 없음
-    assert "job_id" not in payload
+    # auto-clear: running 은 failure status 가 아니므로 error / failure_category 가
+    # 명시적으로 None 으로 들어가 운영 화면의 잔존 표시를 차단.
+    assert payload["error"] is None
+    assert payload["failure_category"] is None
+    assert "job_id" not in payload  # 안 넣었으니 없음 (auto-clear 대상 아님)
 
 
 def test_update_item_result_partial_payload(mock_client: MagicMock) -> None:

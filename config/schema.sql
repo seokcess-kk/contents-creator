@@ -581,6 +581,10 @@ create table if not exists keyword_batch_items (
     max_retries int not null default 2,
     job_id text,                                -- 단일 job 추적 (Phase 1 link 키)
     error text,
+    -- 2026-05-14 — 실패 사유 enum (집계용). error 컬럼은 원문 보존 (디버깅용).
+    -- 7종: PREFILTER_VOLUME, PREFILTER_DIFFICULTY, SERP_INSUFFICIENT,
+    --      SCRAPE_INSUFFICIENT, COMPLIANCE_FAILED, BODY_SIMILARITY_HIGH, EXCEPTION
+    failure_category text,
     estimated_cost_usd numeric default 0,
 
     -- 분석 결과 (Phase 2 에서 채워짐, nullable)
@@ -616,6 +620,19 @@ create index if not exists idx_keyword_batch_items_review
     on keyword_batch_items (review_status);
 create index if not exists idx_keyword_batch_items_cluster
     on keyword_batch_items (batch_id, cluster_id);
+
+
+-- ============================================================
+-- 2026-05-14 — failure_category 컬럼 추가 (운영 DB alter)
+-- 이미 keyword_batch_items 가 존재하는 환경에서 idempotent 적용.
+-- 부분 인덱스: status IN (failed,skipped) row 에서만 sparse 하게 (성능 최적화).
+-- ============================================================
+alter table keyword_batch_items
+    add column if not exists failure_category text;
+
+create index if not exists idx_keyword_batch_items_failure_cat
+    on keyword_batch_items (status, failure_category)
+    where status in ('failed', 'skipped');
 
 
 -- ============================================================

@@ -29,6 +29,19 @@ Mode = Literal["now", "overnight", "auto"]
 ClusterRole = Literal["primary", "member"]
 ReviewStatus = Literal["pending", "approved", "rejected", "needs_fix"]
 
+# 2026-05-14 — 실패 사유 enum (집계용). error 컬럼은 디버깅용 원문 유지.
+# A3 라우터가 status='failed'|'skipped' 전환 시 매핑하고, A5 백필 스크립트가 기존 row 정규식 매핑.
+# EXCEPTION 은 catch-all — 추후 패턴이 쌓이면 enum 으로 승격 가능 (백필 재실행).
+FailureCategory = Literal[
+    "PREFILTER_VOLUME",
+    "PREFILTER_DIFFICULTY",
+    "SERP_INSUFFICIENT",
+    "SCRAPE_INSUFFICIENT",
+    "COMPLIANCE_FAILED",
+    "BODY_SIMILARITY_HIGH",
+    "EXCEPTION",
+]
+
 
 class KeywordBatch(BaseModel):
     """CSV 업로드 단위 메타. SPEC-BATCH.md §4 keyword_batches 매핑."""
@@ -84,6 +97,8 @@ class KeywordBatchItem(BaseModel):
     max_retries: int = Field(default=2, ge=0)
     job_id: str | None = None  # Phase 1 link 키 (FK 회수 보강 전)
     error: str | None = None
+    # 2026-05-14 — failed/skipped 분류용 enum. error 컬럼은 원문 보존 (디버깅용).
+    failure_category: FailureCategory | None = None
     estimated_cost_usd: float = 0
 
     # 분석 결과 (Phase 2, nullable)

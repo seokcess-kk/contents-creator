@@ -1646,3 +1646,81 @@ UX Refactor P1~P6 에서 산발적으로 적용한 색상/spacing/typography 변
 - [ ] 2026-05-15 결정 게이트: J3 vs J4 우선순위 / 보류 / 통합 진행
 
 
+---
+
+## /insights 페이지 + failure_category enum (2026-05-14)
+
+> 목표: 운영자가 "어떤 키워드가 왜 상위노출이 안 되는가" 를 한 화면에서 확인.
+> 발행 후 미노출은 `visibility_diagnoses` 5종으로 이미 가능하지만, **분석 단계 실패 사유**는
+> `keyword_batch_items.error` 자유 텍스트라 집계 불가능. 이를 enum 으로 정규화하고
+> `/insights` 에 키워드 단위 통합 행 뷰를 추가한다.
+
+### 사용자 확정 사항
+- **`/insights` 노출 범위**: 전체 키워드 (분석/미발행/노출/미노출 모두 1행씩). 운영자가 한 화면에서 전체 상태 파악
+- **`failure_category` 적용 범위**: 신규 row 부터 enum 라우팅 + **기존 error 텍스트 정규식 백필 1회성 스크립트** 필수
+
+### 사전 조사 결과 (read-only 탐색 완료)
+- 기존 `/insights` 는 RSC + `InsightsClient` 의 **summary 통계 dashboard** (`application/insights_orchestrator.py::get_insights_summary`). 이번 작업은 **키워드 단위 행 뷰** — 같은 페이지에 탭 추가 또는 `/insights/keywords` sub-route 로 분리 (B3 에서 결정)
+- nav 6영역 구조 확정 (`web/frontend/src/components/NavBar.tsx`): 운영 홈 / 생성 / 검수·발행 / 성과·분석 / 브랜드 / 관리. `/insights` 는 이미 "성과·분석" 하위 sub-link → **추가 nav 작업 불필요**, 같은 entry 안에서 뷰 확장만
+- `labels.ts` 단일 출처 + `VOLUME_LABELS`/`DIFFICULTY_LABELS`/`DIAGNOSIS_LABELS`/`BATCH_ITEM_LABELS` 등 7매핑 존재. `FAILURE_CATEGORY_LABEL` 만 추가하면 정합
+- `_handle_item_failure(item, exc)` (`application/batch_orchestrator.py:750~787`) — 예외 타입 → enum 매핑 진입점. `err_msg = f"{type(exc).__name__}: {exc}"` 다음 줄에 enum 추출 추가
+- `_apply_prefilter` (455~509) — `reasons` 리스트에 `search_volume=...` 또는 `difficulty=...` 키워드로 분기 식별 가능
+- `storage.update_item_status` / `update_item_result` 양쪽 모두 partial update 패턴 (None=변경 안 함). `failure_category` 컬럼은 `update_item_status` 에 파라미터 추가가 가장 자연스러움 (status 와 같이 갱신)
+- 실제 raise 되는 예외 타입 확정:
+  - `InsufficientCollectionError` (`domain/crawler/model.py:71`) — stage="serp" / stage="scrape" 두 경로
+  - `prefilter:` prefix (`_apply_prefilter` line 496) — `search_volume=N<min` / `difficulty=GRADE>max` 두 경로
+  - `ComplianceFailed` 류 — `domain/compliance` 의 fixer 2회 실패 시 `RuntimeError` 또는 SPEC §3 [8] 종료 (정확한 예외명은 A1 구현 시 다시 grep)
+  - `본문_차별화_부족` — cluster reuse Jaccard 초과, `compliance_violations` 에 라벨 push (line 297). 예외 raise 아님 → `_dispatch_item` 본문 분기에서 직접 마킹
+  - 그 외 모두 → `EXCEPTION`
+- `web/api/routers/insights.py` 이미 존재 — 같은 prefix 에 `/keywords` endpoint 추가만
+
+### 제약/원칙 (반복)
+- 단일 흐름 시그니처 무변경 (Pydantic nullable 필드 + 새 컬럼만 허용)
+- domain/ 신규 도메인 신설 X (`application/insights_view.py` 는 use case 계층, **기존 `insights_orchestrator.py` 와 분리** — 책임 차이: orchestrator=통계 집계 / view=행 단위 join 뷰)
+- LLM 호출 신규 추가 X (모두 SQL + 코드 룰)
+- 라벨/문구는 `lib/labels.ts` 단일 출처
+- `FailureCategory` enum 변경 시 `CLAUDE.md` 변경이력에 기록 의무
+- 의료법 컨텍스트 무관 (`compliance_violations` 는 그대로, 분석 단계에서는 `failure_category=COMPLIANCE_FAILED` 만 마킹)
+- pyright strict 통과, pytest 회귀 0 fail
+
+### Phase A: failure_category enum (1순위)
+
+- [ ] **A1** `domain/batch/model.py` 에 `FailureCategory` Literal 추가 — 7종 (`PREFILTER_VOLUME`/`PREFILTER_DIFFICULTY`/`SERP_INSUFFICIENT`/`SCRAPE_INSUFFICIENT`/`COMPLIANCE_FAILED`/`BODY_SIMILARITY_HIGH`/`EXCEPTION`). `KeywordBatchItem` 에 `failure_category: FailureCategory | None = None` 필드 추가. 도메인 격리 원칙 준수 (다른 도메인 import 0). 검증: pyright 통과 + 기존 KeywordBatchItem 직렬화 테스트 회귀 0
+- [ ] **A2** `config/schema.sql` 의 `keyword_batch_items` 정의에 `failure_category text` 컬럼 추가 + 별도 alter SQL 블록 (`-- 2026-05-14 failure_category 컬럼 추가` 주석). 부분 인덱스 `create index if not exists idx_kbi_failure_cat on keyword_batch_items (status, failure_category) where status in ('failed','skipped')`. 검증: Supabase SQL Editor dry-run + `\d keyword_batch_items` 컬럼 확인
+- [ ] **A3** `application/batch_orchestrator.py` 라우터 변경 — (a) `_apply_prefilter` 의 미달 분기에서 `reasons` 첫 항목 검사해 `PREFILTER_VOLUME`/`PREFILTER_DIFFICULTY` 결정 → `update_item_status` 에 전달. (b) `_handle_item_failure` 에서 `_classify_exception(exc)` 헬퍼 신설 (예외명 isinstance + 메시지 prefix 분기로 7종 매핑) → `update_item_status` 에 전달. (c) `_dispatch_item` 본문 차별화 분기 (line 296) → `BODY_SIMILARITY_HIGH` 마킹. **기존 error 텍스트는 그대로 유지** (사람용 디테일). 검증: 단위 테스트 (A6) + 기존 `_handle_item_failure` 테스트 회귀
+- [ ] **A4** `domain/batch/storage.py::update_item_status` 시그니처에 `failure_category: FailureCategory | None = None` 파라미터 추가, partial update payload 에 포함. status 가 'failed'/'skipped' 가 아닌 경우 (queued 복귀 등) 자동 NULL clear (error 컬럼과 동일 패턴). 검증: storage 단위 테스트
+- [ ] **A5** `scripts/backfill_failure_category.py` 신규 — 1회성 — `status IN ('failed','skipped') AND failure_category IS NULL` row 만 fetch → 정규식 매칭 → enum 매핑. `--dry-run` 기본, `--apply` 옵션으로만 실제 update. 매칭 안 되는 row 는 카운트 로깅 (수동 검토 대상). 패턴: `^prefilter:.*search_volume` → PREFILTER_VOLUME, `^prefilter:.*difficulty` → PREFILTER_DIFFICULTY, `InsufficientCollectionError:\s*serp` → SERP_INSUFFICIENT, `InsufficientCollectionError:\s*scrape` → SCRAPE_INSUFFICIENT, `ComplianceFailed|compliance.*failed` → COMPLIANCE_FAILED, `본문_차별화_부족` → BODY_SIMILARITY_HIGH, 나머지 → EXCEPTION. 검증: `--dry-run` 출력에 카운트 + 매칭 안 된 샘플 5개 print
+- [ ] **A6** `web/frontend/src/lib/labels.ts` 에 `FAILURE_CATEGORY_LABELS` + `getFailureCategoryLabel(category)` 추가 (한글 라벨). 권장액션 텍스트는 별도 `FAILURE_CATEGORY_RECOMMENDED_ACTION` + `getFailureCategoryRecommendedAction()` (B1 의 통합 권장액션 매퍼와 별도 — 백엔드에서 채워서 내려보내고 프론트는 단순 표시. 본 헬퍼는 fallback 용). 검증: 기존 `labels.test.ts` 패턴으로 7케이스 매칭
+- [ ] **A7** tests — (a) `tests/test_batch/test_failure_category.py`: 7종 enum 라우팅 단위 테스트 (mock storage, `_classify_exception` + `_apply_prefilter` 각 케이스). (b) `tests/test_scripts/test_backfill_failure_category.py`: 정규식 매칭 7케이스 + 매칭 실패 케이스. (c) 기존 `tests/test_batch/test_batch_orchestrator.py::test_apply_prefilter*` 의 어서션 갱신 (`failure_category` 컬럼 함께 검증). 검증: `pytest tests/test_batch tests/test_scripts --no-cov` 회귀 0
+
+### Phase B: /insights 키워드 행 뷰 (2순위)
+
+- [ ] **B1** `application/insights_view.py` 신규 (insights_orchestrator 와 분리 — 책임: 통계 vs 행 뷰). `list_keyword_insights(*, status_filter, failure_category, diagnosis_category, batch_id, page, limit)` → `list[KeywordInsightRow]` + `total`. 반환 모델 `KeywordInsightRow` Pydantic — 컬럼: keyword, search_volume, difficulty_grade, analysis_status (`pending`/`succeeded`/`skipped`/`failed`/`needs_review`/`ready_to_publish`), failure_category, failure_category_label, publication_status (`not_published`/`published`/`republished`), latest_rank_position, latest_rank_section, diagnosis_category, diagnosis_confidence, **recommended_action** (4가지 출처 통합 — 분석실패=failure_category 라벨, 미발행="발행 진행", 미노출=diagnosis.recommended_action, 정상=빈 칸), batch_id, item_id, pattern_card_id, publication_id. SQL: PostgREST select 가 multi-table left join 미지원이므로 **3차례 fetch + python merge** (keyword_batch_items → publications by keyword → 최신 visibility_diagnoses by publication_id → 최신 ranking_snapshots). 또는 Supabase RPC SQL view 1개 신설 (성능 측정 후 결정 — 1차 구현은 fetch+merge, 운영 누적 1000건 이상 시 RPC 검토). 검증: 단위 테스트 (B5) + 빈 데이터 graceful
+- [ ] **B2** `web/api/routers/insights.py` 에 `GET /insights/keywords` endpoint 추가 (기존 `/insights/summary` 와 동거). 쿼리 파라미터: `status` / `failure_category` / `diagnosis_category` / `batch_id` / `page` (default 1) / `limit` (default 50, max 200). 응답: `{rows: KeywordInsightRow[], total: int, page: int, limit: int}`. 검증: API 통합 테스트 (B5)
+- [ ] **B3** `web/frontend/src/app/insights/page.tsx` + `InsightsClient.tsx` 에 **탭 UI** 추가 — "통계 요약" (기존 summary dashboard) / "키워드 단위" (신규). 같은 라우트 `/insights?tab=keywords` 로 deeplink 지원. 신규 탭 컴포넌트는 별도 파일 `InsightsKeywordsView.tsx` (RSC 진입은 page.tsx, client useSWR 는 컴포넌트 안). 컬럼: 키워드 | 검색량 | 난이도 | 분석상태 | 실패사유 | 발행상태 | 최근순위 | 최근진단 | 권장액션. 필터 UI: 상태별 칩 (전체/분석실패/미발행/미노출/자기잠식/순위하락/정상노출). 페이지네이션 (50/페이지). row 클릭 → `pattern_card_id` 있으면 `/patterns/by-id/[id]`, `publication_id` 있으면 `/rankings/[id]`. `lib/labels.ts` 라벨 사용. 검증: vitest 렌더링 + 필터 토글
+- [ ] **B4** ~~nav 진입~~ — **불필요**. nav 6영역의 "성과·분석 > 인사이트" 가 이미 `/insights` 로 진입. 탭 추가만 (B3) 으로 충족
+- [ ] **B5** tests — (a) `tests/test_application/test_insights_view.py`: 각 출처 분기 검증 (분석실패/미발행/미노출/정상 4케이스 + recommended_action 통합 매퍼). (b) `tests/test_web_api/test_insights_router_keywords.py`: 필터/페이지네이션 + 200 응답 shape. (c) `web/frontend/src/app/insights/__tests__/InsightsKeywordsView.test.tsx` (vitest): 칩 토글 + row 클릭 라우팅 (mock router) + labels 함수 호출 매칭. 검증: `pytest tests/test_application/test_insights_view.py tests/test_web_api/test_insights_router_keywords.py --no-cov` + `pnpm -C web/frontend test --run InsightsKeywordsView`
+
+### Phase C: 사유별 집계 (후속, 이번 SPEC 미포함)
+
+- [ ] **C1** 도넛 차트 — `failure_category` 분포 (전체 batch 합산) — recharts 또는 sparkline 검토
+- [ ] **C2** 요약 카드 — Top 3 실패 사유 + 직전 7일 추이 + click → /insights?failure_category=X 필터 적용
+
+### Phase D: 발행 전 위험 스코어 (후속, 이번 SPEC 미포함)
+
+- [ ] **D1** LOW/MED/HIGH 라벨 룰 정의 — difficulty + search_volume + cluster 본문 차별화 예측
+- [ ] **D2** publication 등록 직전 위험도 카드 표시 + 운영자 confirm 게이트
+
+### 리스크 / 완화
+
+- **R1**: 기존 error 텍스트와 failure_category 불일치 (백필 후 신규 코드 변경 시 동일 케이스가 다른 enum 으로 마킹) → 완화: A3 의 분기 로직과 A5 의 정규식이 **동일 키워드** 사용하도록 동일 모듈 (`domain/batch/model.py`) 에 헬퍼 export. A7 테스트가 두 경로 cross-check
+- **R2**: PostgREST left join 미지원으로 B1 의 fetch+merge 성능 — 운영 row 1000건 이상 시 N+1 위험. 1차는 batch fetch (in.(...)) 로 round-trip 4회 이내 고정. 1000건 초과 시 RPC view 신설 (C 와 같이 검토)
+- **R3**: 백필 스크립트 오작동으로 잘못된 enum 마킹 → 완화: `--dry-run` 기본 + 매칭 안 된 row 카운트 강제 표시 + `--apply` 명시 시에만 update. 1회성이므로 멱등성보다 사람 검토 우선
+- **R4**: `failure_category` 컬럼 미배포 환경 (로컬 dev) graceful — A4 의 update_item_status 가 Supabase 오류 시 컬럼 빼고 retry (기존 `compliance_violations` 패턴 차용)
+- **R5**: 🔴 백필 스크립트는 production DB 에 직접 write → A5 구현 시 `--apply` 는 환경변수 `BACKFILL_CONFIRM=YES` 이중 가드 필수
+
+### 완료 조건 (Acceptance)
+
+- A 완료: 신규 batch 실행 후 `keyword_batch_items.failure_category` 컬럼이 7종 enum 중 하나로 채워짐 (실패/skipped row 한정). 백필 스크립트 `--dry-run` 으로 기존 row 매칭률 80%+ 확인
+- B 완료: `/insights?tab=keywords` 페이지에서 키워드 1행 = 분석/발행/순위/진단 통합 1행으로 표시. 칩 필터로 "분석실패만" / "미노출만" 토글 가능. row 클릭 → 해당 PatternCard 또는 Publication 으로 진입
+- pytest/pyright 회귀 0 fail. 단일 흐름 시그니처 무변경 (KeywordBatchItem Pydantic nullable 필드 + DB 컬럼만 추가)

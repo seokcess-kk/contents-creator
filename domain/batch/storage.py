@@ -9,6 +9,7 @@ from typing import Any, cast
 from config.supabase import get_client
 from domain.batch.model import (
     BatchStatus,
+    FailureCategory,
     ItemStatus,
     KeywordBatch,
     KeywordBatchItem,
@@ -77,11 +78,15 @@ def get_item(item_id: str) -> KeywordBatchItem | None:
     return _row_to_item(cast("dict[str, Any]", rows[0])) if rows else None
 
 
+_FAILURE_STATUSES: set[ItemStatus] = {"failed", "skipped", "needs_review"}
+
+
 def update_item_status(
     item_id: str,
     status: ItemStatus,
     *,
     error: str | None = None,
+    failure_category: FailureCategory | None = None,
     job_id: str | None = None,
     started_at: datetime | None = None,
     completed_at: datetime | None = None,
@@ -93,12 +98,21 @@ def update_item_status(
     NULL 로 clear 한다. 재시도 후 정상 발행 시 옛 실패 메시지(예: 'SERP 수집
     실패...')가 운영 화면에 잔존하던 사고 차단. failed 로 전환 시에만 error 가
     None 이면 옛 메시지 보존 (호출자가 명시 전달 안 한 경우).
+
+    failure_category 도 동일 — failed/skipped/needs_review 외 상태로 전환되면
+    NULL 로 clear. /insights 집계의 정합성 보장 (success row 에 잔존 카테고리 X).
+    failure_category 컬럼이 DB 에 없는 환경(구버전 스키마)에서는 graceful — 한 번
+    실패하면 컬럼 빼고 retry.
     """
     payload: dict[str, Any] = {"status": status}
     if error is not None:
         payload["error"] = error
     elif status != "failed":
         payload["error"] = None
+    if failure_category is not None:
+        payload["failure_category"] = failure_category
+    elif status not in _FAILURE_STATUSES:
+        payload["failure_category"] = None
     if job_id is not None:
         payload["job_id"] = job_id
     if started_at is not None:
@@ -107,7 +121,18 @@ def update_item_status(
         payload["completed_at"] = completed_at.isoformat()
     if retry_count is not None:
         payload["retry_count"] = retry_count
-    get_client().table(_ITEM_TABLE).update(payload).eq("id", item_id).execute()
+    try:
+        get_client().table(_ITEM_TABLE).update(payload).eq("id", item_id).execute()
+    except Exception:
+        if "failure_category" in payload:
+            logger.warning(
+                "batch.update_item_status.failure_category_column_missing item_id=%s — fallback",
+                item_id,
+            )
+            del payload["failure_category"]
+            get_client().table(_ITEM_TABLE).update(payload).eq("id", item_id).execute()
+        else:
+            raise
 
 
 def update_item_result(

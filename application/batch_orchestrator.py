@@ -28,6 +28,7 @@ from config.settings import settings
 from domain.batch import csv_parser, storage
 from domain.batch.model import (
     BatchEnqueueResult,
+    FailureCategory,
     ItemStatus,
     KeywordBatch,
     KeywordBatchItem,
@@ -309,9 +310,19 @@ def _dispatch_item(item_id: str) -> None:
         # False (의료법 위반 잔존) / None (결과 모델 누락 / 중간 실패) / 본문_차별화_부족
         # 모두 검수 필요. 데이터 누락 방지 — 발행 준비 큐에서 빠지지 않도록 needs_review 안전망.
         new_status = "needs_review"
+    # 2026-05-14 — needs_review 진입 시 failure_category 마킹 (집계용).
+    # 우선순위: body_too_similar > compliance_passed=False > 그 외 None (마킹 안 함).
+    # success terminal status (succeeded / ready_to_publish) 는 storage 가 자동 NULL clear.
+    needs_review_cat: FailureCategory | None = None
+    if new_status == "needs_review":
+        if body_too_similar:
+            needs_review_cat = "BODY_SIMILARITY_HIGH"
+        elif compliance_passed is False:
+            needs_review_cat = "COMPLIANCE_FAILED"
     storage.update_item_status(
         item_id,
         new_status,
+        failure_category=needs_review_cat,
         completed_at=datetime.now(UTC),
     )
     # 본문_차별화_부족 카테고리는 compliance_violations 에 추가됐으므로 update_item_result 에도 반영.
@@ -493,18 +504,25 @@ def _apply_prefilter(item: KeywordBatchItem, batch: KeywordBatch) -> bool:
     if not reasons:
         return True
 
+    # 첫 번째 reason prefix 로 enum 결정. volume 우선 (line 484~488 가 먼저 체크).
+    # 두 사유 동시 발생 시 PREFILTER_VOLUME 으로 마킹 — error 컬럼에 양쪽 모두 보존됨.
+    failure_cat: FailureCategory = (
+        "PREFILTER_VOLUME" if reasons[0].startswith("search_volume") else "PREFILTER_DIFFICULTY"
+    )
     error_msg = "prefilter: " + ", ".join(reasons)
     storage.update_item_status(
         item.id,
         "skipped",
         error=error_msg,
+        failure_category=failure_cat,
         completed_at=datetime.now(UTC),
     )
     logger.info(
-        "batch.prefilter_skipped item_id=%s keyword=%s reasons=%s",
+        "batch.prefilter_skipped item_id=%s keyword=%s reasons=%s category=%s",
         item.id,
         item.keyword,
         reasons,
+        failure_cat,
     )
     return False
 
@@ -747,14 +765,33 @@ def _resolve_primary_card_path(primary: KeywordBatchItem) -> Path | None:
     return tmp_path
 
 
+def _classify_exception(exc: Exception) -> FailureCategory:
+    """예외 → failure_category 매핑. EXCEPTION 은 catch-all.
+
+    orchestrator.run_analyze_only/run_pipeline 이 모든 예외를 catch 해서
+    AnalyzeResult/PipelineResult.error=str(exc) 로 데이터화하고, _run_operation 이
+    `raise RuntimeError(result.error)` 로 재포장하므로 exc 타입은 거의 RuntimeError.
+    원본 메시지는 str(exc) 에 보존되며 InsufficientCollectionError 의 형식은
+    '{stage}: N pages collected, minimum M required' (domain/crawler/model.py:78).
+    """
+    msg = str(exc)
+    if msg.startswith("serp:") or ": serp:" in msg:
+        return "SERP_INSUFFICIENT"
+    if msg.startswith("scrape:") or ": scrape:" in msg:
+        return "SCRAPE_INSUFFICIENT"
+    return "EXCEPTION"
+
+
 def _handle_item_failure(item: KeywordBatchItem, exc: Exception) -> None:
     """실패 후 retry 또는 failed 확정."""
     if item.id is None:
         return
     next_retry = item.retry_count + 1
     err_msg = f"{type(exc).__name__}: {exc}"
+    failure_cat = _classify_exception(exc)
     if next_retry <= item.max_retries:
-        # 재시도 — 같은 worker pool 에 재투입
+        # 재시도 — 같은 worker pool 에 재투입.
+        # queued 복귀이므로 failure_category 는 storage 가 자동 NULL clear.
         storage.update_item_status(
             item.id,
             "queued",
@@ -762,12 +799,13 @@ def _handle_item_failure(item: KeywordBatchItem, exc: Exception) -> None:
             retry_count=next_retry,
         )
         logger.warning(
-            "batch.item_retry item_id=%s keyword=%s retry=%d/%d err=%s",
+            "batch.item_retry item_id=%s keyword=%s retry=%d/%d err=%s category=%s",
             item.id,
             item.keyword,
             next_retry,
             item.max_retries,
             err_msg,
+            failure_cat,
         )
         batch_job_manager.get_default_manager().submit(_dispatch_item_safely, item.id)
     else:
@@ -775,14 +813,16 @@ def _handle_item_failure(item: KeywordBatchItem, exc: Exception) -> None:
             item.id,
             "failed",
             error=err_msg,
+            failure_category=failure_cat,
             completed_at=datetime.now(UTC),
             retry_count=next_retry,
         )
         logger.error(
-            "batch.item_failed item_id=%s keyword=%s retries_exhausted err=%s",
+            "batch.item_failed item_id=%s keyword=%s retries_exhausted err=%s category=%s",
             item.id,
             item.keyword,
             err_msg,
+            failure_cat,
         )
 
 
