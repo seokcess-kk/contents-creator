@@ -1,7 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { Search } from "lucide-react";
 import type { RankingCalendar } from "@/lib/api";
+
+function naverSerpUrl(keyword: string): string {
+  return `https://search.naver.com/search.naver?query=${encodeURIComponent(keyword)}`;
+}
 
 export type CalendarRowData = RankingCalendar["rows"][number];
 
@@ -87,6 +92,17 @@ export function CalendarRow({
               {row.publication.keyword}
             </span>
           </Link>
+          <a
+            href={naverSerpUrl(row.publication.keyword)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="shrink-0 text-gray-400 hover:text-emerald-600"
+            title={`네이버에서 "${row.publication.keyword}" 검색 결과 새 탭으로 열기`}
+            aria-label={`${row.publication.keyword} 네이버 검색 결과 열기`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Search size={compact ? 12 : 14} aria-hidden="true" />
+          </a>
         </div>
       </td>
       {dayList.map((d) => {
