@@ -7,6 +7,7 @@ import { getMonthlyCalendar, type RankingCalendar } from "@/lib/api";
 import { CalendarRow, CellLegend } from "@/components/CalendarTable";
 import BulkCheckDialog from "@/components/BulkCheckDialog";
 import { K } from "@/lib/swr";
+import { downloadCalendarCsv } from "@/lib/calendarExport";
 
 /**
  * 월별 캘린더 — 키워드(행) × 일자(열) 매트릭스.
@@ -95,6 +96,12 @@ export default function RankingCalendarPage() {
 
   const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
 
+  const handleDownloadCsv = useCallback(() => {
+    if (!data) return;
+    // 화면 필터 적용된 rows 만 export — 사용자가 좁혀 본 결과 그대로
+    downloadCalendarCsv(data, rows);
+  }, [data, rows]);
+
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
@@ -149,6 +156,19 @@ export default function RankingCalendarPage() {
         />
         <span className="text-xs text-gray-500">{rows.length}개</span>
         <div className="flex items-center gap-2 ml-auto">
+          <button
+            type="button"
+            onClick={handleDownloadCsv}
+            disabled={!data || rows.length === 0}
+            className="px-3 py-1 text-xs border border-gray-300 text-gray-700 rounded hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            title={
+              rows.length === 0
+                ? "다운로드할 데이터가 없습니다"
+                : `현재 화면의 ${rows.length}개 row 를 CSV 로 다운로드`
+            }
+          >
+            CSV 다운로드
+          </button>
           {selectedCount > 0 && (
             <button
               type="button"
