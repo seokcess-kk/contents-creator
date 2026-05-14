@@ -829,6 +829,57 @@ export function getInsightsSummary(): Promise<InsightsSummary> {
   return fetchJson(`/insights/summary`);
 }
 
+// ── /insights "키워드별" 탭 — 분석/발행/순위/진단 통합 1행 ────────────────────
+export interface KeywordInsightRow {
+  item_id: string;
+  batch_id: string;
+  pattern_card_id: string | null;
+  generated_content_id: string | null;
+  publication_id: string | null;
+  keyword: string;
+  search_volume: number | null;
+  difficulty_grade: string | null;
+  analysis_status: string;
+  failure_category: string | null;
+  publication_status: string;
+  publication_workflow_status: string | null;
+  latest_rank_position: number | null;
+  latest_rank_section: string | null;
+  diagnosis_category: string | null;
+  diagnosis_confidence: number | null;
+  recommended_action: string;
+}
+
+export interface KeywordInsightPage {
+  rows: KeywordInsightRow[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface KeywordInsightsFilter {
+  status?: string[];
+  failure_category?: string;
+  batch_id?: string;
+  page?: number;
+  limit?: number;
+}
+
+export function getKeywordInsights(
+  filter: KeywordInsightsFilter = {},
+): Promise<KeywordInsightPage> {
+  const params = new URLSearchParams();
+  if (filter.status) {
+    for (const s of filter.status) params.append("status", s);
+  }
+  if (filter.failure_category) params.set("failure_category", filter.failure_category);
+  if (filter.batch_id) params.set("batch_id", filter.batch_id);
+  if (filter.page) params.set("page", String(filter.page));
+  if (filter.limit) params.set("limit", String(filter.limit));
+  const qs = params.toString();
+  return fetchJson(`/insights/keywords${qs ? `?${qs}` : ""}`);
+}
+
 export function reviewItem(
   batchId: string,
   itemId: string,

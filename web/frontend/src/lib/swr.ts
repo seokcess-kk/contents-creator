@@ -7,10 +7,12 @@
 
 import {
   getInsightsSummary,
+  getKeywordInsights,
   getMonthlyCalendar,
   getOperationsQueue,
   getOperationsSummary,
   listBlogChannels,
+  type KeywordInsightsFilter,
   type QueueTab,
 } from "@/lib/api";
 import { getUnifiedQueue, type UnifiedQueueFilters } from "@/lib/unifiedQueue";
@@ -19,6 +21,9 @@ export const K = {
   operationsSummary: "/rankings/summary",
   operationsQueue: (tab: QueueTab) => `/rankings/queue?tab=${tab}`,
   insightsSummary: "/insights/summary",
+  // 키워드별 탭 — 필터 조합을 키에 포함해 useSWR 캐시 분리.
+  insightsKeywords: (f: KeywordInsightsFilter) =>
+    `/insights/keywords:${(f.status ?? []).join(",")}|${f.failure_category ?? ""}|${f.batch_id ?? ""}|p${f.page ?? 1}|l${f.limit ?? 50}`,
   monthlyCalendar: (month: string) => `/rankings/calendar?month=${month}`,
   unifiedQueue: (f: UnifiedQueueFilters) =>
     `unified-queue:${f.source ?? "all"}|${(f.statuses ?? []).join(",")}|${f.batch_id ?? ""}|${f.search ?? ""}`,
@@ -30,6 +35,7 @@ export const fetchOps = {
   operationsSummary: () => getOperationsSummary(),
   operationsQueue: (tab: QueueTab) => () => getOperationsQueue(tab, 200),
   insightsSummary: () => getInsightsSummary(),
+  insightsKeywords: (f: KeywordInsightsFilter) => () => getKeywordInsights(f),
   monthlyCalendar: (month: string) => () => getMonthlyCalendar(month),
   unifiedQueue: (f: UnifiedQueueFilters) => () => getUnifiedQueue(f),
   blogChannels: () => listBlogChannels(),

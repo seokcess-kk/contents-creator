@@ -1,14 +1,18 @@
 "use client";
 
+import { useState } from "react";
 import useSWR from "swr";
 import { getInsightsSummary, type InsightsSummary } from "@/lib/api";
 import { DesktopOnlyBanner } from "@/components/ui";
 import { getDifficultyLabel, getVolumeLabel } from "@/lib/labels";
 import { K } from "@/lib/swr";
+import InsightsKeywordsView from "@/components/insights/InsightsKeywordsView";
 
 const DIFFICULTY_ORDER = ["low", "medium", "high", "missing", "unknown"];
 const VOLUME_ORDER = ["<100", "100-500", "500-2K", "2K-10K", ">10K", "unknown"];
 const DN_KEYS = ["1", "3", "7", "14", "30"];
+
+type Tab = "summary" | "keywords";
 
 // RSC 가 서버에서 미리 받아 fallbackData 로 주입한다. 서버 fetch 가 실패한
 // 경우(initial=null) SWR 가 클라이언트에서 다시 시도한다.
@@ -17,6 +21,61 @@ export default function InsightsClient({
 }: {
   initial: InsightsSummary | null;
 }) {
+  const [tab, setTab] = useState<Tab>("summary");
+
+  return (
+    <div className="space-y-4">
+      <DesktopOnlyBanner />
+      <div>
+        <h1 className="text-xl font-bold text-gray-900">인사이트</h1>
+        <p className="text-xs text-gray-600 mt-0.5">
+          {tab === "summary"
+            ? "발행 데이터 기반 통계. 난이도·검색량 × Top10 진입율 / D+N 진입 비율."
+            : "키워드 1행 = 분석·발행·순위·진단 통합. 칩 필터로 상태별 진단 확인."}
+        </p>
+      </div>
+
+      {/* 탭 */}
+      <div className="flex border-b border-gray-200">
+        <TabButton active={tab === "summary"} onClick={() => setTab("summary")}>
+          통계 요약
+        </TabButton>
+        <TabButton active={tab === "keywords"} onClick={() => setTab("keywords")}>
+          키워드별
+        </TabButton>
+      </div>
+
+      {tab === "summary" && <SummaryTab initial={initial} />}
+      {tab === "keywords" && <InsightsKeywordsView />}
+    </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+        active
+          ? "border-blue-600 text-blue-700"
+          : "border-transparent text-gray-600 hover:text-gray-800"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function SummaryTab({ initial }: { initial: InsightsSummary | null }) {
   const { data: summary, error, isLoading } = useSWR<InsightsSummary>(
     K.insightsSummary,
     getInsightsSummary,
@@ -30,15 +89,6 @@ export default function InsightsClient({
 
   return (
     <div className="space-y-4">
-      <DesktopOnlyBanner />
-      <div>
-        <h1 className="text-xl font-bold text-gray-900">인사이트</h1>
-        <p className="text-xs text-gray-600 mt-0.5">
-          발행 데이터 기반 통계. 난이도·검색량 × Top10 진입율 / D+N 진입 비율.
-          데이터 누적이 적은 초기에는 표본이 작을 수 있습니다.
-        </p>
-      </div>
-
       {errMsg && (
         <div className="text-sm text-red-700 bg-red-50 ring-1 ring-red-200 rounded px-3 py-2">
           {errMsg}

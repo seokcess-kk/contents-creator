@@ -489,6 +489,39 @@ def list_items_by_global_status(status: str, limit: int = 50) -> list[KeywordBat
     return [_row_to_item(cast("dict[str, Any]", r)) for r in rows]
 
 
+def list_items_filtered(
+    *,
+    statuses: list[str] | None = None,
+    failure_category: str | None = None,
+    batch_id: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[KeywordBatchItem], int]:
+    """글로벌 item 목록 + 총 count (insights 키워드 행 뷰용).
+
+    statuses: 빈 리스트/None 이면 필터 없음 (전체). 여러 status OR 조건.
+    failure_category: 단일 값 필터.
+    batch_id: 단일 batch 한정 (선택).
+    limit/offset: 페이지네이션 (PostgREST range).
+    """
+    query = (
+        get_client().table(_ITEM_TABLE).select("*", count="exact")  # type: ignore[arg-type]
+    )
+    if statuses:
+        query = query.in_("status", statuses)
+    if failure_category:
+        query = query.eq("failure_category", failure_category)
+    if batch_id:
+        query = query.eq("batch_id", batch_id)
+    result = (
+        query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
+    )
+    rows = result.data or []
+    items = [_row_to_item(cast("dict[str, Any]", r)) for r in rows]
+    total = int(getattr(result, "count", None) or 0)
+    return items, total
+
+
 def claim_next_queued_item(batch_id: str) -> KeywordBatchItem | None:
     """queued 상태 item 한 건을 가져와 running 으로 마킹.
 

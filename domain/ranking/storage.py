@@ -143,6 +143,23 @@ def delete_publication(publication_id: str) -> bool:
     return bool(result.data)
 
 
+def get_publications_batch(pub_ids: list[str]) -> dict[str, Publication]:
+    """publication id 목록을 한 번에 fetch (insights 키워드 행 뷰 N+1 제거용).
+
+    빈 리스트면 빈 dict 반환. PostgREST in.() 필터 사용.
+    """
+    if not pub_ids:
+        return {}
+    client = get_client()
+    result = client.table(_PUB_TABLE).select("*").in_("id", pub_ids).execute()
+    out: dict[str, Publication] = {}
+    for row in result.data or []:
+        pub = _row_to_publication(cast("dict[str, Any]", row))
+        if pub.id:
+            out[pub.id] = pub
+    return out
+
+
 def list_publications(
     keyword: str | None = None,
     limit: int = 50,
