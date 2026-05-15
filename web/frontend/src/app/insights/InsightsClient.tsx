@@ -7,12 +7,13 @@ import { DesktopOnlyBanner } from "@/components/ui";
 import { getDifficultyLabel, getVolumeLabel } from "@/lib/labels";
 import { K } from "@/lib/swr";
 import InsightsKeywordsView from "@/components/insights/InsightsKeywordsView";
+import DiagnosesActionView from "@/components/insights/DiagnosesActionView";
 
 const DIFFICULTY_ORDER = ["low", "medium", "high", "missing", "unknown"];
 const VOLUME_ORDER = ["<100", "100-500", "500-2K", "2K-10K", ">10K", "unknown"];
 const DN_KEYS = ["1", "3", "7", "14", "30"];
 
-type Tab = "summary" | "keywords";
+type Tab = "summary" | "keywords" | "diagnoses";
 
 // RSC 가 서버에서 미리 받아 fallbackData 로 주입한다. 서버 fetch 가 실패한
 // 경우(initial=null) SWR 가 클라이언트에서 다시 시도한다.
@@ -29,9 +30,9 @@ export default function InsightsClient({
       <div>
         <h1 className="text-xl font-bold text-gray-900">인사이트</h1>
         <p className="text-xs text-gray-600 mt-0.5">
-          {tab === "summary"
-            ? "발행 데이터 기반 통계. 난이도·검색량 × Top10 진입율 / D+N 진입 비율."
-            : "키워드 1행 = 분석·발행·순위·진단 통합. 칩 필터로 상태별 진단 확인."}
+          {tab === "summary" && "발행 데이터 기반 통계. 난이도·검색량 × Top10 진입율 / D+N 진입 비율."}
+          {tab === "keywords" && "키워드 1행 = 분석·발행·순위·진단 통합. 칩 필터로 상태별 진단 확인."}
+          {tab === "diagnoses" && "조치 필요 publication 의 최신 진단을 사유·신뢰도로 모아 일괄 처리."}
         </p>
       </div>
 
@@ -43,10 +44,14 @@ export default function InsightsClient({
         <TabButton active={tab === "keywords"} onClick={() => setTab("keywords")}>
           키워드별
         </TabButton>
+        <TabButton active={tab === "diagnoses"} onClick={() => setTab("diagnoses")}>
+          진단 조치
+        </TabButton>
       </div>
 
       {tab === "summary" && <SummaryTab initial={initial} />}
       {tab === "keywords" && <InsightsKeywordsView />}
+      {tab === "diagnoses" && <DiagnosesActionView />}
     </div>
   );
 }

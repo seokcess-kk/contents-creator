@@ -80,6 +80,40 @@ export function getDiagnosisLabel(reason: string): string {
   return DIAGNOSIS_LABELS[reason] ?? reason;
 }
 
+// ── diagnosis action (진단 보드 일괄 액션 4종) ──────────────────────────────
+// /insights 의 '진단 조치' 탭이 사용. backend `_VALID_ACTIONS` 와 key 일치 필수.
+
+const DIAGNOSIS_ACTION_LABELS: Record<string, string> = {
+  republished: "재발행 시작",
+  held: "보류",
+  dismissed: "기각",
+  marked_competitor_strong: "경쟁자 강함 표시",
+};
+
+const DIAGNOSIS_ACTION_DESCRIPTIONS: Record<string, string> = {
+  republished: "draft publication + 파이프라인 job 생성. 진행 중인 재발행은 자동 skip. undo 불가",
+  held: "기본 7일 보류 후 자동 큐 복귀. 즉시 해제 가능",
+  dismissed: "추적 대상에서 제외. 추후 복원 가능",
+  marked_competitor_strong: "진단 메모만 기록. publication 상태 변경 없음",
+};
+
+export function getDiagnosisActionLabel(action: string): string {
+  return DIAGNOSIS_ACTION_LABELS[action] ?? action;
+}
+
+export function getDiagnosisActionDescription(action: string): string {
+  return DIAGNOSIS_ACTION_DESCRIPTIONS[action] ?? "";
+}
+
+// backend `_VALID_ACTIONS` 의 frontend 단일 출처. test 가 일치 회귀 검증.
+export const DIAGNOSIS_ACTION_KEYS = [
+  "republished",
+  "held",
+  "dismissed",
+  "marked_competitor_strong",
+] as const;
+export type DiagnosisActionKey = (typeof DIAGNOSIS_ACTION_KEYS)[number];
+
 // ── compliance ───────────────────────────────────────────────────────────────
 
 const COMPLIANCE_LABELS: Record<string, string> = {

@@ -57,6 +57,20 @@ def list_diagnoses_by_publication(
     return [_from_row(cast("dict[str, Any]", r)) for r in (result.data or [])]
 
 
+def get_diagnoses_batch(diagnosis_ids: list[str]) -> dict[str, Diagnosis]:
+    """diagnosis id 들에 대한 id→Diagnosis dict. 일괄 액션 라우팅용 공식 API."""
+    if not diagnosis_ids:
+        return {}
+    client = get_client()
+    result = client.table(_TABLE).select("*").in_("id", diagnosis_ids).execute()
+    out: dict[str, Diagnosis] = {}
+    for row in result.data or []:
+        diag = _from_row(cast("dict[str, Any]", row))
+        if diag.id:
+            out[diag.id] = diag
+    return out
+
+
 def update_user_action(
     diagnosis_id: str,
     user_action: str,

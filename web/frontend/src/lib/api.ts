@@ -497,6 +497,59 @@ export function recordDiagnosisAction(
   });
 }
 
+// ── 진단 보드 (조치 필요 publication 일괄 액션) ──────────────────────────────
+
+export interface DiagnosisBoardItem {
+  publication: Publication;
+  diagnosis: Diagnosis;
+}
+
+export interface DiagnosisBoardResponse {
+  items: DiagnosisBoardItem[];
+  counts_by_reason: Record<string, number>;
+  total_action_required: number;
+}
+
+export function getDiagnosisBoard(params: {
+  min_confidence?: number;
+  reasons?: string[];
+  limit?: number;
+}): Promise<DiagnosisBoardResponse> {
+  const qs = new URLSearchParams();
+  if (params.min_confidence != null) {
+    qs.set("min_confidence", String(params.min_confidence));
+  }
+  for (const r of params.reasons ?? []) qs.append("reasons", r);
+  if (params.limit != null) qs.set("limit", String(params.limit));
+  const query = qs.toString();
+  return fetchJson(`/rankings/diagnoses/board${query ? `?${query}` : ""}`);
+}
+
+export interface BulkActionItemResult {
+  diagnosis_id: string;
+  publication_id: string | null;
+  reason: string | null;
+  status: "succeeded" | "skipped" | "failed";
+  message: string | null;
+}
+
+export interface BulkActionResult {
+  total: number;
+  succeeded: BulkActionItemResult[];
+  skipped: BulkActionItemResult[];
+  failed: BulkActionItemResult[];
+}
+
+export function bulkDiagnosisAction(
+  diagnosisIds: string[],
+  action: DiagnosisAction,
+): Promise<BulkActionResult> {
+  return fetchJson(`/rankings/diagnoses/bulk-action`, {
+    method: "POST",
+    body: JSON.stringify({ diagnosis_ids: diagnosisIds, action }),
+  });
+}
+
 export async function deletePublication(publicationId: string): Promise<void> {
   // 204 응답은 본문이 비어 있어 fetchJson 의 res.json() 이 실패한다.
   // cancelJob 과 동일 패턴으로 직접 처리.

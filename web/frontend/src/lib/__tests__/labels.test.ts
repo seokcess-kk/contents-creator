@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  DIAGNOSIS_ACTION_KEYS,
   getBatchItemLabel,
   getComplianceLabel,
+  getDiagnosisActionDescription,
+  getDiagnosisActionLabel,
   getDiagnosisLabel,
   getDifficultyLabel,
   getVisibilityLabel,
@@ -90,6 +93,35 @@ describe("getDifficultyLabel", () => {
     ["A", "A등급 (상)"],
   ])("%s → %s", (grade, expected) => {
     expect(getDifficultyLabel(grade)).toBe(expected);
+  });
+});
+
+describe("getDiagnosisActionLabel", () => {
+  // backend application/diagnosis_board_orchestrator.py 의 _VALID_ACTIONS 와
+  // 동일 key 4종 — 진단 보드 일괄 액션 라우팅의 single source of truth.
+  it.each([
+    ["republished", "재발행 시작"],
+    ["held", "보류"],
+    ["dismissed", "기각"],
+    ["marked_competitor_strong", "경쟁자 강함 표시"],
+  ])("%s → %s", (action, expected) => {
+    expect(getDiagnosisActionLabel(action)).toBe(expected);
+  });
+
+  it("DIAGNOSIS_ACTION_KEYS 가 모든 4종을 포함", () => {
+    expect(new Set(DIAGNOSIS_ACTION_KEYS)).toEqual(
+      new Set(["republished", "held", "dismissed", "marked_competitor_strong"]),
+    );
+  });
+
+  it("미존재 action 은 raw 반환", () => {
+    expect(getDiagnosisActionLabel("unknown")).toBe("unknown");
+  });
+
+  it("DIAGNOSIS_ACTION_KEYS 모든 항목에 description 존재", () => {
+    for (const key of DIAGNOSIS_ACTION_KEYS) {
+      expect(getDiagnosisActionDescription(key)).not.toBe("");
+    }
   });
 });
 

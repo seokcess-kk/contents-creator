@@ -400,7 +400,29 @@ diagnoses (
 ### API
 - `GET /rankings/publications/{id}/diagnoses` — 진단 시계열
 - `POST /rankings/publications/{id}/diagnose` — 즉시 실행
-- `POST /rankings/diagnoses/{id}/action` — 사용자 액션 기록
+- `POST /rankings/diagnoses/{id}/action` — 사용자 액션 기록 (legacy 단건)
+- `GET /rankings/diagnoses/board` — 조치 필요 publication + 최신 진단 보드 (`/insights` '진단 조치' 탭)
+- `POST /rankings/diagnoses/bulk-action` — 진단 ID 일괄 액션 (4종)
+
+### 진단 보드 일괄 액션 (Phase 1 후속, 2026-05-15)
+
+`/insights` '진단 조치' 탭 — `workflow_status="action_required"` publication 의 최신 진단을 confidence·reason 으로 필터해 4종 액션(`republished` / `held` / `dismissed` / `marked_competitor_strong`)을 일괄 처리.
+
+**액션 라우팅** (`application/diagnosis_board_orchestrator.py`):
+- `republished` → `republish_orchestrator.start_republish` (draft + pipeline job 생성, undo 불가)
+- `held` → `publication_actions_orchestrator.hold(days=7)` (자동 큐 복귀)
+- `dismissed` → `publication_actions_orchestrator.dismiss` (추적 제외, 복원 가능)
+- `marked_competitor_strong` → `visibility_diagnoses.user_action` 기록만 (publication 상태 변경 X)
+
+**안전 정책**:
+- 실행 시점에 publication.workflow_status 재검증 — `action_required` 아니면 `skipped: stale workflow_status`
+- `held` / `dismissed` 가 이미 같은 상태면 `skipped`
+- `republished` 의 RuntimeError 는 메시지 분류 — "active" 포함 시 `skipped`, 그 외 `failed`
+- 5건 이상 일괄 재발행은 frontend 가 typed confirmation (`REPUBLISH` 입력) 강제
+- 응답: `{ total, succeeded[], skipped[], failed[] }` partial failure 데이터화
+
+**단일 출처** (drift 차단):
+- backend `domain/diagnosis/model.py` 의 `UserAction` Literal ↔ frontend `lib/labels.ts` 의 `DIAGNOSIS_ACTION_KEYS` 일치 회귀 테스트 (`tests/test_application/test_diagnosis_board_orchestrator.py::TestSingleSourceOfTruth`)
 
 ### 도메인 격리
 - `domain/diagnosis/` 는 `domain.ranking` Pydantic 모델만 입력으로 받음
@@ -416,3 +438,4 @@ diagnoses (
 - `2026-05-03`: **외부 cron 전환**. in-process APScheduler 가 Render Starter 컨테이너 재시작·OOM 으로 4/30·5/1 cron tick 을 누락한 사고 (ranking_snapshots row 0건 vs 인접 날 100여건) 후속. `POST /api/rankings/check-all` 신규 + `.github/workflows/ranking-cron.yml` 매일 09:00 KST 발화. APScheduler 는 `RANKING_SCHEDULER_ENABLED=true` 로 로컬 개발에서만 켤 수 있게 default off. `web/api/main.py` 에 `logging.basicConfig(INFO)` 추가 — uvicorn 이 root logger 를 WARNING 으로 두는 바람에 cron tick · lifespan 시작 로그가 silent 였던 부수 사고도 동시 해결.
 - `2026-05-03`: **silent failure 차단**. 2026-05-02 측정 사이클에서 ranking_snapshots 48 건 정상 + 같은 사이클 api_usage 0 건이었던 사고 후속. `save_usage_to_supabase` 에 tenacity retry (1s/2s/4s, 3 시도) + ERROR 로그 강화 (`row_count` + `exc_type` + `first_row_provider/keyword`). `RankingCheckSummary.usage_save_failed_count` 신규 필드. `GET /api/rankings/check-all/last` 폴링 endpoint 와 GitHub Actions workflow 의 `Verify execution result` step 추가 — 어느 카운터든 0 보다 크면 workflow fail + Issue 자동 생성으로 silent failure 영구 차단.
 - `2026-05-06`: UX Refactor 결과 반영. **백엔드 무변경** (모든 `/api/rankings/*` endpoint 그대로). frontend 라우트 변경 — `/rankings` 가 `/` (운영 홈) 로 영구 redirect (운영 OS 메인 진입점 승격). `/rankings/[id]` (publication 상세) 는 그대로 유지 (외부 SEO 인입). PublicationActionRow 정보밀도 정리 — 9~14요소 → 4요소 + Primary CTA + ⋯ Dropdown (UX P3). PublicationForm `variant=create|edit` 통합 — 기존 ExternalUrlForm + PublicationEditDialog 흡수 (UX P5). 라우트 단일 출처: `docs/ROUTES.md`
+- `2026-05-15`: **진단 보드 일괄 액션** 추가. `/insights` '진단 조치' 탭에서 `workflow_status=action_required` publication 의 최신 진단을 confidence·reason 으로 필터해 4종 액션 일괄 처리. `application/diagnosis_board_orchestrator.py` 신설 — action 별로 다른 orchestrator 라우팅 (republish / publication_actions / user_action 기록). 안전 정책: 실행 시점 workflow_status 재검증으로 stale 차단, `republished` RuntimeError 는 "active" 메시지만 skipped (나머지 failed), 5건 이상 재발행은 typed confirmation (`REPUBLISH` 입력) 강제. 응답은 `succeeded[] / skipped[] / failed[]` 분리로 partial failure 데이터화. backend `UserAction` Literal ↔ frontend `DIAGNOSIS_ACTION_KEYS` cross-check 회귀 테스트로 drift 차단. codex CLI 와 plan/code 두 단계 review 협업.

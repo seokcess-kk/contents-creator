@@ -25,6 +25,8 @@ export const K = {
   insightsKeywords: (f: KeywordInsightsFilter) =>
     `/insights/keywords:${(f.status ?? []).join(",")}|${f.failure_category ?? ""}|${f.batch_id ?? ""}|p${f.page ?? 1}|l${f.limit ?? 50}`,
   monthlyCalendar: (month: string) => `/rankings/calendar?month=${month}`,
+  diagnosisBoard: (minConfidence: number, reasons: string[]) =>
+    `/rankings/diagnoses/board?mc=${minConfidence}&r=${reasons.slice().sort().join(",")}`,
   unifiedQueue: (f: UnifiedQueueFilters) =>
     `unified-queue:${f.source ?? "all"}|${(f.statuses ?? []).join(",")}|${f.batch_id ?? ""}|${f.search ?? ""}`,
   blogChannels: "/blog-channels",

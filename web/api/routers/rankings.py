@@ -19,6 +19,8 @@
 - GET    /rankings/publications/{id}/diagnoses  — 진단 시계열
 - POST   /rankings/publications/{id}/diagnose   — 진단 즉시 실행
 - POST   /rankings/diagnoses/{id}/action        — 진단 액션 (legacy)
+- GET    /rankings/diagnoses/board              — 조치 필요 publication + 최신 진단 보드
+- POST   /rankings/diagnoses/bulk-action        — 진단 ID 일괄 액션 (republish/hold/dismiss/mark)
 - GET    /rankings/calendar            — 월별 캘린더
 - POST   /rankings/check/{publication_id}  — 즉시 SERP 체크
 - GET    /rankings/{publication_id}    — Snapshot 시계열
@@ -248,6 +250,49 @@ def record_diagnosis_action(diagnosis_id: str, req: DiagnosisActionRequest) -> d
     if updated is None:
         raise HTTPException(status_code=404, detail="diagnosis 미존재")
     return updated.model_dump(mode="json")
+
+
+# ── 진단 보드 (조치 필요 publication 의 최신 진단 + 일괄 액션) ────────────
+
+
+class DiagnosisBoardBulkRequest(BaseModel):
+    diagnosis_ids: list[str] = Field(min_length=1, max_length=500)
+    action: str = Field(min_length=1, max_length=64)
+
+
+@router.get("/diagnoses/board")
+def get_diagnoses_board(
+    min_confidence: float = Query(default=0.6, ge=0.0, le=1.0),
+    reasons: Annotated[list[str] | None, Query()] = None,
+    limit: int = Query(default=200, ge=1, le=500),
+) -> dict[str, Any]:
+    """workflow_status=action_required 인 publication 중 필터 통과 최신 진단."""
+    from application.diagnosis_board_orchestrator import get_diagnosis_board
+
+    board = get_diagnosis_board(
+        min_confidence=min_confidence,
+        reasons=reasons,
+        limit=limit,
+    )
+    return board.model_dump(mode="json")
+
+
+@router.post("/diagnoses/bulk-action")
+def execute_diagnoses_bulk_action(req: DiagnosisBoardBulkRequest) -> dict[str, Any]:
+    """진단 ID 들에 대한 일괄 액션. action 별로 다른 orchestrator 라우팅.
+
+    응답: total / succeeded[] / skipped[] / failed[]. partial failure 는 데이터로 노출.
+    """
+    from application.diagnosis_board_orchestrator import execute_bulk_action
+
+    try:
+        result = execute_bulk_action(
+            diagnosis_ids=req.diagnosis_ids,
+            action=req.action,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return result.model_dump(mode="json")
 
 
 class BulkCheckRequest(BaseModel):
