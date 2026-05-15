@@ -238,4 +238,55 @@ describe("getUnifiedQueue", () => {
     const items = await getUnifiedQueue({ source: "single" });
     expect(items.every((it) => it.keyword !== "탈모치료")).toBe(true);
   });
+
+  it("재발행 자식 draft (url=null) 가 같은 slug 면 부모 매칭 skip — 자식 URL 입력 동선 보호", async () => {
+    // 2026-05-15 부평다이어트한의원 회귀: 진단 보드 재발행으로 자식 draft 생성 시
+    // 같은 slug 의 옛 부모 publication 이 url 있어도 single job 의 slug 매칭으로
+    // hide 되면 안 된다 (자식 draft 의 URL 입력 동선이 막힘).
+    mockedJobs.mockResolvedValueOnce([
+      {
+        id: "job-1",
+        type: "pipeline",
+        keyword: "탈모치료",
+        status: "succeeded",
+        created_at: "2026-05-15T10:00:00Z",
+        started_at: null,
+        finished_at: null,
+        params: {},
+        result: { slug: "hair" },
+        error: null,
+        progress: [],
+      },
+    ] as never);
+    mockedPublications.mockResolvedValue({
+      count: 2,
+      items: [
+        // 자식 draft — url 미등록 + 같은 slug
+        {
+          id: "pub-child-draft",
+          job_id: null,
+          keyword: "탈모치료",
+          slug: "hair",
+          url: null,
+          published_at: null,
+          created_at: "2026-05-15T10:00:01Z",
+          workflow_status: "draft",
+        } as never,
+        // 옛 부모 — url 있음 + 같은 slug
+        {
+          id: "pub-parent",
+          job_id: null,
+          keyword: "탈모치료",
+          slug: "hair",
+          url: "https://blog.example.com/old",
+          published_at: null,
+          created_at: "2026-04-28T00:00:00Z",
+          workflow_status: "active",
+        } as never,
+      ],
+    });
+    const items = await getUnifiedQueue({ source: "single" });
+    // 자식 draft 의 URL 입력을 위해 single row 가 queue 에 노출되어야 함
+    expect(items.some((it) => it.keyword === "탈모치료" && !it.publication_id)).toBe(true);
+  });
 });

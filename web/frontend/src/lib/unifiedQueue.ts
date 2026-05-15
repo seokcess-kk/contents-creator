@@ -104,14 +104,33 @@ export async function getUnifiedQueue(
   ]);
   let merged = results.flat();
 
-  // 단일 row 에 publication_id 채우기 — job_id 매칭이 1순위, slug 매칭이 폴백
-  // (구 publication 의 job_id 가 null 인 경우 흡수)
+  // 단일 row 에 publication_id 채우기 — job_id 매칭이 1순위, slug 매칭이 폴백.
+  //
+  // 2026-05-15 부평다이어트한의원 사고 후 slug fallback 보강:
+  // 진단 보드 재발행 트리거 시 자식 draft publication (url=null, slug=parent.slug)
+  // 이 생성되는데, 같은 slug 의 옛 부모 publication 이 url 있으면 single job 의
+  // slug 매칭으로 부모에 잘못 hide 되어 자식 draft 의 URL 입력 동선이 막혔다.
+  // 같은 slug 에 url 미등록 publication 이 하나라도 있으면 slug 매칭 자체를 skip
+  // 한다 — 운영자가 URL 입력 동선을 갖도록 queue 에 노출 유지.
   if (publications.length > 0) {
     const pubByJobId = new Map<string, Publication>();
-    const pubBySlug = new Map<string, Publication>();
+    const pubsBySlugAll = new Map<string, Publication[]>();
     for (const pub of publications) {
       if (pub.job_id) pubByJobId.set(pub.job_id, pub);
-      if (pub.slug) pubBySlug.set(pub.slug, pub);
+      if (pub.slug) {
+        const arr = pubsBySlugAll.get(pub.slug) ?? [];
+        arr.push(pub);
+        pubsBySlugAll.set(pub.slug, arr);
+      }
+    }
+    const pubBySlug = new Map<string, Publication>();
+    for (const [slug, pubs] of pubsBySlugAll) {
+      // 같은 slug 에 url 미등록(=URL 입력 대기) publication 이 있으면 매칭 skip
+      const hasUrlPending = pubs.some((p) => !p.url);
+      if (hasUrlPending) continue;
+      // url 있는 publication 중 가장 최신 (listPublications 가 created_at desc 정렬)
+      const withUrl = pubs.find((p) => !!p.url);
+      if (withUrl) pubBySlug.set(slug, withUrl);
     }
     merged = merged.map((it) => {
       if (it.source !== "single" || it.publication_id) return it;
