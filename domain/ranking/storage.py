@@ -81,6 +81,7 @@ def update_publication(
     slug: str | None = None,
     published_at: datetime | None = None,
     blog_channel_id: str | None = None,
+    job_id: str | None = None,
 ) -> Publication | None:
     """publications row partial update. 명시적으로 전달된 키만 갱신.
 
@@ -98,6 +99,8 @@ def update_publication(
         payload["published_at"] = published_at.isoformat()
     if blog_channel_id is not None:
         payload["blog_channel_id"] = blog_channel_id
+    if job_id is not None:
+        payload["job_id"] = job_id
     if not payload:
         # 변경 없음 — 기존 row 반환
         return get_publication(publication_id)

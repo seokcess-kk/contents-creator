@@ -106,37 +106,38 @@ export async function getUnifiedQueue(
 
   // 단일 row 에 publication_id 채우기 — job_id 매칭이 1순위, slug 매칭이 폴백.
   //
-  // 2026-05-15 부평다이어트한의원 사고 후 slug fallback 보강:
-  // 진단 보드 재발행 트리거 시 자식 draft publication (url=null, slug=parent.slug)
-  // 이 생성되는데, 같은 slug 의 옛 부모 publication 이 url 있으면 single job 의
-  // slug 매칭으로 부모에 잘못 hide 되어 자식 draft 의 URL 입력 동선이 막혔다.
-  // 같은 slug 에 url 미등록 publication 이 하나라도 있으면 slug 매칭 자체를 skip
-  // 한다 — 운영자가 URL 입력 동선을 갖도록 queue 에 노출 유지.
+  // 2026-05-15 부평다이어트한의원 사고 후 keyword 기반 hasUrlPending 검사:
+  // 재발행 자식 draft 가 부모 source 의 slug=null 을 그대로 상속받으면 slug
+  // 그룹에 들어가지 않아 slug 기반 hasUrlPending 검사를 우회한다. 이 경우 같은
+  // 키워드의 다른 부모 publication (url 있음) 과 잘못 매칭되어 자식의 URL 입력
+  // 동선이 막혔다. 따라서 매칭 후보가 결정되면 그 publication 의 keyword 와
+  // 같은 키워드의 publications 에 url 미등록 (URL 입력 대기) 인 것이 하나라도
+  // 있으면 매칭 자체를 skip 한다.
   if (publications.length > 0) {
     const pubByJobId = new Map<string, Publication>();
-    const pubsBySlugAll = new Map<string, Publication[]>();
+    const pubBySlug = new Map<string, Publication>();
+    const pubsByKeyword = new Map<string, Publication[]>();
     for (const pub of publications) {
       if (pub.job_id) pubByJobId.set(pub.job_id, pub);
-      if (pub.slug) {
-        const arr = pubsBySlugAll.get(pub.slug) ?? [];
-        arr.push(pub);
-        pubsBySlugAll.set(pub.slug, arr);
+      if (pub.slug && pub.url) {
+        // url 있는 publication 만 slug fallback 후보 (가장 최신이 마지막에 set)
+        pubBySlug.set(pub.slug, pub);
       }
-    }
-    const pubBySlug = new Map<string, Publication>();
-    for (const [slug, pubs] of pubsBySlugAll) {
-      // 같은 slug 에 url 미등록(=URL 입력 대기) publication 이 있으면 매칭 skip
-      const hasUrlPending = pubs.some((p) => !p.url);
-      if (hasUrlPending) continue;
-      // url 있는 publication 중 가장 최신 (listPublications 가 created_at desc 정렬)
-      const withUrl = pubs.find((p) => !!p.url);
-      if (withUrl) pubBySlug.set(slug, withUrl);
+      if (pub.keyword) {
+        const arr = pubsByKeyword.get(pub.keyword) ?? [];
+        arr.push(pub);
+        pubsByKeyword.set(pub.keyword, arr);
+      }
     }
     merged = merged.map((it) => {
       if (it.source !== "single" || it.publication_id) return it;
       const matched =
         pubByJobId.get(it.id) ?? (it.slug ? pubBySlug.get(it.slug) : undefined);
       if (!matched) return it;
+      // 같은 키워드에 URL 입력 대기 publication 이 있으면 매칭 skip
+      // (자식 draft 의 URL 입력 동선이 옛 부모 매칭으로 가려지는 사고 차단)
+      const sameKeywordPubs = pubsByKeyword.get(matched.keyword) ?? [];
+      if (sameKeywordPubs.some((p) => !p.url)) return it;
       return {
         ...it,
         publication_id: matched.id,

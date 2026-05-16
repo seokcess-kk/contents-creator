@@ -239,6 +239,72 @@ describe("getUnifiedQueue", () => {
     expect(items.every((it) => it.keyword !== "탈모치료")).toBe(true);
   });
 
+  it("부평 시나리오 — 자식 draft slug=null 이지만 같은 키워드의 부모와 자식이 매칭 skip", async () => {
+    // 2026-05-15 부평다이어트한의원 사고 정확 재현:
+    // - source 부모 (slug=null, url=O)
+    // - 다른 부모 (slug=keyword, url=O) — 슬러그 채워진 옛 발행
+    // - 재발행 자식 draft (slug=null, url=X, parent=source 부모)
+    // single job 의 result.slug=keyword → pubBySlug 매칭으로 옛 부모와 매칭되지만,
+    // 같은 키워드에 url-pending 자식 draft 가 있으므로 매칭 skip 되어야 한다.
+    mockedJobs.mockResolvedValueOnce([
+      {
+        id: "job-real",
+        type: "pipeline",
+        keyword: "부평다이어트한의원",
+        status: "running",
+        created_at: "2026-05-15T12:26:58Z",
+        started_at: null,
+        finished_at: null,
+        params: {},
+        result: { slug: "부평다이어트한의원" },
+        error: null,
+        progress: [],
+      },
+    ] as never);
+    mockedPublications.mockResolvedValue({
+      count: 3,
+      items: [
+        {
+          id: "child-draft",
+          job_id: null,
+          keyword: "부평다이어트한의원",
+          slug: null,
+          url: null,
+          published_at: null,
+          created_at: "2026-05-15T12:26:57Z",
+          workflow_status: "draft",
+        } as never,
+        {
+          id: "parent-slugged",
+          job_id: null,
+          keyword: "부평다이어트한의원",
+          slug: "부평다이어트한의원",
+          url: "https://m.blog.naver.com/u/old1",
+          published_at: null,
+          created_at: "2026-05-12T00:00:00Z",
+          workflow_status: "active",
+        } as never,
+        {
+          id: "parent-source",
+          job_id: null,
+          keyword: "부평다이어트한의원",
+          slug: null,
+          url: "https://m.blog.naver.com/u/source",
+          published_at: null,
+          created_at: "2026-04-27T00:00:00Z",
+          workflow_status: "action_required",
+        } as never,
+      ],
+    });
+    const items = await getUnifiedQueue({ source: "single" });
+    // 부평 single row 가 hide 되지 않고 URL 입력 동선이 노출되어야 함
+    expect(
+      items.some(
+        (it) => it.keyword === "부평다이어트한의원" && !it.publication_id,
+      ),
+    ).toBe(true);
+  });
+
   it("재발행 자식 draft (url=null) 가 같은 slug 면 부모 매칭 skip — 자식 URL 입력 동선 보호", async () => {
     // 2026-05-15 부평다이어트한의원 회귀: 진단 보드 재발행으로 자식 draft 생성 시
     // 같은 slug 의 옛 부모 publication 이 url 있어도 single job 의 slug 매칭으로

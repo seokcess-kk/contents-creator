@@ -98,6 +98,21 @@ def start_republish(
         strategy=strategy,
     )
 
+    # 6) draft publication 의 job_id 백필 (best-effort) — unified queue 의
+    # job_id 1순위 매칭 정확성 확보. 실패해도 본 흐름 영향 X.
+    # 2026-05-15 부평 사고: 자식 draft 의 slug 가 부모와 동일하거나 null 일 때
+    # frontend slug fallback 매칭이 자식·부모를 구분하지 못해 hide 되는 사고
+    # 후속. job_id 가 채워지면 1순위 매칭으로 정확히 자식과 연결된다.
+    try:
+        ranking_storage.update_publication(new_pub.id, job_id=pipeline_job_id)
+    except Exception as exc:  # noqa: BLE001 — best-effort, raise 시 본 흐름 영향
+        logger.warning(
+            "republish.draft_job_id_backfill_failed new_pub=%s job=%s err=%s",
+            new_pub.id,
+            pipeline_job_id,
+            exc,
+        )
+
     started_at = datetime.now(tz=UTC)
     logger.info(
         "republish.started source=%s new=%s job=%s strategy=%s",
