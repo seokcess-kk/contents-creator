@@ -84,7 +84,7 @@ def main() -> int:
     )
     print(
         "\n다음 단계:\n"
-        f"  1. config/.env 에 PUBLISHING_ENABLED=true 설정\n"
+        "  1. config/.env 에 PUBLISHING_ENABLED=true 설정\n"
         "  2. python scripts/publish.py --slug <slug> --channel-id <uuid> "
         "--keyword '<키워드>' --dry-run\n"
         "  3. dry-run OK 면 --dry-run 제거하고 실 발행"

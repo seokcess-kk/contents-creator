@@ -176,9 +176,7 @@ def _render_with_playwright(
             logger.info("renderer.chromium_exec=%s", exec_path)
             browser = p.chromium.launch(executable_path=exec_path)
         else:
-            logger.warning(
-                "renderer.chromium_exec_missing — playwright default launch 시도"
-            )
+            logger.warning("renderer.chromium_exec_missing — playwright default launch 시도")
             browser = p.chromium.launch()
         try:
             context = browser.new_context(viewport={"width": width, "height": height})

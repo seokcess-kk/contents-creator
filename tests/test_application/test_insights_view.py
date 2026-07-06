@@ -124,9 +124,7 @@ class TestDerivePublicationStatus:
 
     def test_republishing_publication(self) -> None:
         assert (
-            insights_view._derive_publication_status(
-                _publication(workflow_status="republishing")
-            )
+            insights_view._derive_publication_status(_publication(workflow_status="republishing"))
             == "republished"
         )
 
@@ -140,9 +138,7 @@ class TestListKeywordInsights:
                 "application.insights_view.batch_storage.list_items_filtered",
                 return_value=([], 0),
             ),
-            patch(
-                "application.insights_view.ranking_storage.get_publications_batch"
-            ) as mock_pubs,
+            patch("application.insights_view.ranking_storage.get_publications_batch") as mock_pubs,
             patch(
                 "application.insights_view.ranking_storage.list_latest_snapshots_batch"
             ) as mock_snaps,

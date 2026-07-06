@@ -948,9 +948,7 @@ class TestDispatchOvernightBatches:
             batch_orchestrator.dispatch_overnight_batches()
         notif.send_overnight_dispatched.assert_not_called()
 
-    def test_specific_batch_now_mode_dispatched(
-        self, storage_mock: Any, manager_mock: Any
-    ) -> None:
+    def test_specific_batch_now_mode_dispatched(self, storage_mock: Any, manager_mock: Any) -> None:
         """2026-05-11 — batch_id 명시 호출 시 mode 무관 dispatch.
 
         backend 컨테이너 재시작으로 mode=now batch 의 worker 가 휘발해 stuck
@@ -1003,9 +1001,7 @@ class TestRecoverStuckItemsOnStartup:
         storage_mock.update_item_status.assert_any_call("i-1", "queued")
         manager_mock.get_default_manager.return_value.submit.assert_called_once()
 
-    def test_running_retries_exhausted_failed(
-        self, storage_mock: Any, manager_mock: Any
-    ) -> None:
+    def test_running_retries_exhausted_failed(self, storage_mock: Any, manager_mock: Any) -> None:
         """retry_count >= max_retries 인 running item 은 failed 확정."""
         it = _item(id="i-1", batch_id="b-1", status="running", retry_count=2, max_retries=2)
         storage_mock.list_items_by_global_status.side_effect = [[it], []]
@@ -1025,9 +1021,7 @@ class TestRecoverStuckItemsOnStartup:
         assert "startup recovery" in call.kwargs["error"]
         manager_mock.get_default_manager.return_value.submit.assert_not_called()
 
-    def test_queued_stale_redispatched(
-        self, storage_mock: Any, manager_mock: Any
-    ) -> None:
+    def test_queued_stale_redispatched(self, storage_mock: Any, manager_mock: Any) -> None:
         """started_at 이 grace 초과 + retry_count > 0 인 queued 는 re-dispatch."""
         from datetime import UTC, datetime, timedelta
 
@@ -1052,9 +1046,7 @@ class TestRecoverStuckItemsOnStartup:
         assert counts["queued_redispatched"] == 1
         manager_mock.get_default_manager.return_value.submit.assert_called_once()
 
-    def test_queued_fresh_item_skipped(
-        self, storage_mock: Any, manager_mock: Any
-    ) -> None:
+    def test_queued_fresh_item_skipped(self, storage_mock: Any, manager_mock: Any) -> None:
         """retry_count=0 인 신규 queued 는 건드리지 않음 (새 batch 흐름이 처리)."""
         it = _item(id="i-1", batch_id="b-1", status="queued", retry_count=0)
         storage_mock.list_items_by_global_status.side_effect = [[], [it]]
@@ -1062,9 +1054,7 @@ class TestRecoverStuckItemsOnStartup:
         assert counts["queued_redispatched"] == 0
         manager_mock.get_default_manager.return_value.submit.assert_not_called()
 
-    def test_no_stuck_items_noop(
-        self, storage_mock: Any, manager_mock: Any
-    ) -> None:
+    def test_no_stuck_items_noop(self, storage_mock: Any, manager_mock: Any) -> None:
         storage_mock.list_items_by_global_status.side_effect = [[], []]
         counts = batch_orchestrator.recover_stuck_items_on_startup()
         assert counts == {

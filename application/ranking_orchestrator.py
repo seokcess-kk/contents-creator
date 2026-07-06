@@ -377,11 +377,9 @@ def _attach_batch_item(publication: Publication) -> None:
 
         # 1차: generated_content_id 매칭 (가장 정확)
         if publication.job_id and publication.keyword:
-            client.table("keyword_batch_items").update(payload).eq(
-                "job_id", publication.job_id
-            ).eq("keyword", publication.keyword).is_(
-                "publication_id", "null"
-            ).execute()
+            client.table("keyword_batch_items").update(payload).eq("job_id", publication.job_id).eq(
+                "keyword", publication.keyword
+            ).is_("publication_id", "null").execute()
             return
         # 2차 fallback: keyword 만으로 (job_id 없는 publication 호환).
         # 덮어쓰기 방지를 위해 publication_id IS NULL row 만 갱신.

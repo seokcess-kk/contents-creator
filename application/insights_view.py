@@ -107,15 +107,9 @@ def list_keyword_insights(
     )
 
     pub_ids = sorted({i.publication_id for i in items if i.publication_id})
-    publications = (
-        ranking_storage.get_publications_batch(pub_ids) if pub_ids else {}
-    )
-    snapshots = (
-        ranking_storage.list_latest_snapshots_batch(pub_ids) if pub_ids else {}
-    )
-    diagnoses = (
-        diagnosis_storage.list_latest_diagnoses_batch(pub_ids) if pub_ids else {}
-    )
+    publications = ranking_storage.get_publications_batch(pub_ids) if pub_ids else {}
+    snapshots = ranking_storage.list_latest_snapshots_batch(pub_ids) if pub_ids else {}
+    diagnoses = diagnosis_storage.list_latest_diagnoses_batch(pub_ids) if pub_ids else {}
 
     rows = [
         _build_row(

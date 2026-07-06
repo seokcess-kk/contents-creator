@@ -109,9 +109,7 @@ class TestUpdateItemStatusFailureCategory:
         payload = _last_update_payload(mock_client)
         assert payload["failure_category"] is None
 
-    def test_failure_category_auto_cleared_on_queued_retry(
-        self, mock_client: MagicMock
-    ) -> None:
+    def test_failure_category_auto_cleared_on_queued_retry(self, mock_client: MagicMock) -> None:
         # 재시도 시 queued 로 복귀 — 잔존 카테고리 / 에러 모두 clear.
         with patch("domain.batch.storage.get_client", return_value=mock_client):
             storage.update_item_status(

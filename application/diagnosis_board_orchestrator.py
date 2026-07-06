@@ -110,9 +110,7 @@ def get_diagnosis_board(
     )
     total_action_required = len(pubs)
     if not pubs:
-        return DiagnosisBoardResponse(
-            items=[], counts_by_reason={}, total_action_required=0
-        )
+        return DiagnosisBoardResponse(items=[], counts_by_reason={}, total_action_required=0)
 
     pub_ids = [p.id for p in pubs if p.id is not None]
     diag_by_pub = diagnosis_storage.list_latest_diagnoses_batch(pub_ids)

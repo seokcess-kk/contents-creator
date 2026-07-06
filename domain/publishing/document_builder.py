@@ -70,11 +70,7 @@ def _styled_node(
         "@ctype": "textNode",
     }
     needs_style = (
-        bold
-        or italic
-        or color != "#000000"
-        or size != _DEFAULT_FONT_SIZE
-        or bg != "#ffffff"
+        bold or italic or color != "#000000" or size != _DEFAULT_FONT_SIZE or bg != "#ffffff"
     )
     if needs_style:
         node["style"] = {

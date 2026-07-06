@@ -513,9 +513,7 @@ def list_items_filtered(
         query = query.eq("failure_category", failure_category)
     if batch_id:
         query = query.eq("batch_id", batch_id)
-    result = (
-        query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
-    )
+    result = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
     rows = result.data or []
     items = [_row_to_item(cast("dict[str, Any]", r)) for r in rows]
     total = int(getattr(result, "count", None) or 0)

@@ -479,9 +479,7 @@ def _make_supabase_media_resolver(cache_dir: Path):  # type: ignore[no-untyped-d
         if asset_id in resolved:
             return resolved[asset_id]
         if not _UUID_RE.match(asset_id):
-            logger.warning(
-                "media_resolver.invalid_uuid id=%s — skip Supabase 호출", asset_id
-            )
+            logger.warning("media_resolver.invalid_uuid id=%s — skip Supabase 호출", asset_id)
             return None
         asset = storage.get_media_asset(asset_id)
         if asset is None:

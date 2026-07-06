@@ -849,9 +849,7 @@ def retry_item(item_id: str) -> None:
         "ready_to_publish",
         "running",
     ):
-        raise ValueError(
-            f"재시도 가능 상태 아님 (현재: {item.status}). queued 는 자동 처리됩니다."
-        )
+        raise ValueError(f"재시도 가능 상태 아님 (현재: {item.status}). queued 는 자동 처리됩니다.")
     storage.update_item_status(
         item_id,
         "queued",
@@ -1196,8 +1194,7 @@ def recover_stuck_items_on_startup(*, queued_grace_minutes: int = 5) -> dict[str
                 it.id,
                 "failed",
                 error=(
-                    f"startup recovery: worker 죽음 (retry {it.retry_count}/"
-                    f"{it.max_retries} 초과)"
+                    f"startup recovery: worker 죽음 (retry {it.retry_count}/{it.max_retries} 초과)"
                 ),
                 completed_at=now,
             )
@@ -1208,9 +1205,7 @@ def recover_stuck_items_on_startup(*, queued_grace_minutes: int = 5) -> dict[str
                 batch_job_manager.get_default_manager().submit(_dispatch_item_safely, it.id)
                 counts["running_redispatched"] += 1
             except Exception:
-                logger.warning(
-                    "batch.recovery.resubmit_failed item_id=%s", it.id, exc_info=True
-                )
+                logger.warning("batch.recovery.resubmit_failed item_id=%s", it.id, exc_info=True)
 
     grace = timedelta(minutes=max(1, queued_grace_minutes))
     try:
@@ -1230,9 +1225,7 @@ def recover_stuck_items_on_startup(*, queued_grace_minutes: int = 5) -> dict[str
             batch_job_manager.get_default_manager().submit(_dispatch_item_safely, it.id)
             counts["queued_redispatched"] += 1
         except Exception:
-            logger.warning(
-                "batch.recovery.queued_resubmit_failed item_id=%s", it.id, exc_info=True
-            )
+            logger.warning("batch.recovery.queued_resubmit_failed item_id=%s", it.id, exc_info=True)
 
     for bid in affected_batch_ids:
         try:

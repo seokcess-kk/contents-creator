@@ -37,7 +37,7 @@
 {
     "documentId": "",  # update 시 logNo
     "document": {
-        "version": "2.8.0",
+        "version": "2.10.2",
         "theme": "default",
         "language": "ko-KR",
         "id": "<uuid 26자>",

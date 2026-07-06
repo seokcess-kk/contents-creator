@@ -1,5 +1,7 @@
 """임시 진단 — Profile 4 Cookies DB 안의 naver 쿠키 이름·도메인 나열."""
+
 from __future__ import annotations
+
 import os
 import sqlite3
 import sys

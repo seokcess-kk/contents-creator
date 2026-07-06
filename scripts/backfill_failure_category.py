@@ -115,9 +115,7 @@ def run(*, apply: bool, sample_size: int = 5) -> int:
         return 0
 
     if os.environ.get("BACKFILL_CONFIRM") != "YES":
-        logger.error(
-            "backfill.guard_failed — --apply 사용 시 BACKFILL_CONFIRM=YES 필수. 거부."
-        )
+        logger.error("backfill.guard_failed — --apply 사용 시 BACKFILL_CONFIRM=YES 필수. 거부.")
         return 1
 
     updated = 0

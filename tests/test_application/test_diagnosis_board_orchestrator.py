@@ -110,9 +110,7 @@ class TestGetDiagnosisBoard:
     def test_empty_publications_returns_zero(self) -> None:
         with (
             patch.object(board.ranking_storage, "list_publications", return_value=[]),
-            patch.object(
-                board.diagnosis_storage, "list_latest_diagnoses_batch", return_value={}
-            ),
+            patch.object(board.diagnosis_storage, "list_latest_diagnoses_batch", return_value={}),
         ):
             result = board.get_diagnosis_board(min_confidence=0.5)
         assert result.items == []
@@ -317,9 +315,7 @@ class TestExecuteBulkAction:
 
     def test_missing_diagnosis_is_failed(self) -> None:
         with _patch_load_diagnoses([]):
-            result = board.execute_bulk_action(
-                diagnosis_ids=["d-missing"], action="held"
-            )
+            result = board.execute_bulk_action(diagnosis_ids=["d-missing"], action="held")
         assert len(result.failed) == 1
         assert "stale" in (result.failed[0].message or "")
 
@@ -374,17 +370,10 @@ class TestSingleSourceOfTruth:
         from pathlib import Path
 
         labels_path = (
-            Path(__file__).resolve().parents[2]
-            / "web"
-            / "frontend"
-            / "src"
-            / "lib"
-            / "labels.ts"
+            Path(__file__).resolve().parents[2] / "web" / "frontend" / "src" / "lib" / "labels.ts"
         )
         text = labels_path.read_text(encoding="utf-8")
-        match = re.search(
-            r"DIAGNOSIS_ACTION_KEYS\s*=\s*\[(.*?)\]", text, re.DOTALL
-        )
+        match = re.search(r"DIAGNOSIS_ACTION_KEYS\s*=\s*\[(.*?)\]", text, re.DOTALL)
         assert match is not None, "DIAGNOSIS_ACTION_KEYS 가 labels.ts 에 정의되어 있어야 함"
         frontend_keys = set(re.findall(r'"([^"]+)"', match.group(1)))
         literal_actions = set(get_args(UserAction))

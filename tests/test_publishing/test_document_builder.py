@@ -37,7 +37,7 @@ def test_document_root_required_fields() -> None:
     inner = doc["document"]
     for key in ("version", "theme", "language", "id", "components", "di"):
         assert key in inner, f"필수 필드 누락: {key}"
-    assert inner["version"] == "2.8.0"
+    assert inner["version"] == "2.10.2"
     assert inner["language"] == "ko-KR"
     assert len(inner["id"]) == 26  # 26자 uuid
 
@@ -90,7 +90,7 @@ def test_strong_inside_paragraph_becomes_bold_node() -> None:
     html = "<body><p>일반 <strong>중요</strong> 텍스트</p></body>"
     doc = build_document_model(title="t", content_html=html)
     nodes = doc["document"]["components"][1]["value"][0]["nodes"]
-    bold_nodes = [n for n in nodes if n["style"]["bold"]]
+    bold_nodes = [n for n in nodes if n.get("style", {}).get("bold")]
     assert any(n["value"].strip() == "중요" for n in bold_nodes)
 
 

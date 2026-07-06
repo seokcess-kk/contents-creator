@@ -357,9 +357,7 @@ def list_cards_by_reuse_group(reuse_group_id: str) -> list[BrandCardPlan]:
     return [_row_to_plan(cast("dict[str, Any]", r)) for r in (result.data or [])]
 
 
-def list_plan_groups_for_brand(
-    brand_id: str, *, limit: int = 50
-) -> list[dict[str, Any]]:
+def list_plan_groups_for_brand(brand_id: str, *, limit: int = 50) -> list[dict[str, Any]]:
     """브랜드 상세 페이지용 — reuse_group_id 별 묶음 메타.
 
     2026-05-11 — 카드 기획안 묶음 진입점을 브랜드 상세 페이지에서 회복하기

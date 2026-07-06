@@ -42,7 +42,6 @@ from application.brand_card_orchestrator import PlanEditNotAllowedError
 from config.settings import settings
 from domain.brand_card import source_parser, storage, storage_signed
 from domain.brand_card.model import (
-    BrandCardError,
     BrandCardPlan,
     BrandMediaAsset,
     BrandMessageSource,
@@ -412,9 +411,7 @@ def generate_plans(brand_id: str, req: GeneratePlansRequest) -> JobSubmitRespons
     if storage.get_brand(brand_id) is None:
         raise HTTPException(status_code=404, detail="Brand not found")
     if not 1 <= req.strategy_count <= 4:
-        raise HTTPException(
-            status_code=400, detail=f"strategy_count 는 1~4: {req.strategy_count}"
-        )
+        raise HTTPException(status_code=400, detail=f"strategy_count 는 1~4: {req.strategy_count}")
 
     from web.api.main import job_manager
 

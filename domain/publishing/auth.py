@@ -168,9 +168,7 @@ def naver_login_cdp(
             page.goto("https://blog.naver.com", wait_until="domcontentloaded", timeout=15000)
             time.sleep(1)
             all_cookies = context.cookies(["https://www.naver.com", "https://blog.naver.com"])
-            naver_cookies = [
-                dict(c) for c in all_cookies if "naver" in str(c.get("domain", ""))
-            ]
+            naver_cookies = [dict(c) for c in all_cookies if "naver" in str(c.get("domain", ""))]
             page.close()
             browser.close()
     except Exception as exc:

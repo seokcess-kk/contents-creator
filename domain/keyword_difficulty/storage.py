@@ -111,11 +111,7 @@ def list_latest_per_keyword(
     """
     client = get_client()
     result = (
-        client.table(_TABLE)
-        .select("*")
-        .order("checked_at", desc=True)
-        .limit(fetch_limit)
-        .execute()
+        client.table(_TABLE).select("*").order("checked_at", desc=True).limit(fetch_limit).execute()
     )
     rows = result.data or []
     seen: set[str] = set()

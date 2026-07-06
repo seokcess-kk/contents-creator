@@ -169,9 +169,8 @@ def publish_from_output_dir(
             build_document_model,
             build_population_params,
         )
-        full_document = build_document_model(
-            title=title, content_html=content_html, full_se=False
-        )
+
+        full_document = build_document_model(title=title, content_html=content_html, full_se=False)
         full_population = build_population_params(category_no=category_no, tags=final_tags)
         dryrun_path = output_dir / "_publish_dryrun.json"
         dryrun_path.write_text(

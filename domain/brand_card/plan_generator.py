@@ -125,10 +125,14 @@ def _sanitize_image_fields(plan: BrandCardPlan, merged: MergedAssets) -> BrandCa
         new_prompt = (b.ai_image_prompt or "").strip() or None
         if new_asset_id is None and new_prompt is None:
             new_prompt = _default_ai_image_prompt(b.card_type)
-        fixed_blocks.append(b.model_copy(update={
-            "image_asset_id": new_asset_id,
-            "ai_image_prompt": new_prompt,
-        }))
+        fixed_blocks.append(
+            b.model_copy(
+                update={
+                    "image_asset_id": new_asset_id,
+                    "ai_image_prompt": new_prompt,
+                }
+            )
+        )
     return plan.model_copy(update={"blocks": fixed_blocks})
 
 
