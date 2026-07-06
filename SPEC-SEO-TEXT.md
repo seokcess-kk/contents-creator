@@ -32,7 +32,7 @@
 ```
 키워드 입력
     ↓
-[1] Bright Data SERP API → 네이버 블로그 URL 수집
+[1] SERP 수집 → 네이버 블로그 URL 수집 → insane(curl-only, #main_pack) 우선 + Bright Data 폴백 (하이브리드)
     ↓
 [2] 본문 HTML 수집 → insane(curl-only) 우선 + Bright Data 폴백 (하이브리드, 재시도 포함)
     ↓
@@ -63,9 +63,9 @@
 
 ### [1] SERP 수집
 
-Bright Data **Web Unlocker**로 네이버 블로그 검색 결과 HTML 수집 후 BeautifulSoup 으로 파싱.
+**하이브리드 fetcher** 로 네이버 블로그 검색 결과 HTML 수집 후 BeautifulSoup 으로 파싱. SERP fetcher 는 `HtmlFetcher` 추상화(`domain/crawler/fetcher.py`)로 application `_build_serp_fetcher()` 가 `crawler_serp_fetcher` 토글에 따라 결정한다. 기본값(`"insane"`)은 `vendor/insane_search`(curl-only, v0.9.1)를 **desktop UA + `success_selectors=["#main_pack"]`** 튜닝으로 1차 수집(cost=0)한 뒤 selector 부정합/challenge 시 Bright Data Web Unlocker 로 자동 폴백한다(무손실). `"brightdata"` 로 두면 Bright Data 단독으로 강제(롤백 밸브). 폴백용으로 Bright Data 키는 여전히 필수 (2026-07-06 PR-S2, 실측: 3종 SERP `#main_pack` 우회 + 블로그 URL 6/6 일치·30/30 무차단).
 
-> **주**: Bright Data SERP API 는 Naver 전용 지원이 없어(Google/Bing/Yandex/Baidu 만) 사용하지 않는다. Web Unlocker 가 범용 fetcher 이므로 동일 zone 으로 SERP 페이지와 블로그 본문 모두 처리한다. 자세한 사유: `tasks/lessons.md`.
+> **주**: Bright Data SERP API 는 Naver 전용 지원이 없어(Google/Bing/Yandex/Baidu 만) 사용하지 않는다. Web Unlocker 가 범용 fetcher 이므로 동일 zone 으로 SERP 페이지와 블로그 본문 모두 (폴백으로) 처리한다. `#main_pack` 은 통합검색/블로그탭/난이도 3종 SERP 공통 안정 컨테이너(각 1개 존재). 자세한 사유: `tasks/lessons.md`.
 
 **입력:** 타겟 키워드
 **출력:** 네이버 블로그 URL 최소 5개 + 제목 + 스니펫
@@ -103,8 +103,10 @@ POST https://api.brightdata.com/request
 (`crawler_body_fetcher="insane"`)은 `vendor/insane_search`(curl-only, v0.9.1)로 1차
 수집(cost=0)한 뒤 실패 시 Bright Data Web Unlocker 로 자동 폴백한다
 (`FallbackFetcher(InsaneFetcher, BrightDataClient)`). `crawler_body_fetcher="brightdata"`
-로 두면 Bright Data 단독으로 강제(롤백 밸브). ⚠️ SERP 수집([1])·keyword_difficulty·
-ranking 은 이 토글과 무관하게 항상 Bright Data 다. 폴백용으로 Bright Data 키는 여전히 필수.
+로 두면 Bright Data 단독으로 강제(롤백 밸브). ⚠️ 이 토글은 본문([2]) 경로 전용이다.
+SERP 수집([1])·keyword_difficulty 는 별도 토글 `crawler_serp_fetcher`(기본 insane
+하이브리드)로 라우팅되고, ranking 은 아직 Bright Data 단독(PR-S3 확장 예정)이다.
+폴백용으로 Bright Data 키는 여전히 필수.
 
 **정책:**
 - URL당 최대 2회 재시도 (exponential backoff: 2s → 5s)
@@ -847,7 +849,7 @@ create index idx_generated_contents_card on generated_contents (pattern_card_id,
 |---|---|
 | 언어 | Python 3.11+ |
 | DB | Supabase (PostgreSQL) |
-| SERP 수집 | Bright Data Web Unlocker (SERP 페이지를 범용 fetch) |
+| SERP 수집 | 하이브리드 — insane(curl-only, v0.9.1, desktop+`#main_pack`) 우선 + Bright Data Web Unlocker 폴백 (`HtmlFetcher` 추상화, `crawler_serp_fetcher` 토글). keyword_difficulty 난이도 SERP 도 동일 |
 | 본문 크롤링 | 하이브리드 — insane(curl-only, v0.9.1) 우선 + Bright Data Web Unlocker 폴백 (`HtmlFetcher` 추상화, `crawler_body_fetcher` 토글) |
 | HTML 파싱 | BeautifulSoup / lxml |
 | LLM API | Anthropic Claude (`anthropic` SDK) |
@@ -870,7 +872,7 @@ create index idx_generated_contents_card on generated_contents (pattern_card_id,
 | [9] AI 이미지 생성 | **Gemini 3.1 Flash Image Preview** | 검증된 prompt → 이미지 | 단일 호출, 영어 prompt, 텍스트 절대 금지 |
 
 ### LLM 불필요 (코드)
-- [1] SERP 수집 — Bright Data API. [2] 본문 수집 — insane(curl-only) 우선 + Bright Data 폴백 하이브리드
+- [1] SERP 수집 — insane(curl-only, #main_pack) 우선 + Bright Data 폴백 하이브리드. [2] 본문 수집 — insane(curl-only) 우선 + Bright Data 폴백 하이브리드
 - [3] 물리적 구조 추출 — BeautifulSoup + 정규식
 - [5] 교차 분석 집계 — 코드 집계
 - [9] AI 이미지 생성 — Google Gen AI SDK 호출 (prompt 는 [6] 에서 LLM 이 생성, 여기선 호출만)
@@ -919,7 +921,7 @@ contents-creator/
 │   │   ├── brightdata_client.py       ← Bright Data 공통 클라이언트 (SERP + 본문 폴백)
 │   │   ├── insane_fetcher.py          ← vendor/insane_search(curl-only) 어댑터: 본문 1차 (cost=0)
 │   │   ├── fallback_fetcher.py        ← insane → Bright Data 폴백 하이브리드 합성
-│   │   ├── serp_collector.py          ← SERP: 네이버 블로그 수집 (Bright Data)
+│   │   ├── serp_collector.py          ← SERP: 네이버 블로그 수집 (insane #main_pack 우선 + Bright Data 폴백)
 │   │   └── page_scraper.py            ← 본문 HTML 수집 + 재시도 (HtmlFetcher 주입)
 │   ├── analysis/
 │   │   ├── CLAUDE.md

@@ -169,3 +169,44 @@ class TestBatchAnalyzeKeywords:
     def test_empty_input_returns_empty(self) -> None:
         results = batch_analyze_keywords([])
         assert results == []
+
+
+class TestBuildClientRouting:
+    """`_build_client()` 이 stage_runner `_build_serp_fetcher()` 를 재사용하는지 검증 (PR-S2).
+
+    selector/토글 단일 출처 — 난이도 SERP 도 `crawler_serp_fetcher` 토글로 라우팅된다.
+    """
+
+    def _stub_bright_data_keys(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from config.settings import settings
+
+        monkeypatch.setattr(settings, "bright_data_api_key", "dummy-key")
+        monkeypatch.setattr(settings, "bright_data_web_unlocker_zone", "dummy-zone")
+
+    def test_insane_toggle_returns_fallback(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from application.keyword_difficulty_orchestrator import _build_client
+        from config.settings import settings
+        from domain.crawler.brightdata_client import BrightDataClient
+        from domain.crawler.fallback_fetcher import FallbackFetcher
+        from domain.crawler.insane_fetcher import InsaneFetcher
+
+        self._stub_bright_data_keys(monkeypatch)
+        monkeypatch.setattr(settings, "crawler_serp_fetcher", "insane")
+
+        client = _build_client()
+        assert isinstance(client, FallbackFetcher)
+        assert isinstance(client._primary, InsaneFetcher)
+        assert isinstance(client._fallback, BrightDataClient)
+        assert client._primary._device_class == "desktop"
+        assert client._primary._success_selectors == ["#main_pack"]
+
+    def test_brightdata_toggle_returns_client(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from application.keyword_difficulty_orchestrator import _build_client
+        from config.settings import settings
+        from domain.crawler.brightdata_client import BrightDataClient
+
+        self._stub_bright_data_keys(monkeypatch)
+        monkeypatch.setattr(settings, "crawler_serp_fetcher", "brightdata")
+
+        client = _build_client()
+        assert isinstance(client, BrightDataClient)

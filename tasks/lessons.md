@@ -33,6 +33,7 @@
 - [DataTableShell 모바일 자동 변환 + vitest 텍스트 매칭 충돌](#datatableshell-모바일-자동-변환--vitest-텍스트-매칭-충돌--polish-p2-2026-05-06) — 2026-05-06
 
 ### Domain / Architecture
+- [insane-search SERP 확장 — 통합검색/블로그탭/난이도 하이브리드](#insane-search-serp-확장--통합검색블로그탭난이도-하이브리드-2026-07-06) — 2026-07-06
 - [insane-search 하이브리드 본문 fetcher 통합](#insane-search-하이브리드-본문-fetcher-통합-2026-07-06) — 2026-07-06
 - [도메인 격리 유지 + DI 패턴 — `csv_parser.blog_resolver`](#도메인-격리-유지--di-패턴--csv_parserblog_resolver-2026-05-07) — 2026-05-07
 - [FastAPI 라우트의 `status_code=204` + `-> None` 충돌](#fastapi-라우트의-status_code204---none-충돌-2026-05-07) — 2026-05-07
@@ -892,4 +893,66 @@ Bright Data(Web Unlocker, 유료) 비용 절감을 위해 오픈소스 insane-se
 - `application/stage_runner.py:_build_body_fetcher`, `application/usage_tracker.py`(provider="insane"→0), `config/settings.py`(crawler_body_fetcher/insane_concurrent_limit/insane_timeout_seconds)
 - `vendor/insane_search/`(v0.9.1, MIT), `tests/test_crawler/test_insane_fetcher.py` / `test_fallback_fetcher.py` / `test_insane_smoke.py`(RUN_INSANE_SMOKE opt-in)
 - `tasks/todo.md` "insane-search 하이브리드 fetcher 통합" 섹션(PR1~PR5)
+
+---
+
+## insane-search SERP 확장 — 통합검색/블로그탭/난이도 하이브리드 (2026-07-06)
+
+본문 하이브리드([INSANE-1~5]) 착지 후, insane 채택 경계를 **SERP·난이도 SERP** 로 확장했다. [INSANE-2] 에서 "SERP 는 insane WAF 검증기가 challenge 로 오판(grid 9회 소진)" 이라 Bright Data 유지로 그었던 경계를, **`success_selectors=["#main_pack"]` 튜닝 실측**으로 다시 그었다. PR-S1(InsaneFetcher 생성자 파라미터화) → PR-S2(SERP/난이도 라우팅 팩토리 + 토글) 2단계. ranking(PR-S3)은 부하 실측 게이트 선행이라 보류. 핵심 의사결정 4건:
+
+### [INSANE-6] `success_selectors=["#main_pack"]` 한 방으로 3종 SERP challenge 완전 우회 (실측)
+
+**결정**: insane 의 WAF 검증기가 네이버 SERP 를 challenge 로 오판(verdict grid 9회 소진 후 challenge 확정)하던 문제를, vendor `fetch` 의 `success_selectors` 인자에 **`#main_pack` 단일 셀렉터**를 주입해 해결했다. selector 가 DOM 에 존재하면 검증기가 즉시 `strong_ok`(1회)로 조기 판정 → grid 소진·challenge 오판이 사라진다.
+
+**실측 근거(확정)**:
+- **`#main_pack` 은 3종 SERP 공통 안정 컨테이너** — 통합검색(`where=nexearch`)·블로그탭(`where=blog`)·난이도 SERP 모두 이 컨테이너를 **정확히 1개** 포함. 트랙별 selector 분기 불필요(단일 selector 로 3종 커버).
+- **verdict 전환**: selector 미지정 시 challenge(grid 9회 소진) → `["#main_pack"]` 지정 시 strong_ok(1회). WAF 우회 자체가 아니라 **검증기의 성공 판정 신호를 명시**한 것.
+- **무손실 검증**: insane 파서 결과가 Bright Data 와 **블로그 URL 6/6 일치**. 단일 IP **30건 무차단**(분석 트랙은 on-demand·소량이라 30건 실측이 대표성 충분).
+
+**일반화 규칙**:
+- **"challenge = 실제 차단" 이 아니라 "검증기가 성공 신호를 못 찾음" 일 수 있다** — WAF 검증기에 대상 페이지의 안정 컨테이너를 성공 셀렉터로 명시하면 오판이 사라진다. 우회 코드 추가 전에 검증 파라미터부터 확인.
+- **여러 대상 유형의 공통 안정 컨테이너 1개를 찾으면 분기가 사라진다** — 3종 SERP × selector 분기 대신 `#main_pack` 단일값. DOM 실사로 공통 컨테이너를 먼저 탐색.
+
+### [INSANE-7] 대조군 challenge 는 실제 차단이 아니다 — soft:captcha 오탐 + selector 부정합 → 무손실 폴백
+
+**결정**: [INSANE-6] 채택 전 대조군(selector 미지정) challenge 가 진짜 차단인지 확인했다. **실제 차단이 아니었다** — HTTP status 200 정상 응답인데 검증기의 `soft:captcha` 휴리스틱이 정상 SERP 를 captcha 로 오탐한 것. 따라서 selector 튜닝으로 안전하게 우회 가능하다고 판정.
+
+**안전망(무손실)**:
+- selector 가 미래에 부정합(네이버 DOM 개편으로 `#main_pack` 소멸/개명)이 되면, 정상 HTML 이어도 검증기가 다시 challenge 로 떨어진다 → `InsaneFetchError` raise → `FallbackFetcher` 가 **Bright Data 로 자동 폴백**. 결과 손실 0(폴백이 정상 수집).
+- 즉 selector 튜닝은 **비용 최적화(insane cost=0 경로 확대)일 뿐, 정확도의 단일 의존점이 아니다**. 부정합 = 유료 폴백으로 흡수.
+
+**일반화 규칙**:
+- **status 200 + verdict challenge = 검증기 오탐 의심** — 실제 차단(403/429/captcha 페이지)과 검증기 휴리스틱 오탐을 status·body 로 구분한 뒤 우회를 판단.
+- **selector 의존 최적화는 반드시 폴백 뒤에 둔다** — DOM 개편으로 selector 가 깨져도 폴백이 무손실을 보장하면 selector 는 "비용 밸브" 이지 "정확도 단일 의존점" 이 아니다.
+
+### [INSANE-8] InsaneFetcher 생성자 파라미터화 — 트랙별 튜닝 주입, default 는 본문 무변경
+
+**결정**: 본문/SERP 를 한 어댑터로 공용하되, `device_class`/`success_selectors`/`enable_phase0`/`max_attempts` 를 **생성자 키워드 인자**로 뺐다. default 는 본문 하드코딩 값과 동일(`device_class="mobile"`, `success_selectors=None`, `enable_phase0=True`, `max_attempts=_VENDOR_MAX_ATTEMPTS`)이라 `InsaneFetcher()` 는 기존 본문 동작을 그대로 유지. SERP 는 `InsaneFetcher(device_class="desktop", success_selectors=["#main_pack"])` 로 튜닝 주입.
+
+**파라미터화하지 않은 2개(의도적 고정)**:
+- `enable_playwright=False`·`enable_learning=False` 는 **생성자 인자로 노출하지 않고 `_call_vendor` 에 하드코딩 유지**. 이유: curl-only 격리(Playwright 영구 금지)·홈디렉터리 파일쓰기 차단은 트랙 무관 불변 규약이라, 파라미터로 열면 실수로 True 주입되는 표면이 생긴다. "튜닝 가능한 축" 과 "불변 안전 규약" 을 생성자 시그니처에서 물리적으로 분리.
+
+**일반화 규칙**:
+- **공용 어댑터의 트랙별 차이는 생성자 인자로, 안전 불변 규약은 하드코딩으로** — 파라미터화 표면 = 잘못 주입될 표면. 불변값을 인자로 열지 않으면 오용 자체가 불가능.
+- **default = 기존 동작** 로 두면 기존 호출부(`InsaneFetcher()`) 무변경 + 신규 호출부만 튜닝 주입. additive only 를 시그니처 레벨에서 보장.
+
+### [INSANE-9] 라우팅은 분석 트랙 SERP 만 — ranking 은 부하 실측 게이트 선행(PR-S3 보류)
+
+**결정**: `crawler_serp_fetcher` 토글(default `insane`)을 신설해 **`collect_serp`(분석 트랙 SERP) + `keyword_difficulty`(난이도 SERP)** 만 하이브리드로 라우팅. 팩토리는 `stage_runner._build_serp_fetcher()` 단일 출처이고, `keyword_difficulty_orchestrator._build_client()` 가 이를 **application↔application cross-import** 로 재사용(selector/토글 단일 출처 — application/CLAUDE.md 상 허용). **ranking 은 default `brightdata` 조차 도입하지 않고 Bright Data 단독 유지**.
+
+**ranking 을 보류한 사유(게이트)**:
+- ranking 은 **매일 cron 대량 측정**(publication N개 × 매일). 실측은 분석 트랙 기준 **단일 IP 30건까지만** 검증됨 → 100+ 동시성·장시간 무차단은 미검증.
+- insane 은 IP 로테이션 부재([INSANE-2])라 대량 트래픽에서 차단 위험이 실재. 30건 실측을 100+ 로 확대 적용하는 것은 근거 없는 외삽.
+- 따라서 PR-S3(ranking 확장)은 **100+ 부하 실측 게이트를 선행 조건으로** 보류. default brightdata 도입도 안 함(부하 실측 전에는 ranking 경로에 insane 을 아예 배선하지 않음).
+
+**일반화 규칙**:
+- **실측 표본의 대표성 밖으로 채택을 외삽하지 않는다** — on-demand 소량(30건) 실측은 분석 트랙엔 충분하나 대량 cron(100+)엔 부족. 트래픽 프로파일이 다르면 별도 게이트.
+- **라우팅 토글은 트랙별로 분리해 부분 채택을 안전하게** — 본문 `crawler_body_fetcher` / SERP·난이도 `crawler_serp_fetcher` / ranking(미도입). 트랙별 토글이면 한 트랙 문제가 다른 트랙으로 번지지 않고 env 로 개별 롤백.
+
+**참조**:
+- `domain/crawler/insane_fetcher.py:InsaneFetcher.__init__`(생성자 파라미터화), `_call_vendor`(playwright/learning 하드코딩 고정)
+- `application/stage_runner.py:_build_serp_fetcher` + `_SERP_SUCCESS_SELECTOR="#main_pack"`, `run_stage_serp_collection`(client 타입 `HtmlFetcher` 로 확장)
+- `application/keyword_difficulty_orchestrator.py:_build_client`(stage_runner cross-import 재사용)
+- `config/settings.py:crawler_serp_fetcher`(default insane), `config/.env.example`(CRAWLER_SERP_FETCHER)
+- `tests/test_crawler/test_insane_fetcher.py`(생성자 파라미터화 3종), `tests/test_application/test_stage_runner.py:TestSerpFetcherRouting`, `tests/test_application/test_keyword_difficulty_orchestrator.py:TestBuildClientRouting`
 

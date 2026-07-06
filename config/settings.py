@@ -167,10 +167,21 @@ class Settings(BaseSettings):
     # 본문 수집 경로 라우팅 토글 (PR4). "insane" = 하이브리드(본문 insane + Bright Data
     # 폴백), "brightdata" = Bright Data 강제 단독(롤백 밸브 — 코드 변경 없이 env 로 즉시
     # 전환). ⚠️ 이 토글은 본문([2] page_scraping) 경로에만 적용된다. SERP 수집·
-    # keyword_difficulty·ranking 은 값과 무관하게 항상 Bright Data 다.
+    # keyword_difficulty 는 `crawler_serp_fetcher` 로 별도 라우팅한다.
+    # ranking 은 아직 Bright Data(PR-S3 에서 확장 예정).
     crawler_body_fetcher: str = Field(
         default="insane",
         description='본문 fetcher. "insane"=하이브리드 폴백, "brightdata"=Bright Data 강제',
+    )
+    # SERP·난이도 fetcher 라우팅 토글 (PR-S2). 분석 트랙 SERP(통합검색/블로그탭) +
+    # keyword_difficulty 난이도 SERP 에 적용. "insane" = 하이브리드(SERP insane
+    # desktop+`#main_pack` 성공판정 우선 + Bright Data 폴백), "brightdata" = Bright
+    # Data 강제 단독(롤백 밸브 — 코드 변경 없이 env 로 즉시 전환). default insane —
+    # 분석 SERP 는 on-demand·소량이라 실측이 강함(6/6 URL 일치·30/30 무차단). ranking 은
+    # 아직 Bright Data(PR-S3 에서 별도 `ranking_serp_fetcher` 로 확장 예정).
+    crawler_serp_fetcher: str = Field(
+        default="insane",
+        description='SERP·난이도 fetcher. "insane"=하이브리드 폴백, "brightdata"=Bright Data 강제',
     )
     # insane_concurrent_limit 은 domain/crawler/insane_fetcher.py 의 module-level
     # BoundedSemaphore 가 실제 소비(no-op 아님). 단일 IP 라 보수적 default 3.

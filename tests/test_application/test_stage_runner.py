@@ -471,9 +471,10 @@ class TestAsciiSafeSlug:
 
 
 class TestBodyFetcherRouting:
-    """`_build_body_fetcher()` 토글 분기 + SERP 팩토리 무변경 검증.
+    """`_build_body_fetcher()` 토글 분기 검증.
 
-    본문([2]) 경로만 토글의 영향을 받는다. SERP 는 항상 Bright Data (`_build_brightdata_client`).
+    본문([2]) 경로는 `crawler_body_fetcher` 토글의 영향을 받는다. `_build_brightdata_client()`
+    원시 팩토리는 토글과 무관하게 항상 BrightDataClient (SERP·본문 폴백 공용).
     """
 
     def _stub_bright_data_keys(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -512,8 +513,8 @@ class TestBodyFetcherRouting:
         fetcher = _build_body_fetcher()
         assert isinstance(fetcher, BrightDataClient)
 
-    def test_serp_factory_always_brightdata(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """토글이 insane 이어도 SERP 팩토리는 항상 BrightDataClient."""
+    def test_brightdata_primitive_always_client(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """`_build_brightdata_client()` 원시 팩토리는 토글과 무관하게 항상 BrightDataClient."""
         from application.stage_runner import _build_brightdata_client
         from config.settings import settings
         from domain.crawler.brightdata_client import BrightDataClient
@@ -522,3 +523,53 @@ class TestBodyFetcherRouting:
         monkeypatch.setattr(settings, "crawler_body_fetcher", "insane")
 
         assert isinstance(_build_brightdata_client(), BrightDataClient)
+
+
+# ── SERP fetcher 라우팅 팩토리 (PR-S2) ───────────────────────────────────────
+
+
+class TestSerpFetcherRouting:
+    """`_build_serp_fetcher()` 토글 분기 검증.
+
+    분석 트랙 SERP([1]) + keyword_difficulty 난이도 SERP 가 `crawler_serp_fetcher` 토글로
+    라우팅된다. "insane" = FallbackFetcher(InsaneFetcher desktop+#main_pack → BrightDataClient),
+    "brightdata" = BrightDataClient 단독(롤백 밸브).
+    """
+
+    def _stub_bright_data_keys(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from config.settings import settings
+
+        monkeypatch.setattr(settings, "bright_data_api_key", "dummy-key")
+        monkeypatch.setattr(settings, "bright_data_web_unlocker_zone", "dummy-zone")
+
+    def test_insane_returns_fallback_with_tuned_insane_primary(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from application.stage_runner import _SERP_SUCCESS_SELECTOR, _build_serp_fetcher
+        from config.settings import settings
+        from domain.crawler.brightdata_client import BrightDataClient
+        from domain.crawler.fallback_fetcher import FallbackFetcher
+        from domain.crawler.insane_fetcher import InsaneFetcher
+
+        self._stub_bright_data_keys(monkeypatch)
+        monkeypatch.setattr(settings, "crawler_serp_fetcher", "insane")
+
+        fetcher = _build_serp_fetcher()
+        assert isinstance(fetcher, FallbackFetcher)
+        # primary = InsaneFetcher (desktop + #main_pack 튜닝), fallback = BrightDataClient
+        assert isinstance(fetcher._primary, InsaneFetcher)
+        assert isinstance(fetcher._fallback, BrightDataClient)
+        assert fetcher._primary._device_class == "desktop"
+        assert fetcher._primary._success_selectors == [_SERP_SUCCESS_SELECTOR]
+        assert _SERP_SUCCESS_SELECTOR == "#main_pack"
+
+    def test_brightdata_returns_client(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from application.stage_runner import _build_serp_fetcher
+        from config.settings import settings
+        from domain.crawler.brightdata_client import BrightDataClient
+
+        self._stub_bright_data_keys(monkeypatch)
+        monkeypatch.setattr(settings, "crawler_serp_fetcher", "brightdata")
+
+        fetcher = _build_serp_fetcher()
+        assert isinstance(fetcher, BrightDataClient)

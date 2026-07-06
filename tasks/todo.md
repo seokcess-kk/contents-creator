@@ -2065,3 +2065,268 @@ bash .claude/hooks/build-check.sh              # 최종 커버리지 게이트 (
 3. **PR3** InsaneFetcher(ok 판정 + suspect_ok sanity + 세마포어 + tenacity 1) + FallbackFetcher(무 record_usage) 어댑터 + 유닛 + 🔴 실 vendor 1-URL 통합 스모크 게이트 (라우팅 미연결)
 4. **PR4** settings 토글 + stage_runner 본문 팩토리 분기 + **거버넌스 문서(CLAUDE.md/SPEC) 동반 착지** (폴백 활성, env 즉시 롤백)
 5. **PR5** lessons 기록 + 최종 전체 게이트(Docker import 스모크 포함)
+
+---
+
+# SERP insane 하이브리드 확장 — 2026-07-06 계획
+
+목표: 본문(page_scraper)에 이미 착지한 insane(curl_cffi) 우선 + Bright Data 폴백 하이브리드를
+**SERP 3종(통합검색/블로그탭 = 분석 트랙, 난이도 SERP, 순위추적 cron)** 으로 확장해 Bright Data
+(유료 Web Unlocker) 호출을 추가로 절감한다. 무손실 원칙(selector 부정합 = 자동 폴백) 유지.
+
+SPEC 참조: §3 [1] (SERP 수집). 본문 하이브리드 = 위 "insane-search 하이브리드 fetcher 통합" 섹션(완료).
+
+## 배경 — 완료된 것 (본문 하이브리드, main 커밋)
+
+- `domain/crawler/fetcher.py` `HtmlFetcher` Protocol (fetch/close/`__enter__`/`__exit__` 4종).
+- `vendor/insane_search/` 벤더링(curl-only, v0.9.1).
+- `domain/crawler/insane_fetcher.py` `InsaneFetcher` — 성공판정=`FetchResult.ok`(+suspect_ok sanity),
+  module-level `BoundedSemaphore(settings.insane_concurrent_limit)`, `close=POOL.reset`.
+  **현재 본문 전용 하드코딩**: `_call_vendor` 가 `device_class="mobile", enable_playwright=False,
+  enable_learning=False, enable_phase0=True, max_attempts=_VENDOR_MAX_ATTEMPTS(3)`, **success_selectors 없음**.
+- `domain/crawler/fallback_fetcher.py` `FallbackFetcher(primary, fallback)` — 폴백 시 record_usage 미호출.
+- `application/stage_runner.py` `_build_body_fetcher()` + `run_stage_page_scraping` 라우팅.
+  settings `crawler_body_fetcher`(default insane), `insane_concurrent_limit=3`, `insane_timeout_seconds=30`.
+- `application/usage_tracker.py::estimate_cost` 에 `provider=="insane"` → 0.0 분기 이미 존재(재사용).
+
+## 배경 — 이번 확장의 실측 근거 (확정)
+
+- SERP(통합검색/블로그탭/난이도)를 insane 으로 fetch 시 **`success_selectors=["#main_pack"]`** 주면
+  verdict `challenge`(executed_attempts=9, grid 소진) → **`strong_ok`(executed_attempts=1)** 로 완전 우회.
+  `#main_pack` 이 3종 SERP 공통 안정 컨테이너(각 정확히 1개 존재).
+- 우회분 HTML 파서 결과가 Bright Data 와 일치: `_parse_serp_html` 블로그 URL 6/6 완전 일치,
+  `parse_serp`(난이도) SerpComposition 은 광고 카드 수(요청시점 변동)만 ±3 차이·SEO 의미 섹션 동일.
+- 단일 IP SERP **30건 연속 무차단**(strong_ok 30/30, 세션 누적 ~148 요청). **단 30건 상한까지만 측정 —
+  그 이상 임계 미측정**.
+- challenge 는 실제 차단 아님(status 200, `soft:captcha` 오탐). **정확한 selector 가 관건** — 존재 안 하는
+  selector 주면 정상 HTML 도 challenge 강등. 즉 selector 틀려도 `not result.ok` → 폴백(무손실)이라 안전.
+
+## 🔴 확정 설계 결정 (이 계획은 이걸 따른다)
+
+> **D1. InsaneFetcher 파라미터화 — 본문 default 무변경**
+> - 현재 `_call_vendor` 의 본문 전용 하드코딩을 생성자 파라미터로 승격:
+>   `InsaneFetcher(*, device_class="mobile", success_selectors: list[str] | None = None,
+>   enable_phase0: bool = True, max_attempts: int = _VENDOR_MAX_ATTEMPTS)`.
+> - `enable_playwright=False`(거버넌스상 Playwright 영구 금지), `enable_learning=False` 는 **파라미터화하지
+>   않고 하드코딩 유지**(파라미터 표면 최소화, YAGNI).
+> - `_call_vendor` 를 `@staticmethod` → **인스턴스 메서드**로 전환(self 설정 읽기). `vendor_fetch(...,
+>   device_class=self._device_class, success_selectors=self._success_selectors, enable_phase0=self._enable_phase0,
+>   max_attempts=self._max_attempts, ...)`.
+> - 기존 본문 호출 `InsaneFetcher()` = default(mobile, selectors=None, phase0=True, max=3) → **동작·kwargs 무변경**.
+>   기존 유닛(`tests/test_crawler/test_insane_fetcher.py:79` 가 `device_class=="mobile"` 어서션)이 회귀 가드.
+> - SERP 용 인스턴스: `InsaneFetcher(device_class="desktop", success_selectors=["#main_pack"])`.
+>
+> **D2. SERP 팩토리 — `build_serp_fetcher()` (stage_runner)**
+> - `application/stage_runner.py` 에 팩토리 신규. `settings.crawler_serp_fetcher == "insane"` 이면
+>   `FallbackFetcher(InsaneFetcher(device_class="desktop", success_selectors=[_SERP_SUCCESS_SELECTOR]),
+>   _build_brightdata_client())`, 그 외 `_build_brightdata_client()`.
+> - `#main_pack` 은 상수 승격 → `_SERP_SUCCESS_SELECTOR = "#main_pack"` (매직 문자열 금지 규칙).
+> - **명명 결정**: 본문 팩토리 `_build_body_fetcher` 는 stage_runner 내부 전용이라 private. SERP 팩토리는
+>   `keyword_difficulty_orchestrator` / `ranking_orchestrator` 가 **cross-import** 하므로 **public
+>   `build_serp_fetcher`** 로 노출(application↔application import 는 application/CLAUDE.md 상 허용, 두 orchestrator
+>   가 이미 `from application.usage_tracker import ...` 하는 선례와 정합). 토글 매직 문자열은 기존
+>   `_BODY_FETCHER_INSANE/_BODY_FETCHER_BRIGHTDATA` 재사용.
+>
+> **D3. 라우팅 대상 3종 — PR 분리**
+> - 분석 트랙: `run_stage_serp_collection`(collect_serp) + `keyword_difficulty_orchestrator._build_client`(난이도).
+> - 순위추적: `ranking_orchestrator.check_rankings_for_publication` 의 `BrightDataClient` 직접 인스턴스화.
+>
+> **D4. settings 토글 + 롤백 밸브 (권고는 아래 별도 절)**
+> - 분석 트랙: `crawler_serp_fetcher`(env `CRAWLER_SERP_FETCHER`). 롤백 밸브 필수(env 로 즉시 brightdata 강제).
+> - 순위추적: 위험 비대칭(매일 cron 대량, 30건까지만 실측) 때문에 **분리 토글 `ranking_serp_fetcher`** 권고
+>   (default 보수). 아래 "default 토글 권고" 참조.
+>
+> **D5. 성공판정/폴백 — 기존 로직 100% 재사용**
+> - success_selectors 부정합으로 challenge → `not result.ok` → `InsaneFetchError`(BrightDataTransientError 하위)
+>   → `FallbackFetcher` 가 Bright Data 로 폴백(무손실). content sanity 마커(`captcha` 등)는 본문과 공유하나
+>   실측상 정상 SERP HTML 은 `_content_is_sane` 통과(strong_ok + 파서 일치 확인). insane 성공 시
+>   `record_usage(provider="insane", cost=0)` → difficulty/ranking 의 `collect_usage`+`save_usage_to_supabase`
+>   가 stage 별로 수확 → 폴백률 telemetry 확보.
+
+## 변경 대상 파일
+
+| 파일 | 현재 | 변경 |
+|---|---|---|
+| `domain/crawler/insane_fetcher.py` | `_call_vendor` staticmethod, 본문 하드코딩 | `__init__` 4파라미터 + `_call_vendor` 인스턴스화, default 무변경 |
+| `application/stage_runner.py` | `_build_body_fetcher`, `run_stage_serp_collection(client: BrightDataClient|None)` | `build_serp_fetcher()` + `_SERP_SUCCESS_SELECTOR` 상수, serp 라우팅, client 타입 `HtmlFetcher|None` 완화 |
+| `application/keyword_difficulty_orchestrator.py` | `_build_client()→BrightDataClient` | `build_serp_fetcher()` 사용, `analyze_keyword(client: HtmlFetcher|None)` 완화 |
+| `application/ranking_orchestrator.py` | `check_rankings_for_publication` 이 `BrightDataClient(...)` 직접 | `build_serp_fetcher()` 사용(close 위임 유지) |
+| `config/settings.py` | `crawler_body_fetcher` 등 | `crawler_serp_fetcher`(PR2) + `ranking_serp_fetcher`(PR3) 필드 + 주석 갱신 |
+| `config/.env.example` | insane 토글 3필드 | serp 토글 필드 예시 동기화 |
+| `domain/crawler/CLAUDE.md` | "SERP·keyword_difficulty·ranking 은 여전히 Bright Data 단독" | 하이브리드 반영(PR별 부분 갱신) |
+| `SPEC-SEO-TEXT.md §3 [1]` | SERP=Web Unlocker 서술 | 하이브리드 서술 — **🔴 사용자 승인 필요**(아래 참조) |
+| `tests/test_crawler/test_insane_fetcher.py` | 본문 default 유닛 | 파라미터 전달 유닛 추가 |
+| `tests/test_application/` | 본문 팩토리 유닛 | SERP 팩토리 라우팅 유닛 추가 |
+
+### 선행 조건
+- [ ] 위 "insane-search 하이브리드 fetcher 통합"(본문) 5개 PR 모두 main 착지 (자산 존재 확인 — 완료됨)
+- [ ] `_SERP_SUCCESS_SELECTOR="#main_pack"` 가 통합검색/블로그탭/난이도 3종에서 각 1개 존재 재확인(실측 완료, 착수 시 1회 재검)
+
+---
+
+## PR-S1 — InsaneFetcher 파라미터화 (순수 리팩터, 라우팅 미연결)
+
+> 경계: 생성자 파라미터 승격만. 본문 default 무변경. SERP 아직 아무도 호출 안 함. 리뷰 최소화 목적 분리.
+
+- [ ] 1. [`domain/crawler/insane_fetcher.py`] `__init__(self, *, device_class="mobile",
+      success_selectors=None, enable_phase0=True, max_attempts=_VENDOR_MAX_ATTEMPTS)` 추가 → self 필드 저장
+      (타입힌트 `list[str] | None`). — 검증: `InsaneFetcher()` 기본값이 기존 하드코딩과 동일.
+- [ ] 2. [`insane_fetcher.py`] `_call_vendor` `@staticmethod` → 인스턴스 메서드. `vendor_fetch(url,
+      device_class=self._device_class, success_selectors=self._success_selectors, enable_playwright=False,
+      enable_learning=False, enable_phase0=self._enable_phase0, max_attempts=self._max_attempts,
+      timeout=settings.insane_timeout_seconds)`. `_fetch_with_retry` 의 `self._call_vendor(url)` 유지. —
+      검증: `enable_playwright/enable_learning` 여전히 하드코딩 False.
+- [ ] 3. [`tests/test_crawler/test_insane_fetcher.py`] 유닛 추가 — (a) `InsaneFetcher()` → kwargs
+      `device_class=="mobile" & success_selectors is None`(기존 79행 어서션 유지·확장), (b)
+      `InsaneFetcher(device_class="desktop", success_selectors=["#main_pack"])` → kwargs 전파 어서션,
+      (c) `max_attempts`/`enable_phase0` 커스텀 전파. — 검증: `pytest tests/test_crawler/test_insane_fetcher.py --no-cov` green.
+- [ ] 4. 회귀 — `pytest tests/test_crawler --no-cov`(fallback/page_scraper/smoke 무변경) + `ruff check .` +
+      `pyright` 0. — 검증: 파일 300줄/함수 30줄 이내 유지(현 134줄 → +약 15줄).
+
+---
+
+## PR-S2 — SERP 팩토리 + 분석 트랙 라우팅 (통합검색/블로그탭 + 난이도)
+
+> 경계: 여기서 처음 분석 트랙 SERP 가 insane→brightdata 폴백으로 동작. ranking 은 아직 Bright Data.
+
+- [ ] 5. [`config/settings.py`] `crawler_serp_fetcher: str = Field(default=?, ...)` 추가(default 는 아래 권고절
+      확정 후). env `CRAWLER_SERP_FETCHER`. 주석: "분석 트랙 SERP(통합검색/블로그탭) + 난이도 SERP 라우팅.
+      'insane'=하이브리드 폴백, 'brightdata'=강제 단독(롤백 밸브). ranking 은 별도 `ranking_serp_fetcher`." —
+      검증: `settings.crawler_serp_fetcher` 로드.
+- [ ] 6. [`config/settings.py`] 기존 `crawler_body_fetcher` 주석의 "SERP 수집·keyword_difficulty·ranking 은
+      값과 무관하게 항상 Bright Data 다" 문구 갱신 — "SERP·난이도는 `crawler_serp_fetcher`, ranking 은
+      `ranking_serp_fetcher` 로 별도 라우팅" 로 정정. `bright_data_web_unlocker_zone` 설명 유지(SERP 폴백 공용). —
+      검증: 주석이 코드와 정합.
+- [ ] 7. [`config/.env.example`] `CRAWLER_SERP_FETCHER` 예시 추가(동기화). — 검증: 키 존재.
+- [ ] 8. [`application/stage_runner.py`] `_SERP_SUCCESS_SELECTOR = "#main_pack"` 상수 + `build_serp_fetcher()
+      -> HtmlFetcher` 신규 — 토글 insane 시 `FallbackFetcher(InsaneFetcher(device_class="desktop",
+      success_selectors=[_SERP_SUCCESS_SELECTOR]), _build_brightdata_client())`, 그 외 `_build_brightdata_client()`.
+      insane import 는 브랜치 내 지연 로드(brightdata 강제 시 vendor 미로드, `_build_body_fetcher` 패턴 미러). —
+      검증: 함수 30줄 이내, public(cross-import 대상).
+- [ ] 9. [`stage_runner.py`] `run_stage_serp_collection` — `client: BrightDataClient | None` →
+      `HtmlFetcher | None` 타입 완화, 기본 생성 `_build_brightdata_client()` → `build_serp_fetcher()`.
+      `collect_serp(keyword, client)` 는 이미 HtmlFetcher 계약 → 무변경. owned_client close 로직 유지
+      (FallbackFetcher.close 가 양쪽 위임). — 검증: 기존 테스트의 fake client 주입 무영향(구조적 타이핑).
+- [ ] 10. [`application/keyword_difficulty_orchestrator.py`] `_build_client()` 반환을 `build_serp_fetcher()`
+      로 교체(반환 타입 `HtmlFetcher`). `analyze_keyword(client: BrightDataClient | None)` →
+      `HtmlFetcher | None` 완화. `batch_analyze_keywords` 의 `cli=_build_client()` 재사용 경로 무변경
+      (동일 인스턴스 12 worker 공유 → insane module-level 세마포어가 동시성 3 으로 게이트, 아래 위험 참조). —
+      검증: `cli.fetch(url)`(ThreadPool `run_in_isolated_usage_ctx`) 계약 유지, SERP 캐시(`get_cached`) 경로 무변경.
+- [ ] 11. [`tests/test_application/`] SERP 팩토리 라우팅 유닛 — (a) `crawler_serp_fetcher="insane"` →
+      `FallbackFetcher`(primary=InsaneFetcher desktop+`#main_pack`, fallback=BrightDataClient), (b) `"brightdata"` →
+      `BrightDataClient`, (c) insane 인스턴스의 device_class/success_selectors 어서션. — 검증:
+      `pytest tests/test_application --no-cov` green.
+- [ ] 12. [`domain/crawler/CLAUDE.md`] 규칙1 "SERP·keyword_difficulty·ranking 은 여전히 Bright Data 단독" →
+      "SERP(통합검색/블로그탭)·keyword_difficulty 는 `crawler_serp_fetcher` 하이브리드(기본 insane+Bright Data
+      폴백), ranking 은 별도 토글" 로 갱신. `serp_collector.py` 파일 책임의 "(Bright Data 유지)" 문구 정정.
+      금지 절 "SERP/ranking/keyword_difficulty 는 Bright Data" 재서술(ranking 만 잔여). — 검증: 문서가 코드와 정합.
+- [ ] 13. 회귀 — `pytest tests/test_crawler tests/test_application --no-cov` + `ruff check .` + `pyright` 0 +
+      `bash .claude/hooks/architecture-check.sh`(domain→vendor 미검사 PASS). — 검증: 단일 흐름/난이도 회귀 무변경.
+
+> 🔴 SPEC 갱신(§3 [1]): 분석 트랙 SERP 가 코드상 하이브리드로 동작하는 순간 SPEC 서술과 과도기 불일치가
+> 생긴다. **본문 트랙 PR4 가 §3 [2] 를 "사용자 승인됨"으로 갱신한 선례** 존재. 본 PR 도 §3 [1] SERP 수집 서술을
+> "SERP fetcher 는 HtmlFetcher 추상화, 기본 insane + Bright Data 폴백(`success_selectors=["#main_pack"]`)" 로
+> 갱신해야 정합. **planner 는 SPEC 을 단독 수정하지 않는다 — 사용자 승인 후 step 으로 편입**(→ 아래 "결정 필요").
+
+---
+
+## PR-S3 — 순위추적 cron 라우팅 (신중, 위험 비대칭)
+
+> 경계: ranking 은 매일 cron 대량 호출 → 비용 절감 효과 최대, 단일 IP 대량 위험도 최대. 실측 30건 상한.
+> **분석 트랙(PR-S2) 운영 관측 후 착수** 권고.
+
+- [ ] 14. [🟡 선행 실측] ranking 대량 적용 전 **더 높은 부하 임계 확인** — 단일 IP 로 `build_main_search_url`
+      SERP 를 100+ 연속 fetch 스모크(scratchpad 스크립트)로 strong_ok 유지·차단 신호 부재 확인. 30→100+ 확장
+      실측 없이 ranking insane 기본 활성 금지. — 검증: 연속 100건 strong_ok 로그 + 차단 마커 0.
+- [ ] 15. [`config/settings.py`] `ranking_serp_fetcher: str = Field(default="brightdata", ...)` 추가(env
+      `RANKING_SERP_FETCHER`). 주석: "순위추적 cron SERP 라우팅. 매일 대량 호출 위험으로 default 보수
+      (brightdata). step14 부하 실측 통과 후 env 로 insane 전환." — 검증: 로드 + default brightdata.
+- [ ] 16. [`application/ranking_orchestrator.py`] `check_rankings_for_publication` 의 `BrightDataClient(api_key=,
+      zone=)` 직접 인스턴스화(437행)를 `from application.stage_runner import build_serp_fetcher` →
+      `build_serp_fetcher(settings.ranking_serp_fetcher)` 로 교체(팩토리에 토글 인자 오버로드 or 전용 분기).
+      **ranking 도메인 격리 유지**: ranking_orchestrator(application)만 팩토리 참조, `domain/ranking` 은 무변경.
+      `reset_usage`/`collect_usage`/`client.close()` finally 블록 유지(FallbackFetcher.close 양쪽 위임). —
+      검증: `check_rankings_for_publication` usage 수확·top10·진단·visibility 재산출 경로 무변경.
+- [ ] 17. [`build_serp_fetcher`] 시그니처 확장 — `build_serp_fetcher(mode: str | None = None)`, None 이면
+      `settings.crawler_serp_fetcher`. ranking 은 `settings.ranking_serp_fetcher` 명시 주입. (분석/ranking 이
+      단일 팩토리·상이 토글 공유하되 매직 문자열 판정은 동일 `_BODY_FETCHER_*` 재사용.) — 검증: 두 토글 독립 동작.
+- [ ] 18. [`tests/test_application/`] ranking 라우팅 유닛 — `ranking_serp_fetcher` insane/brightdata 분기 +
+      `check_rankings_for_publication` 이 팩토리 경유(BrightDataClient 직접 인스턴스화 부재) 어서션(monkeypatch). —
+      검증: `pytest tests/test_application --no-cov` green.
+- [ ] 19. [`domain/crawler/CLAUDE.md`] ranking 잔여 문구 최종 갱신 — "ranking 도 `ranking_serp_fetcher`
+      하이브리드(default 보수 brightdata)". PR-S2 에서 남긴 "ranking 만 잔여" 해소. — 검증: 문서 정합.
+- [ ] 20. 회귀 — `pytest tests/test_application tests/test_ranking --no-cov` + `ruff check .` + `pyright` 0. —
+      검증: ranking 격리(DI) 위반 0, 단일 흐름 무변경.
+
+---
+
+## PR-S4 — lessons 기록 + 최종 게이트
+
+- [ ] 21. [`tasks/lessons.md`] 결정 기록 — (1) "SERP 3종 insane 우회 관건 = `success_selectors=['#main_pack']`
+      (부정합 selector 는 정상 HTML 도 challenge 강등 → 폴백)", (2) "분석 SERP 30건 무차단 실측·ranking 은
+      100+ 실측 후 전환", (3) "insane module-level 세마포어(3)가 difficulty batch parallel(12)을 3 동시로 게이트". —
+      검증: lessons 항목 존재.
+- [ ] 22. 최종 — `bash .claude/hooks/build-check.sh`(커버리지 게이트 한 번). — 검증: 전체 green.
+
+---
+
+## 🔴 default 토글 권고 (사용자 결정 필요)
+
+실측이 강하나(분석 SERP 30/30 무차단 + 파서 일치) **ranking 대량 임계는 30건까지만** 측정됨. 위험 비대칭
+(분석=on-demand 소량 / ranking=매일 cron 대량)을 반영해 **트랙별 상이 default** 를 권고한다.
+
+| 토글 | 대상 | 권고 default | 사유 |
+|---|---|---|---|
+| `crawler_serp_fetcher` | 분석 SERP + 난이도 | **`insane`(공격적)** | on-demand·소량, 실측 강함(6/6 URL 일치·30/30 무차단), 롤백=env 즉시 |
+| `ranking_serp_fetcher` | 순위추적 cron | **`brightdata`(보수)** | 매일 대량, 30건 초과 임계 미측정. step14 100+ 실측 통과 후 env 로 insane 전환 |
+
+- **대안(더 보수)**: 단일 토글 `crawler_serp_fetcher` default `brightdata` + 관측 후 일괄 flip. 장점=표면 최소,
+  단점=분석 트랙의 강한 실측 근거를 초기부터 활용 못 함. → 두 토글안(권고)이 위험 대비 이득 균형이 낫다고 판단.
+- **어느 안이든 롤백 밸브(env 즉시 brightdata 강제) 필수** — 코드 변경 0 으로 되돌린다.
+
+## ⚠️ 위험 요소 (Risk Register — SERP 확장)
+
+- **RS-1 (ranking 대량 단일 IP, 최고 위험)**: 매일 cron 이 전 publication SERP 를 단일 IP insane 으로 대량
+  fetch → 30건 초과 임계 미측정. → 완화: `ranking_serp_fetcher` default `brightdata` + step14 100+ 실측 게이트 +
+  실측 통과 후에만 env 전환. selector 부정합/차단 시 자동 Bright Data 폴백(무손실).
+- **RS-2 (difficulty batch 동시성 캡)**: `keyword_difficulty_batch_parallel=12` worker 가 단일 insane
+  module-level 세마포어(`insane_concurrent_limit=3`)를 공유 → 실효 동시성 3 으로 게이트, batch 처리량 저하 가능.
+  → 완화(권고): **저하 수용 + 관측**(단일 IP 보호 관점에선 오히려 안전). 필요 시 `insane_concurrent_limit`
+  신중 상향 or difficulty 만 brightdata 유지. 선행 최적화 금지(YAGNI).
+- **RS-3 (selector 부정합 → 100% 폴백)**: `#main_pack` 이 네이버 UI 개편으로 사라지면 전 SERP 가 challenge →
+  전량 Bright Data 폴백(비용 원복, 무손실·무장애). → 완화: 폴백률을 `provider=insane vs brightdata + stage`
+  usage 분포로 상시 관측. 급증 시 selector 재확인. 착수 시 3종 selector 1회 재검(선행 조건).
+- **RS-4 (content sanity 오탐)**: SERP HTML 이 block 마커(`captcha` 등) 리터럴 포함 시 `_content_is_sane`
+  거절 → 과도 폴백(안전하나 유료). → 실측상 정상 SERP 는 strong_ok+파서 일치로 통과 확인. 데스크톱 SERP 도
+  동일 경로 실측됨. 잔여 위험 낮음, 폴백률 관측으로 커버.
+- **RS-5 (SPEC 과도기 불일치)**: 분석 SERP 가 코드상 하이브리드로 도는 순간 SPEC §3 [1] 서술과 불일치. →
+  완화: PR-S2 에 SPEC 갱신 step 편입(단 **사용자 승인 후**). 본문 트랙 §3 [2] 선례 준수.
+- **RS-6 (cross-import 명명)**: `build_serp_fetcher` 를 difficulty/ranking orchestrator 가 stage_runner 에서
+  import → application↔application 허용이나 stage_runner 가 의존 허브화. → 완화: public 함수로 명시 노출(private
+  `_` 아님). 리뷰어가 선호 시 `application/serp_fetcher_factory.py` 분리 가능(1-함수라 기본은 stage_runner 유지).
+
+## 🔴 결정 필요 (착수 전 사용자 확인)
+
+1. **default 토글** — 위 권고표(분석=insane / ranking=brightdata) 채택 vs 단일 토글 보수안?
+2. **SPEC §3 [1] 갱신** — planner 는 SPEC 단독 수정 불가. 본문 §3 [2] 선례대로 이번에도 갱신 승인?
+3. **PR-S3 착수 시점** — 분석 트랙(PR-S2) 운영 관측(폴백률·차단신호) N일 후 vs 즉시?
+
+## 검증 순서 (반복)
+
+```
+pytest tests/test_crawler/test_insane_fetcher.py --no-cov   # 파라미터 전파 + default 무변경
+pytest tests/test_crawler --no-cov                          # fallback/page_scraper/serp 회귀
+pytest tests/test_application --no-cov                       # SERP/ranking 팩토리 라우팅 + 단일 흐름 회귀
+pytest tests/test_ranking --no-cov                           # ranking 격리·측정 경로 회귀 (PR-S3)
+ruff check . && pyright                                       # 린트/타입 0
+bash .claude/hooks/architecture-check.sh                      # domain→vendor 미검사 PASS
+bash .claude/hooks/build-check.sh                             # 최종 커버리지 게이트 (한 번만)
+```
+
+## PR 분할 요약 (SERP 확장)
+
+1. **PR-S1** InsaneFetcher 파라미터화(4파라미터, default 무변경) + 유닛 (순수 리팩터, 라우팅 미연결)
+2. **PR-S2** `build_serp_fetcher()` + `#main_pack` 상수 + `crawler_serp_fetcher` 토글 + 분석 SERP·난이도 라우팅
+   + 거버넌스(crawler CLAUDE.md) + 🔴 SPEC §3 [1] 갱신(승인 후) + 유닛
+3. **PR-S3** ranking 라우팅 + `ranking_serp_fetcher`(default 보수) + 🟡 100+ 부하 실측 게이트 + 격리 유지 + 유닛
+4. **PR-S4** lessons 기록 + 최종 전체 게이트

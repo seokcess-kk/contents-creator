@@ -110,9 +110,14 @@ def _build_brightdata_client() -> BrightDataClient:
     )
 
 
-# 본문 fetcher 라우팅 토글 값 (settings.crawler_body_fetcher). 매직 문자열 승격.
+# 본문/SERP fetcher 라우팅 토글 값 (settings.crawler_body_fetcher / crawler_serp_fetcher).
+# 매직 문자열 승격. 두 토글이 동일 판정 문자열을 공유한다.
 _BODY_FETCHER_INSANE = "insane"
 _BODY_FETCHER_BRIGHTDATA = "brightdata"
+
+# SERP 성공판정 셀렉터 — 통합검색/블로그탭/난이도 3종 SERP 공통 안정 컨테이너(각 1개 존재).
+# insane 에 이 selector 를 주면 challenge → strong_ok 로 우회(실측). 부정합 시 폴백(무손실).
+_SERP_SUCCESS_SELECTOR = "#main_pack"
 
 
 def _build_body_fetcher() -> HtmlFetcher:
@@ -135,6 +140,30 @@ def _build_body_fetcher() -> HtmlFetcher:
     return _build_brightdata_client()
 
 
+def _build_serp_fetcher() -> HtmlFetcher:
+    """SERP([1]) + 난이도 SERP 전용 fetcher 를 settings 토글에 따라 생성한다.
+
+    - `crawler_serp_fetcher == "insane"`: `FallbackFetcher(InsaneFetcher(desktop,
+      #main_pack), BrightDataClient)` — SERP 를 insane(curl-only, cost=0)로 우선 수집
+      (desktop UA + `#main_pack` 성공판정), selector 부정합/challenge 시 Bright Data 로
+      자동 폴백(무손실).
+    - 그 외("brightdata"): `BrightDataClient` 단독 — 롤백 밸브(env 로 즉시 전환).
+
+    `_build_body_fetcher` 와 동일 구조(insane 계열 지연 import). keyword_difficulty_
+    orchestrator 가 cross-import 해 난이도 SERP 라우팅에도 재사용한다
+    (selector/토글 단일 출처). ranking 은 아직 Bright Data(PR-S3 예정)이라 미사용.
+    """
+    if settings.crawler_serp_fetcher == _BODY_FETCHER_INSANE:
+        from domain.crawler.fallback_fetcher import FallbackFetcher
+        from domain.crawler.insane_fetcher import InsaneFetcher
+
+        return FallbackFetcher(
+            InsaneFetcher(device_class="desktop", success_selectors=[_SERP_SUCCESS_SELECTOR]),
+            _build_brightdata_client(),
+        )
+    return _build_brightdata_client()
+
+
 # ── [1] SERP 수집 ──
 
 
@@ -142,18 +171,20 @@ def run_stage_serp_collection(
     keyword: str,
     output_dir: Path,
     reporter: ProgressReporter,
-    client: BrightDataClient | None = None,
+    client: HtmlFetcher | None = None,
 ) -> SerpResults:
     """[1] 네이버 블로그 SERP 수집.
 
+    SERP fetcher 는 `_build_serp_fetcher()` 가 settings 토글(`crawler_serp_fetcher`)에
+    따라 결정한다 (기본 insane desktop + `#main_pack` + Bright Data 폴백). `client` 를
+    주입하면 토글을 무시하고 그대로 사용한다 (테스트 주입).
     `output_dir/analysis/serp-results.json` 에 결과를 저장한다.
-    `client` 가 None 이면 config 에서 기본 클라이언트를 생성 (테스트 주입 가능).
     """
     reporter.stage_start("serp_collection")
 
     owned_client = client is None
     if client is None:
-        client = _build_brightdata_client()
+        client = _build_serp_fetcher()
 
     try:
         results = collect_serp(keyword, client)

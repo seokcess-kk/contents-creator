@@ -71,7 +71,27 @@ class InsaneFetchError(BrightDataTransientError):
 
 
 class InsaneFetcher:
-    """vendor insane-search(curl_cffi) 어댑터. HtmlFetcher 4종 구현."""
+    """vendor insane-search(curl_cffi) 어댑터. HtmlFetcher 4종 구현.
+
+    본문·SERP 공용. 생성자 파라미터(device_class/success_selectors/enable_phase0/
+    max_attempts)로 트랙별 튜닝을 주입한다. default 는 본문 전용 하드코딩 값과 동일하므로
+    `InsaneFetcher()` 호출은 기존 본문 동작을 그대로 유지한다.
+    `enable_playwright`/`enable_learning` 은 파라미터화하지 않고 항상 False 로 고정한다
+    (curl-only 격리 + Playwright 영구 금지 + 홈디렉터리 파일쓰기 차단).
+    """
+
+    def __init__(
+        self,
+        *,
+        device_class: str = "mobile",
+        success_selectors: list[str] | None = None,
+        enable_phase0: bool = True,
+        max_attempts: int = _VENDOR_MAX_ATTEMPTS,
+    ) -> None:
+        self._device_class = device_class
+        self._success_selectors = success_selectors
+        self._enable_phase0 = enable_phase0
+        self._max_attempts = max_attempts
 
     def fetch(self, url: str) -> str:
         """url 을 insane 로 fetch 해 raw HTML 반환. 실패 시 InsaneFetchError raise."""
@@ -88,17 +108,17 @@ class InsaneFetcher:
             result = self._call_vendor(url)
         return self._accept(result, url)
 
-    @staticmethod
-    def _call_vendor(url: str) -> FetchResult:
+    def _call_vendor(self, url: str) -> FetchResult:
         """curl-only 규약으로 vendor fetch 호출. 내부 예외는 전이성 실패로 변환."""
         try:
             return vendor_fetch(
                 url,
-                device_class="mobile",
-                enable_playwright=False,
-                enable_learning=False,
-                enable_phase0=True,
-                max_attempts=_VENDOR_MAX_ATTEMPTS,
+                device_class=self._device_class,
+                success_selectors=self._success_selectors,
+                enable_playwright=False,  # 하드코딩 유지 (curl-only, Playwright 영구 금지)
+                enable_learning=False,  # 하드코딩 유지 (홈디렉터리 파일쓰기 차단)
+                enable_phase0=self._enable_phase0,
+                max_attempts=self._max_attempts,
                 timeout=settings.insane_timeout_seconds,
             )
         except Exception as exc:  # vendor 내부 예외 방어 → 폴백 유도 (전이성)

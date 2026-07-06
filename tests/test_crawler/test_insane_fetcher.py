@@ -81,6 +81,38 @@ def test_ok_true_passes_curl_only_kwargs(monkeypatch: pytest.MonkeyPatch) -> Non
     assert kwargs["enable_learning"] is False
 
 
+def test_default_ctor_passes_body_hardcoded_kwargs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """default InsaneFetcher() = 본문 하드코딩(mobile + selector None + phase0 + max=3) 무변경."""
+    calls = _install(monkeypatch, _result(ok=True, verdict="strong_ok", content=_LONG))
+    InsaneFetcher().fetch(_URL)
+    kwargs = calls["kwargs"]
+    assert kwargs["device_class"] == "mobile"
+    assert kwargs["success_selectors"] is None
+    assert kwargs["enable_phase0"] is True
+    assert kwargs["max_attempts"] == insf._VENDOR_MAX_ATTEMPTS
+
+
+def test_serp_ctor_passes_desktop_and_success_selectors(monkeypatch: pytest.MonkeyPatch) -> None:
+    """SERP 튜닝 인스턴스가 desktop + success_selectors 를 vendor_fetch 로 전파."""
+    calls = _install(monkeypatch, _result(ok=True, verdict="strong_ok", content=_LONG))
+    InsaneFetcher(device_class="desktop", success_selectors=["#main_pack"]).fetch(_URL)
+    kwargs = calls["kwargs"]
+    assert kwargs["device_class"] == "desktop"
+    assert kwargs["success_selectors"] == ["#main_pack"]
+    # curl-only 격리는 파라미터화 무관하게 항상 고정
+    assert kwargs["enable_playwright"] is False
+    assert kwargs["enable_learning"] is False
+
+
+def test_custom_phase0_and_max_attempts_propagate(monkeypatch: pytest.MonkeyPatch) -> None:
+    """enable_phase0/max_attempts 커스텀 값이 vendor_fetch 로 전파."""
+    calls = _install(monkeypatch, _result(ok=True, verdict="strong_ok", content=_LONG))
+    InsaneFetcher(enable_phase0=False, max_attempts=5).fetch(_URL)
+    kwargs = calls["kwargs"]
+    assert kwargs["enable_phase0"] is False
+    assert kwargs["max_attempts"] == 5
+
+
 @pytest.mark.parametrize(
     "verdict",
     ["challenge", "blocked", "not_found", "auth_required", "rate_limited"],
