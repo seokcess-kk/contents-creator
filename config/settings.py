@@ -167,8 +167,8 @@ class Settings(BaseSettings):
     # 본문 수집 경로 라우팅 토글 (PR4). "insane" = 하이브리드(본문 insane + Bright Data
     # 폴백), "brightdata" = Bright Data 강제 단독(롤백 밸브 — 코드 변경 없이 env 로 즉시
     # 전환). ⚠️ 이 토글은 본문([2] page_scraping) 경로에만 적용된다. SERP 수집·
-    # keyword_difficulty 는 `crawler_serp_fetcher` 로 별도 라우팅한다.
-    # ranking 은 아직 Bright Data(PR-S3 에서 확장 예정).
+    # keyword_difficulty 는 `crawler_serp_fetcher`, ranking(cron)은 `ranking_serp_fetcher`
+    # 로 각각 별도 라우팅한다.
     crawler_body_fetcher: str = Field(
         default="insane",
         description='본문 fetcher. "insane"=하이브리드 폴백, "brightdata"=Bright Data 강제',
@@ -177,11 +177,21 @@ class Settings(BaseSettings):
     # keyword_difficulty 난이도 SERP 에 적용. "insane" = 하이브리드(SERP insane
     # desktop+`#main_pack` 성공판정 우선 + Bright Data 폴백), "brightdata" = Bright
     # Data 강제 단독(롤백 밸브 — 코드 변경 없이 env 로 즉시 전환). default insane —
-    # 분석 SERP 는 on-demand·소량이라 실측이 강함(6/6 URL 일치·30/30 무차단). ranking 은
-    # 아직 Bright Data(PR-S3 에서 별도 `ranking_serp_fetcher` 로 확장 예정).
+    # 분석 SERP 는 on-demand·소량이라 실측이 강함(6/6 URL 일치·30/30 무차단). ranking(cron)은
+    # 별도 토글 `ranking_serp_fetcher` 로 라우팅한다(독립 롤백).
     crawler_serp_fetcher: str = Field(
         default="insane",
         description='SERP·난이도 fetcher. "insane"=하이브리드 폴백, "brightdata"=Bright Data 강제',
+    )
+    # 순위추적 cron SERP 라우팅 토글 (PR-S3). `check_rankings_for_publication` 의
+    # 통합검색 SERP fetch 에 적용. `crawler_serp_fetcher` 와 **독립** — ranking cron 은
+    # 매일 대량 호출이라 분석 트랙과 별개로 즉시 롤백할 수 있어야 한다. "insane" =
+    # 하이브리드(SERP insane desktop+`#main_pack` 우선 + Bright Data 폴백), "brightdata" =
+    # Bright Data 강제 단독(롤백 밸브). default insane — ranking 실제 패턴(매 요청 close)으로
+    # 단일 IP 130건 무차단·100% strong_ok 실측. selector 부정합/challenge 시 자동 폴백(무손실).
+    ranking_serp_fetcher: str = Field(
+        default="insane",
+        description='순위추적 cron SERP fetcher. "insane"=하이브리드 폴백, "brightdata"=Bright Data 강제',
     )
     # insane_concurrent_limit 은 domain/crawler/insane_fetcher.py 의 module-level
     # BoundedSemaphore 가 실제 소비(no-op 아님). 단일 IP 라 보수적 default 3.

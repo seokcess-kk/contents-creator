@@ -12,7 +12,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import quote
 
-from application.stage_runner import _build_serp_fetcher
+from application.stage_runner import build_serp_fetcher
 from application.usage_tracker import save_usage_to_supabase
 from config.settings import settings
 from domain.common.usage import collect_usage, record_usage, reset_usage, run_in_isolated_usage_ctx
@@ -44,10 +44,10 @@ def _build_client() -> HtmlFetcher:
     """난이도 SERP fetcher 를 생성한다. `crawler_serp_fetcher` 토글에 따라 insane
     하이브리드(desktop+`#main_pack` 우선 + Bright Data 폴백) 또는 Bright Data 단독.
 
-    stage_runner._build_serp_fetcher 를 재사용해 selector/토글을 단일 출처로 유지한다
+    stage_runner.build_serp_fetcher 를 재사용해 selector/토글 판정을 단일 출처로 유지한다
     (application↔application import — application/CLAUDE.md 상 허용).
     """
-    return _build_serp_fetcher()
+    return build_serp_fetcher(settings.crawler_serp_fetcher)
 
 
 def _safe_get_volume(keyword: str) -> SearchVolume | None:

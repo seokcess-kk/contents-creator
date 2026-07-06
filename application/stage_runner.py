@@ -140,20 +140,21 @@ def _build_body_fetcher() -> HtmlFetcher:
     return _build_brightdata_client()
 
 
-def _build_serp_fetcher() -> HtmlFetcher:
-    """SERP([1]) + 난이도 SERP 전용 fetcher 를 settings 토글에 따라 생성한다.
+def build_serp_fetcher(fetcher_choice: str) -> HtmlFetcher:
+    """SERP 전용 fetcher 를 토글 값(`fetcher_choice`)에 따라 생성한다 (public 팩토리).
 
-    - `crawler_serp_fetcher == "insane"`: `FallbackFetcher(InsaneFetcher(desktop,
+    - `fetcher_choice == "insane"`: `FallbackFetcher(InsaneFetcher(desktop,
       #main_pack), BrightDataClient)` — SERP 를 insane(curl-only, cost=0)로 우선 수집
       (desktop UA + `#main_pack` 성공판정), selector 부정합/challenge 시 Bright Data 로
       자동 폴백(무손실).
     - 그 외("brightdata"): `BrightDataClient` 단독 — 롤백 밸브(env 로 즉시 전환).
 
-    `_build_body_fetcher` 와 동일 구조(insane 계열 지연 import). keyword_difficulty_
-    orchestrator 가 cross-import 해 난이도 SERP 라우팅에도 재사용한다
-    (selector/토글 단일 출처). ranking 은 아직 Bright Data(PR-S3 예정)이라 미사용.
+    토글 값을 **인자로 받아** 트랙별 상이 토글(분석 `crawler_serp_fetcher` / ranking
+    `ranking_serp_fetcher`)을 단일 팩토리로 라우팅한다. `_build_body_fetcher` 와 동일
+    구조(insane 계열 지연 import). `keyword_difficulty_orchestrator` 와 `ranking_
+    orchestrator` 가 cross-import 해 재사용한다(selector/토글 판정 단일 출처).
     """
-    if settings.crawler_serp_fetcher == _BODY_FETCHER_INSANE:
+    if fetcher_choice == _BODY_FETCHER_INSANE:
         from domain.crawler.fallback_fetcher import FallbackFetcher
         from domain.crawler.insane_fetcher import InsaneFetcher
 
@@ -175,16 +176,16 @@ def run_stage_serp_collection(
 ) -> SerpResults:
     """[1] 네이버 블로그 SERP 수집.
 
-    SERP fetcher 는 `_build_serp_fetcher()` 가 settings 토글(`crawler_serp_fetcher`)에
-    따라 결정한다 (기본 insane desktop + `#main_pack` + Bright Data 폴백). `client` 를
-    주입하면 토글을 무시하고 그대로 사용한다 (테스트 주입).
+    SERP fetcher 는 `build_serp_fetcher(settings.crawler_serp_fetcher)` 가 분석 트랙
+    토글에 따라 결정한다 (기본 insane desktop + `#main_pack` + Bright Data 폴백). `client`
+    를 주입하면 토글을 무시하고 그대로 사용한다 (테스트 주입).
     `output_dir/analysis/serp-results.json` 에 결과를 저장한다.
     """
     reporter.stage_start("serp_collection")
 
     owned_client = client is None
     if client is None:
-        client = _build_serp_fetcher()
+        client = build_serp_fetcher(settings.crawler_serp_fetcher)
 
     try:
         results = collect_serp(keyword, client)

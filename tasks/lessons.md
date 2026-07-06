@@ -33,6 +33,7 @@
 - [DataTableShell 모바일 자동 변환 + vitest 텍스트 매칭 충돌](#datatableshell-모바일-자동-변환--vitest-텍스트-매칭-충돌--polish-p2-2026-05-06) — 2026-05-06
 
 ### Domain / Architecture
+- [insane-search 어댑터 sanity 버그 + ranking 확장](#insane-search-어댑터-sanity-버그--ranking-확장-2026-07-06) — 2026-07-06
 - [insane-search SERP 확장 — 통합검색/블로그탭/난이도 하이브리드](#insane-search-serp-확장--통합검색블로그탭난이도-하이브리드-2026-07-06) — 2026-07-06
 - [insane-search 하이브리드 본문 fetcher 통합](#insane-search-하이브리드-본문-fetcher-통합-2026-07-06) — 2026-07-06
 - [도메인 격리 유지 + DI 패턴 — `csv_parser.blog_resolver`](#도메인-격리-유지--di-패턴--csv_parserblog_resolver-2026-05-07) — 2026-05-07
@@ -955,4 +956,47 @@ Bright Data(Web Unlocker, 유료) 비용 절감을 위해 오픈소스 insane-se
 - `application/keyword_difficulty_orchestrator.py:_build_client`(stage_runner cross-import 재사용)
 - `config/settings.py:crawler_serp_fetcher`(default insane), `config/.env.example`(CRAWLER_SERP_FETCHER)
 - `tests/test_crawler/test_insane_fetcher.py`(생성자 파라미터화 3종), `tests/test_application/test_stage_runner.py:TestSerpFetcherRouting`, `tests/test_application/test_keyword_difficulty_orchestrator.py:TestBuildClientRouting`
+
+## insane-search 어댑터 sanity 버그 + ranking 확장 (2026-07-06)
+
+SERP 확장([INSANE-6~9]) 착지 후, ranking 부하 실측 진단 중 **어댑터 잠복 버그 1건**을 발견·수정하고, 그 실측을 근거로 [INSANE-9] 가 게이트로 보류했던 **ranking 트랙까지 insane 을 확장**했다. 핵심 의사결정 2건:
+
+### [INSANE-10] 어댑터 content sanity 의 captcha false positive → strong_ok 우회
+
+**발견**: ranking 부하 실측 진단에서 `adapter_content_sane=0/130` (어댑터 sanity 전량 실패). 원인 추적 결과 — 정상 네이버 SERP(통합검색/블로그탭/난이도)가 `captcha.nid.naver.com` config 스크립트를 **페이지당 8회씩 임베드**해 `"captcha"` 문자열이 항상 존재. 실제 차단 문구(`자동등록방지`)는 0건. `InsaneFetcher._content_is_sane` 의 `_BLOCK_MARKERS` 에 bare `"captcha"` 가 있어 정상 SERP 를 **100% reject** → `strong_ok`(`#main_pack` positive proof)여도 `InsaneFetchError` → **항상 Bright Data 폴백**(insane 이득 0).
+
+**핵심 함정 — 무손실 폴백이 버그를 은폐**: 폴백이 Bright Data 로 정상 수집하므로 URL 일치·수집 건수는 모두 정상. **동작은 정상, 비용절감만 0** 이라 결과 검증으로는 버그가 표면에 안 드러난다. 실측 진단(어댑터 sanity 를 지표로 미러링)이 아니었으면 못 잡았을 잠복 버그.
+
+**수정**: `_accept` 가 `verdict == "strong_ok"`(vendor Layer 5 가 우리 success_selector `#main_pack` 매칭을 확인한 강한 positive proof)이면 content sanity 재검을 **스킵**. `_content_is_sane`/`_BLOCK_MARKERS` 자체는 **유지** — 본문 경로는 selector 없는 `weak_ok` 휴리스틱이라 sanity 2차 방어가 여전히 필요하고, 본문 HTML 에는 captcha config 임베드가 없어 무영향.
+
+**일반화 규칙**:
+- **success_selector positive proof 는 우리 소프트마커 재검보다 강한 신호** — vendor 가 우리 지정 셀렉터 매칭을 확인했으면(strong_ok) 우리 쪽 문자열 휴리스틱(`"captcha"` 포함 여부)으로 2차 부정하지 말 것. 강한 positive proof 가 약한 heuristic 을 이긴다. 단, proof 가 약한(weak_ok) 경로에서는 소프트마커 2차 방어를 유지.
+- **소프트 blocklist 마커는 대상 페이지의 정상 임베드와 충돌할 수 있다** — bare `"captcha"` 는 네이버가 정상 SERP 에 captcha config 를 임베드하는 순간 false positive. 마커는 실제 차단 문구(`자동등록방지`)처럼 대상 특이적으로 좁혀야 오탐이 없다.
+- **무손실 폴백은 비용 버그를 은폐한다** — 폴백이 결과를 살리면 "동작 정상 / 비용만 0" 버그는 결과 검증으론 안 보인다. 비용 경로(어댑터 채택률 = adapter sanity)를 별도 실측 지표로 미러링해야 잡힌다.
+
+### [INSANE-11] ranking cron SERP 단일 IP 대량 부하 — 130건 실측으로 게이트 통과
+
+**배경**: [INSANE-9] 는 ranking(매일 cron 대량)을 "단일 IP 30건까지만 실측 → 100+ 미검증" 이라 보류(PR-S3)했다. 이번에 그 게이트를 **130건 순차 부하 실측**으로 통과시켰다.
+
+**실측 설계·결과**:
+- **A(세션 재사용)** / **B(매 요청 `POOL.reset()` = 실제 ranking 이 `client.close()` 하는 패턴)** 각 130건 순차, `sleep = ranking_check_sleep_seconds = 1s`.
+- **양 시나리오 130/130 무차단 100% strong_ok**, `executed_attempts ≥ 2 = 0`(전부 1회 성공). 오늘 단일 IP 누적 ~410 요청에도 감쇠 0.
+- A/B latency 거의 동일 → **매 요청 close 하는 실제 ranking 패턴도 안전**. 세션 재사용 최적화는 불필요(과잉).
+
+**결정**: `ranking_serp_fetcher` 토글 신설, default **insane**. **분석 트랙 `crawler_serp_fetcher` 와 독립 토글** — cron 대량 경로를 분석과 별개로 즉시 롤백 가능. `build_serp_fetcher(fetcher_choice)` 파라미터화로 분석(`crawler_serp_fetcher`)/ranking(`ranking_serp_fetcher`)이 각자 토글을 참조(팩토리는 단일 출처 유지, 인자로 트랙 분기).
+
+**한계·안전망**:
+- **130건까지만 실측** — 그 이상 임계는 미측정. IP 로테이션 부재([INSANE-2])는 그대로라, 임계 초과 차단이 발생해도 `FallbackFetcher → Bright Data` 폴백이 유일하지만 무손실 안전망.
+- 즉 채택은 "130건 실측 + 무손실 폴백" 위에 선다. 임계 초과 차단이 나도 결과 손실 0.
+
+**일반화 규칙**:
+- **부하 게이트는 실제 운영 패턴(매 요청 close)까지 재현해 통과** — 세션 재사용(A)만 통과시키면 실제 cron 이 다르게 동작(B)할 때 무효. B(매 요청 `POOL.reset()`)까지 동일 결과여야 게이트 통과로 인정.
+- **트랙별 독립 토글로 부분 채택** — 같은 팩토리라도 `crawler_serp_fetcher`(분석) / `ranking_serp_fetcher`(cron)를 분리하면 한 트랙 차단이 다른 트랙으로 안 번지고 env 로 개별 롤백.
+- **실측 범위를 명문화하고 그 밖은 폴백에 위임** — "130건까지 무차단, 그 이상 미검증" 을 명시. 외삽하지 않고 폴백을 안전망으로 선언하는 게 정직한 채택.
+
+**참조**:
+- `domain/crawler/insane_fetcher.py:_accept`(strong_ok 시 sanity 스킵), `_STRONG_OK_VERDICT`, `_content_is_sane`/`_BLOCK_MARKERS`(유지 — 본문 weak_ok 2차 방어)
+- `application/stage_runner.py:build_serp_fetcher(fetcher_choice)`(파라미터화 public 팩토리)
+- `application/ranking_orchestrator.py:440`(`build_serp_fetcher(settings.ranking_serp_fetcher)`), `application/keyword_difficulty_orchestrator.py:50`(`crawler_serp_fetcher` 재사용)
+- `config/settings.py:ranking_serp_fetcher`(default insane, 독립 토글) / `crawler_serp_fetcher`, `ranking_check_sleep_seconds`
 

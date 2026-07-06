@@ -529,11 +529,12 @@ class TestBodyFetcherRouting:
 
 
 class TestSerpFetcherRouting:
-    """`_build_serp_fetcher()` 토글 분기 검증.
+    """`build_serp_fetcher(fetcher_choice)` 토글 분기 검증 (PR-S3 인자화).
 
-    분석 트랙 SERP([1]) + keyword_difficulty 난이도 SERP 가 `crawler_serp_fetcher` 토글로
-    라우팅된다. "insane" = FallbackFetcher(InsaneFetcher desktop+#main_pack → BrightDataClient),
-    "brightdata" = BrightDataClient 단독(롤백 밸브).
+    분석 트랙 SERP([1])·난이도 SERP 는 `crawler_serp_fetcher`, ranking cron 은
+    `ranking_serp_fetcher` 를 인자로 주입한다 — 단일 팩토리, 상이 토글. "insane" =
+    FallbackFetcher(InsaneFetcher desktop+#main_pack → BrightDataClient), "brightdata" =
+    BrightDataClient 단독(롤백 밸브).
     """
 
     def _stub_bright_data_keys(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -545,16 +546,14 @@ class TestSerpFetcherRouting:
     def test_insane_returns_fallback_with_tuned_insane_primary(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from application.stage_runner import _SERP_SUCCESS_SELECTOR, _build_serp_fetcher
-        from config.settings import settings
+        from application.stage_runner import _SERP_SUCCESS_SELECTOR, build_serp_fetcher
         from domain.crawler.brightdata_client import BrightDataClient
         from domain.crawler.fallback_fetcher import FallbackFetcher
         from domain.crawler.insane_fetcher import InsaneFetcher
 
         self._stub_bright_data_keys(monkeypatch)
-        monkeypatch.setattr(settings, "crawler_serp_fetcher", "insane")
 
-        fetcher = _build_serp_fetcher()
+        fetcher = build_serp_fetcher("insane")
         assert isinstance(fetcher, FallbackFetcher)
         # primary = InsaneFetcher (desktop + #main_pack 튜닝), fallback = BrightDataClient
         assert isinstance(fetcher._primary, InsaneFetcher)
@@ -564,12 +563,10 @@ class TestSerpFetcherRouting:
         assert _SERP_SUCCESS_SELECTOR == "#main_pack"
 
     def test_brightdata_returns_client(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from application.stage_runner import _build_serp_fetcher
-        from config.settings import settings
+        from application.stage_runner import build_serp_fetcher
         from domain.crawler.brightdata_client import BrightDataClient
 
         self._stub_bright_data_keys(monkeypatch)
-        monkeypatch.setattr(settings, "crawler_serp_fetcher", "brightdata")
 
-        fetcher = _build_serp_fetcher()
+        fetcher = build_serp_fetcher("brightdata")
         assert isinstance(fetcher, BrightDataClient)

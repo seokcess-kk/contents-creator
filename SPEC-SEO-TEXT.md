@@ -105,8 +105,8 @@ POST https://api.brightdata.com/request
 (`FallbackFetcher(InsaneFetcher, BrightDataClient)`). `crawler_body_fetcher="brightdata"`
 로 두면 Bright Data 단독으로 강제(롤백 밸브). ⚠️ 이 토글은 본문([2]) 경로 전용이다.
 SERP 수집([1])·keyword_difficulty 는 별도 토글 `crawler_serp_fetcher`(기본 insane
-하이브리드)로 라우팅되고, ranking 은 아직 Bright Data 단독(PR-S3 확장 예정)이다.
-폴백용으로 Bright Data 키는 여전히 필수.
+하이브리드)로, 순위추적 cron(SPEC-RANKING §[수집])은 `ranking_serp_fetcher`(기본 insane
+하이브리드, 분석 트랙과 독립 롤백)로 각각 라우팅된다. 폴백용으로 Bright Data 키는 여전히 필수.
 
 **정책:**
 - URL당 최대 2회 재시도 (exponential backoff: 2s → 5s)

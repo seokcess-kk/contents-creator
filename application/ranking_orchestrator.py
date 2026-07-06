@@ -15,10 +15,10 @@ import time
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
+from application.stage_runner import build_serp_fetcher
 from application.usage_tracker import save_usage_to_supabase
-from config.settings import require, settings
+from config.settings import settings
 from domain.common.usage import collect_usage, reset_usage
-from domain.crawler.brightdata_client import BrightDataClient
 from domain.crawler.serp_collector import build_main_search_url
 from domain.ranking import storage, tracker
 from domain.ranking.model import (
@@ -434,10 +434,10 @@ def check_rankings_for_publication(publication_id: str) -> RankingSnapshot:
     if publication.url is None:
         raise ValueError(f"publication.url 이 비어 있어 측정 불가 (draft 상태): {publication_id}")
 
-    client = BrightDataClient(
-        api_key=require("bright_data_api_key"),
-        zone=require("bright_data_web_unlocker_zone"),
-    )
+    # SERP fetcher 는 `build_serp_fetcher(settings.ranking_serp_fetcher)` 가 ranking 전용
+    # 토글에 따라 결정한다 (기본 insane desktop+`#main_pack` + Bright Data 폴백). insane
+    # 우선 수집 시 provider="insane" cost=0 으로 집계, challenge/부정합 시 Bright Data 폴백.
+    client = build_serp_fetcher(settings.ranking_serp_fetcher)
     # SERP fetch usage 를 격리 컨텍스트에서 수확 → Supabase api_usage 저장.
     # ThreadPool/스케줄러 호출에서도 부모 컨텍스트와 누적기 분리.
     reset_usage()

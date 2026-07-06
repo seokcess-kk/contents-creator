@@ -47,17 +47,14 @@ def generated_content_client_mock(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
 
 @pytest.fixture
 def brightdata_mock(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
-    """BrightDataClient 생성자 자체를 mock."""
-    cls = MagicMock()
+    """SERP fetcher mock. PR-S3 이후 check_rankings 는 `build_serp_fetcher` 팩토리를
+    경유하므로 팩토리가 이 mock fetcher 를 반환하도록 patch. 반환 instance 에 fetch/close 를
+    노출해 기존 test body(brightdata_mock.close/fetch)를 무변경 유지한다."""
     instance = MagicMock()
     instance.fetch.return_value = "<html/>"
     instance.close.return_value = None
-    cls.return_value = instance
-    monkeypatch.setattr(ranking_orchestrator, "BrightDataClient", cls)
     monkeypatch.setattr(
-        ranking_orchestrator,
-        "require",
-        lambda key: "test-value",
+        ranking_orchestrator, "build_serp_fetcher", MagicMock(return_value=instance)
     )
     return instance
 
@@ -494,6 +491,42 @@ class TestCheckRankingsForPublication:
         save_mock.assert_called_once()
         _, kwargs = save_mock.call_args
         assert kwargs["stage"] == "ranking_check"
+
+
+class TestRankingSerpFetcherRouting:
+    """PR-S3 — ranking cron SERP 가 `build_serp_fetcher(ranking_serp_fetcher)` 를 경유한다.
+
+    분석 트랙 `crawler_serp_fetcher` 와 독립 토글. ranking_orchestrator 는 BrightDataClient 를
+    직접 인스턴스화하지 않는다(팩토리 단일 경유 — domain/ranking 격리 유지).
+    """
+
+    def test_routes_through_factory_with_ranking_toggle(
+        self,
+        storage_mock: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from config.settings import settings
+
+        storage_mock.get_publication.return_value = _publication()
+        snap = RankingSnapshot(publication_id="pub-1", position=3, total_results=10)
+        monkeypatch.setattr(ranking_orchestrator.tracker, "find_position", lambda **_: snap)
+        storage_mock.insert_snapshot.return_value = snap
+
+        instance = MagicMock()
+        instance.fetch.return_value = "<html/>"
+        factory = MagicMock(return_value=instance)
+        monkeypatch.setattr(ranking_orchestrator, "build_serp_fetcher", factory)
+        monkeypatch.setattr(settings, "ranking_serp_fetcher", "insane")
+
+        ranking_orchestrator.check_rankings_for_publication("pub-1")
+
+        # ranking 전용 토글 값이 팩토리에 주입됐는지 + close 위임 확인
+        factory.assert_called_once_with("insane")
+        instance.close.assert_called_once()
+
+    def test_no_direct_brightdata_client_instantiation(self) -> None:
+        # PR-S3: ranking_orchestrator 는 BrightDataClient import/직접 인스턴스화를 제거했다.
+        assert not hasattr(ranking_orchestrator, "BrightDataClient")
 
 
 class TestCheckAllActiveRankings:
