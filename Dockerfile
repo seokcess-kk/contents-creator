@@ -19,9 +19,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # 의존성만 먼저 설치 — pyproject.toml 변경 없으면 이 레이어 캐시
 # editable install 이 패키지 메타데이터를 만들 수 있도록 빈 디렉토리·__init__.py 선배치
 COPY pyproject.toml ./
-RUN mkdir -p domain application config web/api && \
+# vendor/insane_search (외부 라이브러리) placeholder 도 선배치 — setuptools
+# strict-editable finder 가 pip install 시점에 vendor 패키지를 등록하도록
+# (placeholder 누락 시 editable install 이 vendor 를 못 잡음).
+RUN mkdir -p domain application config web/api vendor/insane_search && \
     touch domain/__init__.py application/__init__.py config/__init__.py \
-          web/__init__.py web/api/__init__.py && \
+          web/__init__.py web/api/__init__.py \
+          vendor/__init__.py vendor/insane_search/__init__.py && \
     pip install -e ".[web]"
 
 # Playwright Chromium + 시스템 deps (브랜드 카드 PNG 렌더용).
@@ -44,6 +48,11 @@ COPY application/ application/
 COPY config/ config/
 COPY web/__init__.py web/__init__.py
 COPY web/api/ web/api/
+
+# 벤더링된 insane-search 엔진 (본문 fetcher 하이브리드) — placeholder 위에 실제 코드 덮어쓰기.
+COPY vendor/ vendor/
+# Docker 경로 import 스모크 — 로컬 import 스모크만으로는 컨테이너 경로 미검증.
+RUN python -c "from vendor.insane_search import fetch, FetchResult"
 
 # 2026-05-11 — 브랜드 카드 PNG 렌더에 사용하는 Pretendard 폰트 등 정적 자산.
 # 없으면 renderer 가 file:// URL 로 폰트 로딩 실패 → 카드 텍스트 깨짐.

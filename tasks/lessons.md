@@ -33,6 +33,7 @@
 - [DataTableShell 모바일 자동 변환 + vitest 텍스트 매칭 충돌](#datatableshell-모바일-자동-변환--vitest-텍스트-매칭-충돌--polish-p2-2026-05-06) — 2026-05-06
 
 ### Domain / Architecture
+- [insane-search 하이브리드 본문 fetcher 통합](#insane-search-하이브리드-본문-fetcher-통합-2026-07-06) — 2026-07-06
 - [도메인 격리 유지 + DI 패턴 — `csv_parser.blog_resolver`](#도메인-격리-유지--di-패턴--csv_parserblog_resolver-2026-05-07) — 2026-05-07
 - [FastAPI 라우트의 `status_code=204` + `-> None` 충돌](#fastapi-라우트의-status_code204---none-충돌-2026-05-07) — 2026-05-07
 - [키워드 난이도 분석 속도 — Phase F 후속 튜닝](#키워드-난이도-분석-속도--phase-f-후속-튜닝-2026-05-04) — 2026-05-04
@@ -815,4 +816,80 @@ NID_AUT + NID_SES + NNB 3개 쿠키 주입 후 실 발행 시도 시 RabbitWrite
 - `domain/publishing/CLAUDE.md`
 - 차용 출처: `seokcess-kk/auto-publishing@c64b5e7`
 - Chrome 보안 변경 추적: `https://issues.chromium.org/issues/40945783` (Application-Bound Encryption)
+
+---
+
+## insane-search 하이브리드 본문 fetcher 통합 (2026-07-06)
+
+Bright Data(Web Unlocker, 유료) 비용 절감을 위해 오픈소스 insane-search 의 `curl_cffi` fetch 엔진을 **본문 수집 경로에만** 부분 도입했다. IP 로테이션이 없는 insane 의 한계를 **폴백 있는 하이브리드**로 흡수한다. PR1(HtmlFetcher Protocol) → PR2(vendor 벤더링) → PR3(어댑터) → PR4(라우팅+거버넌스) → PR5(본 기록) 5단계. 착수 전 확정한 핵심 의사결정 5건:
+
+### [INSANE-1] insane engine 은 자립 Python 패키지 — 벤더링으로 재사용 (executor/Playwright 제외)
+
+**결정**: insane-search 는 배포 형태가 Claude Code 플러그인이지만 내부 `engine/` 은 **자립 Python 패키지**(내부 100% 상대 import, curl-only 경로 존재)라, 폴더째 `vendor/insane_search/` 로 반입해 라이브러리로 취급했다. 최소집합 = 10개 `.py` + `waf_profiles.yaml`. **`executor.py`·`templates/`(Playwright Phase 3) 는 제외**했고, 그래도 안전한 이유는 `fetch_chain` 이 executor 를 **지연 import** 하기 때문 — `enable_playwright=False` 규약이면 top-level import 로 끌려오지 않는다.
+
+**사유**:
+- 벤더 위치를 `vendor/`(repo 루트 신규 패키지)로 둔 것은 domain 순수성 서사 보존 — `architecture-check.sh` 는 `domain/` 만 스캔하므로 `from vendor.insane_search...` 는 검사 대상 밖. `domain/crawler/_vendor/` 대안은 "도메인 안에 외부코드" 로 순수성을 흐려 기각.
+- 내부가 100% 상대 import 라 **폴더 rename 자유 + 내부 코드 무수정**으로 반입 가능. 서드파티 추가는 `curl_cffi`(필수) + `pyyaml`(waf_profiles 로드) 둘뿐(bs4 는 기존 보유).
+- 대가(패키징 배선 3건): `pyproject [tool.setuptools.packages.find] include` 에 `"vendor*"` 추가(= domain 의 `from vendor...` pyright resolve 관건), `ruff extend-exclude` 에 `"vendor"`(외부코드 린트 면제 — `print()`/bare except 등 원본 스타일 허용), Dockerfile 의존성 레이어에 vendor placeholder 선배치 + `COPY vendor/` + Docker 내 import 스모크.
+
+**일반화 규칙**:
+- **외부 도구의 "배포 형태"(플러그인/CLI)와 "내부 코드의 자립성"은 별개** — 내부가 상대 import + 의존성이 얇으면 벤더링으로 재사용 가능. import 그래프를 실사해 지연 import 경계를 먼저 확인.
+- **비활성 기능(Playwright)은 지연 import 경계에서 자연 격리** — top-level import 부재를 확인하면 파일 물리 삭제 없이 제외 가능.
+
+### [INSANE-2] 실측 근거 — 본문만 대체, SERP 는 Bright Data 유지, 완전 대체는 폴백으로
+
+**결정**: 본문 수집(`m.blog.naver.com`)만 insane 으로 1차 대체하고, SERP(`search.naver.com`)·keyword_difficulty·ranking 은 Bright Data 를 그대로 유지. insane 자체가 IP 로테이션이 없어 완전 대체는 불가 → **폴백 하이브리드**(insane 실패 시 Bright Data)로 흡수.
+
+**실측 근거(확정)**:
+- **본문**: insane 이 단일 IP 로 120건 무차단 100% 성공 + 파서 결과가 Bright Data 와 **필드 단위 100% 일치** → 무손실 대체 가능.
+- **SERP**: insane 의 WAF 검증기가 네이버 SERP 를 **challenge 로 오판**(grid 9회 소진) + 단일 IP 의 SERP rate 미검증 → Bright Data 유지가 안전.
+- **완전 대체 불가**: insane 은 IP 로테이션 부재라 고동시성·장시간에서 차단 위험 → 폴백이 필수.
+
+**일반화 규칙**:
+- **"라이브러리에 기능이 있다" ≠ "우리 대상에서 작동한다"** — 대상별(본문 vs SERP) 실측으로 채택 경계를 그어야 한다(2026-04-15 Bright Data SERP API 교훈과 동형).
+- **IP 로테이션 없는 무료 fetcher 는 폴백 하이브리드로만 안전** — 단일 IP 실측이 통과해도 배치 동시성/장시간은 미검증. 유료 폴백을 붙여 리스크를 흡수하고 폴백률을 usage 분포로 모니터링.
+
+### [INSANE-3] 성공 판정 = `FetchResult.ok` 단일 신호 (verdict 문자열 열거 금지 / not_found 도 폴백)
+
+**결정**: 어댑터의 성공 판정은 vendor `FetchResult.ok: bool` **단일 신호**로만 한다. verdict 문자열(strong_ok/weak_ok/challenge/...) 을 열거해 성공/실패를 재구성하지 않는다. 유일한 예외로 `verdict == "suspect_ok"`(부분성공, ok=False)만 **content sanity(최소 길이 500 + 차단마커 부재) 통과 시** 채택하고, 그 외 모든 실패는 `InsaneFetchError`(BrightDataTransientError 하위) raise 로 폴백 유도. **not_found(404) 도 폴백**한다 — Bright Data 도 404 라 폴백이 유료 낭비이지만, verdict 별 특례 분기로 단순성을 해치지 않는다("낭비 감수 + 단순성" > "404 특례로 얻는 소액 절감"; 부분성공 verdict 오판 위험이 더 큼).
+
+**사유**:
+- verdict 열거는 vendor 내부 상태에 어댑터가 결합돼, vendor 가 verdict 명을 바꾸면 성공 판정이 조용히 깨진다. `ok` 는 vendor 가 보증하는 안정 계약.
+- `ok=True` 라도 content 에 차단마커/과소길이가 있으면 raise(2차 방어) — WAF 우회 실패를 신뢰 content 로 넘기지 않기 위함.
+
+**일반화 규칙**:
+- **외부 판정은 그 라이브러리가 보증하는 단일 bool 계약을 쓴다** — 파생 문자열 열거는 결합·회귀 위험. sanity 는 어댑터가 별도로 2차 검증.
+- **비용 최적화 특례(404 스킵)가 로직 분기를 늘리면 단순성을 택한다** — 절감액 < 오판/유지비용이면 낭비를 감수.
+
+### [INSANE-4] FallbackFetcher 는 record_usage 미호출(이중집계 차단) + 세마포어 실배선(no-op 방지)
+
+**결정 (2중)**:
+1. **usage 이중집계 차단**: `FallbackFetcher` 는 폴백 발생 시 `record_usage` 를 **호출하지 않고 `logger.warning` 만** 남긴다. 성공 usage 는 primary(insane, cost=0) 또는 fallback(BrightDataClient) 이 **각자** 기록한다. 폴백률은 `provider=brightdata + stage=page_scraping` usage 분포로 추론. InsaneFetcher 는 **성공 시에만** `record_usage(provider="insane")`, 실패(폴백 유도) 시 미기록.
+2. **동시성 실강제**: insane 동시성은 `insane_fetcher.py` module-level `threading.BoundedSemaphore(settings.insane_concurrent_limit)` 로 `fetch()` 진입 시 `with` acquire — `brightdata_client._concurrent_semaphore` 패턴 미러. 설정값만 두고 세마포어에 배선하지 않으면 배치(BATCH_MAX_WORKERS 2~3)가 단일 IP insane 을 무제한 동시 타격하는 **no-op** 함정.
+
+**사유**:
+- 어댑터마다 usage 를 기록하는데 FallbackFetcher 까지 기록하면 성공 1건이 2번 집계돼 비용 리포트가 왜곡. "usage 를 기록하는 주체는 실제 fetch 를 수행한 최하위 fetcher 하나뿐" 규약.
+- 단일 IP 리소스는 강제 메커니즘 없이는 설정값이 문서상 숫자로만 남는다.
+
+**일반화 규칙**:
+- **합성(래퍼) 계층은 usage/부수효과를 기록하지 않는다** — 실제 IO 를 수행한 잎(leaf) fetcher 만 기록. 래퍼는 관측(logger)만.
+- **동시성 상수는 반드시 세마포어/락에 배선해 실소비 확인** — 정의만 하면 no-op. 테스트로 acquire 경로 진입을 고정(`test_fetch_acquires_semaphore`).
+
+### [INSANE-5] 라우팅은 본문 경로만 교체 — SERP/ranking/keyword_difficulty 무변경 + env 즉시 롤백
+
+**결정**: 라우팅 교체는 본문 경로(`application/stage_runner._build_body_fetcher()` → `run_stage_page_scraping`)에 국한한다. `_build_body_fetcher()` 는 `crawler_body_fetcher == "insane"` 이면 `FallbackFetcher(InsaneFetcher, BrightDataClient)`, 아니면 `BrightDataClient` 를 반환. `run_stage_serp_collection`·`keyword_difficulty_orchestrator`·`ranking_orchestrator` 는 `BrightDataClient` 를 **그대로 유지**. 문제 발생 시 **`CRAWLER_BODY_FETCHER=brightdata` env 한 줄로 코드 변경 없이 즉시 롤백**. 폴백용 Bright Data 키는 여전히 필수라 `_preflight_required_keys` 는 무변경(주석만 보강).
+
+**사유**:
+- 격리된 최소 교체 지점(팩토리 1개)만 바꾸면 SERP 계열 회귀 위험 0 + 롤백이 env 토글로 즉시. `application/orchestrator.py` 단일 흐름 4함수 시그니처는 무변경.
+- 거버넌스 문서(`domain/crawler/CLAUDE.md` §금지 "대체 크롤링 라이브러리 금지" + `SPEC-SEO-TEXT.md` §3[2] "본문=Web Unlocker")는 코드가 본문=insane 으로 **실제 동작하는 순간(PR4)과 동반 착지** — 코드가 자기 거버넌스를 위반하는 과도기를 만들지 않기 위해.
+
+**일반화 규칙**:
+- **동작 전환은 단일 팩토리 분기 + env 토글로** — 최소 교체 지점 + 즉시 롤백. 단일 흐름 시그니처는 건드리지 않는다(additive only).
+- **거버넌스 문서는 코드 활성화 PR 과 동반 갱신** — 문서 갱신을 뒤 PR 로 미루면 코드가 문서를 위반하는 과도기가 생긴다.
+
+**참조**:
+- `domain/crawler/fetcher.py` (HtmlFetcher Protocol 4종), `domain/crawler/insane_fetcher.py`, `domain/crawler/fallback_fetcher.py`
+- `application/stage_runner.py:_build_body_fetcher`, `application/usage_tracker.py`(provider="insane"→0), `config/settings.py`(crawler_body_fetcher/insane_concurrent_limit/insane_timeout_seconds)
+- `vendor/insane_search/`(v0.9.1, MIT), `tests/test_crawler/test_insane_fetcher.py` / `test_fallback_fetcher.py` / `test_insane_smoke.py`(RUN_INSANE_SMOKE opt-in)
+- `tasks/todo.md` "insane-search 하이브리드 fetcher 통합" 섹션(PR1~PR5)
 

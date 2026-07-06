@@ -20,7 +20,7 @@ T = TypeVar("T")
 class ApiUsage(BaseModel):
     """단일 API 호출의 사용량."""
 
-    provider: str  # "anthropic" | "gemini" | "brightdata"
+    provider: str  # "anthropic" | "gemini" | "brightdata" | "insane"
     model: str | None = None
     input_tokens: int = 0
     output_tokens: int = 0

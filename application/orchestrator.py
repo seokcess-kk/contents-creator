@@ -562,6 +562,11 @@ def _preflight_required_keys(*, need_bright_data: bool, need_gemini: bool) -> st
 
     Anthropic 은 생성/분석/검증 단계 모두 사용하므로 항상 필수. Bright Data 는
     신규 분석([1][2]) 에만 필요, Gemini 는 이미지 생성([9]) 에만 필요.
+
+    ⚠️ 본문 fetcher 가 insane(`crawler_body_fetcher="insane"`) 이어도 Bright Data 키는
+    여전히 필수다: (1) SERP 수집([1])은 항상 Bright Data, (2) 본문([2])도 insane 실패 시
+    Bright Data 로 폴백하므로 폴백 밸브용 키가 없으면 하이브리드가 성립하지 않는다.
+    따라서 아래 검증(need_bright_data 시 두 키 필수)은 토글과 무관하게 유지한다.
     """
     missing: list[str] = []
     if not settings.anthropic_api_key:

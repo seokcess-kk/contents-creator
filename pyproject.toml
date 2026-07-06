@@ -33,6 +33,9 @@ dependencies = [
     "apscheduler>=3.10",     # 매일 09:00 KST 자동 SERP 재크롤 (AsyncIOScheduler)
     # title_validator 형태소 매칭 (Polish Pack P4) — JVM 의존 X, wheel + C++ 바이너리
     "kiwipiepy>=0.17",
+    # 하이브리드 본문 fetcher (vendor/insane_search — insane-search v0.9.1 curl-only 경로)
+    "curl_cffi>=0.15",       # TLS/JA3 impersonation HTTP 클라이언트 (본문 fetch 실질 의존, 0.15 로 실측)
+    "pyyaml>=6.0",           # waf_profiles.yaml 로드 (waf_detector)
 ]
 
 [project.optional-dependencies]
@@ -52,7 +55,7 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["domain*", "application*", "config*", "web*"]
+include = ["domain*", "application*", "config*", "web*", "vendor*"]
 exclude = ["tests*", "scripts*", "output*", "dev*", "tasks*"]
 
 [tool.ruff]
@@ -63,6 +66,8 @@ extend-exclude = [
     ".venv",
     "dev",
     ".claude",
+    # 벤더링된 외부 라이브러리 (insane-search v0.9.1) — 원본 스타일 린트 면제
+    "vendor",
     # frontend 빌드 산출물 — Junction/symlink 가 끊겨 access denied 발생 (2026-05-04 fix).
     "web/frontend/.next",
     "web/frontend/node_modules",
@@ -89,6 +94,10 @@ select = [
 ]
 ignore = ["E501"]  # line length handled by formatter
 
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI 라우터의 Query/Depends/Path 등은 함수 기본값에 호출을 두는 표준 패턴 — B008 false positive 회피
+extend-immutable-calls = ["fastapi.Query", "fastapi.Depends", "fastapi.Path", "fastapi.Body", "fastapi.Header", "fastapi.Form"]
+
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
@@ -110,6 +119,9 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+markers = [
+    "integration: 네트워크 의존 통합 스모크 (기본 skip, RUN_INSANE_SMOKE=1 로 opt-in)",
+]
 addopts = [
     "--cov=domain",
     "--cov=application",

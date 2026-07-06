@@ -20,7 +20,8 @@ from datetime import datetime
 
 from pydantic import HttpUrl
 
-from domain.crawler.brightdata_client import BrightDataClient, BrightDataError
+from domain.crawler.brightdata_client import BrightDataError
+from domain.crawler.fetcher import HtmlFetcher
 from domain.crawler.model import (
     MIN_COLLECTED_PAGES,
     BlogPage,
@@ -59,7 +60,7 @@ def normalize_to_mobile(url: str) -> str:
 def _fetch_one(
     idx: int,
     item: object,
-    client: BrightDataClient,
+    client: HtmlFetcher,
     retry_count: int,
 ) -> tuple[BlogPage | None, ScrapeFailure | None]:
     """단일 URL fetch. 성공/실패 중 하나만 반환한다."""
@@ -103,7 +104,7 @@ def _fetch_one(
     )
 
 
-def scrape_pages(serp: SerpResults, client: BrightDataClient) -> ScrapeResult:
+def scrape_pages(serp: SerpResults, client: HtmlFetcher) -> ScrapeResult:
     """SERP 결과의 각 URL 을 순차 fetch 해 ScrapeResult 로 반환.
 
     1차 수집 후 성공 수 < MIN_COLLECTED_PAGES 이면 실패 URL 만 1회 batch 재시도.

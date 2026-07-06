@@ -26,7 +26,7 @@ from urllib.parse import quote, urlparse
 
 from bs4 import BeautifulSoup, Tag
 
-from domain.crawler.brightdata_client import BrightDataClient
+from domain.crawler.fetcher import HtmlFetcher
 from domain.crawler.model import (
     MIN_COLLECTED_PAGES,
     InsufficientCollectionError,
@@ -82,7 +82,7 @@ def build_blog_tab_serp_url(keyword: str, start: int = 1) -> str:
     )
 
 
-def collect_serp(keyword: str, client: BrightDataClient) -> SerpResults:
+def collect_serp(keyword: str, client: HtmlFetcher) -> SerpResults:
     """통합검색 우선 + 블로그 탭 보충 전략으로 네이버 블로그 SERP 수집.
 
     Step 1 — 통합검색(`where=blog`) 에서 있는 만큼 수집.

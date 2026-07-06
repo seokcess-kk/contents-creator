@@ -68,6 +68,10 @@ def estimate_cost(usage: ApiUsage) -> float:
         return usage.requests * settings.cost_gemini_image_per_request
     if usage.provider == "brightdata":
         return usage.requests * settings.cost_brightdata_per_request
+    if usage.provider == "insane":
+        # 하이브리드 본문 fetcher — curl_cffi 자체 호출은 무료(cost=0). 폴백 시 brightdata
+        # 는 BrightDataClient 가 별도 record_usage 로 집계하므로 여기서 이중집계하지 않는다.
+        return 0.0
     return 0.0
 
 

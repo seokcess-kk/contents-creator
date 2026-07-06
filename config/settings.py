@@ -24,11 +24,12 @@ class Settings(BaseSettings):
     )
 
     # Bright Data (크롤러 도메인)
-    # Naver 는 SERP API 의 전용 엔진 목록에 없으므로 SERP 수집·본문 수집 모두
-    # Web Unlocker 단일 zone 으로 처리한다. 자세한 사유는 tasks/lessons.md 참조.
+    # Naver 는 SERP API 의 전용 엔진 목록에 없으므로 SERP 수집은 Web Unlocker 단일 zone
+    # 으로 처리한다. 본문 수집은 기본 insane(curl-only) 우선 + Bright Data 폴백 하이브리드
+    # (crawler_body_fetcher 참조) — 폴백용으로 이 키는 여전히 필수. 사유: tasks/lessons.md.
     bright_data_api_key: str | None = Field(default=None, description="Bright Data API key")
     bright_data_web_unlocker_zone: str | None = Field(
-        default=None, description="Web Unlocker zone name (네이버 SERP + 본문 공용)"
+        default=None, description="Web Unlocker zone name (SERP + 본문 폴백 공용)"
     )
 
     # Anthropic Claude (생성·분석·의료법 검증)
@@ -160,6 +161,24 @@ class Settings(BaseSettings):
     # 4xx 폭발 시 env 로 즉시 하향. 멀티 워커 진입 시 Redis advisory lock 으로 교체.
     brightdata_concurrent_limit: int = Field(
         default=5, description="BrightData fetch 동시 호출 한도 (단일 프로세스)"
+    )
+
+    # 하이브리드 본문 fetcher (vendor/insane_search — insane-search v0.9.1 curl-only).
+    # 본문 수집 경로 라우팅 토글 (PR4). "insane" = 하이브리드(본문 insane + Bright Data
+    # 폴백), "brightdata" = Bright Data 강제 단독(롤백 밸브 — 코드 변경 없이 env 로 즉시
+    # 전환). ⚠️ 이 토글은 본문([2] page_scraping) 경로에만 적용된다. SERP 수집·
+    # keyword_difficulty·ranking 은 값과 무관하게 항상 Bright Data 다.
+    crawler_body_fetcher: str = Field(
+        default="insane",
+        description='본문 fetcher. "insane"=하이브리드 폴백, "brightdata"=Bright Data 강제',
+    )
+    # insane_concurrent_limit 은 domain/crawler/insane_fetcher.py 의 module-level
+    # BoundedSemaphore 가 실제 소비(no-op 아님). 단일 IP 라 보수적 default 3.
+    insane_concurrent_limit: int = Field(
+        default=3, description="insane(curl_cffi) fetch 동시 호출 한도 (단일 IP 보수적)"
+    )
+    insane_timeout_seconds: int = Field(
+        default=30, description="insane(curl_cffi) fetch 요청 타임아웃 (초)"
     )
 
     # 키워드 난이도 분석 속도 튜닝 (Phase F 후속, 2026-05-04).

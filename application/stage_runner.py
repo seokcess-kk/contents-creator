@@ -24,6 +24,7 @@ from domain.analysis.model import (
 from domain.analysis.pattern_card import PatternCard, save_pattern_card
 from domain.compliance.model import ComplianceReport
 from domain.crawler.brightdata_client import BrightDataClient
+from domain.crawler.fetcher import HtmlFetcher
 from domain.crawler.model import BlogPage, ScrapeResult, SerpResults
 from domain.crawler.page_scraper import scrape_pages
 from domain.crawler.serp_collector import collect_serp
@@ -109,6 +110,31 @@ def _build_brightdata_client() -> BrightDataClient:
     )
 
 
+# 본문 fetcher 라우팅 토글 값 (settings.crawler_body_fetcher). 매직 문자열 승격.
+_BODY_FETCHER_INSANE = "insane"
+_BODY_FETCHER_BRIGHTDATA = "brightdata"
+
+
+def _build_body_fetcher() -> HtmlFetcher:
+    """본문([2]) 수집 전용 fetcher 를 settings 토글에 따라 생성한다.
+
+    - `crawler_body_fetcher == "insane"`: `FallbackFetcher(InsaneFetcher, BrightDataClient)`
+      — 본문을 insane(curl-only, cost=0) 로 우선 수집, 실패 시 Bright Data 로 자동 폴백.
+    - 그 외("brightdata"): `BrightDataClient` 단독 — 롤백 밸브(env 로 즉시 전환).
+
+    ⚠️ 본문 경로 전용. SERP·keyword_difficulty·ranking 은 항상 Bright Data 라 이 팩토리를
+    쓰지 않는다. 두 하위 fetcher(insane + Bright Data)의 close() 는 `FallbackFetcher.close`
+    가 양쪽에 위임하므로 호출부(`run_stage_page_scraping`)의 finally 에서 함께 정리된다.
+    insane 계열 import 는 이 브랜치에서만 지연 로드(brightdata 강제 시 vendor 미로드).
+    """
+    if settings.crawler_body_fetcher == _BODY_FETCHER_INSANE:
+        from domain.crawler.fallback_fetcher import FallbackFetcher
+        from domain.crawler.insane_fetcher import InsaneFetcher
+
+        return FallbackFetcher(InsaneFetcher(), _build_brightdata_client())
+    return _build_brightdata_client()
+
+
 # ── [1] SERP 수집 ──
 
 
@@ -158,10 +184,12 @@ def run_stage_page_scraping(
     serp: SerpResults,
     output_dir: Path,
     reporter: ProgressReporter,
-    client: BrightDataClient | None = None,
+    client: HtmlFetcher | None = None,
 ) -> ScrapeResult:
     """[2] 네이버 블로그 본문 수집.
 
+    본문 fetcher 는 `_build_body_fetcher()` 가 settings 토글에 따라 결정한다 (기본
+    insane + Bright Data 폴백). `client` 를 주입하면 토글을 무시하고 그대로 사용한다.
     HTML 원본은 `output_dir/analysis/pages/{idx}.html`,
     메타는 `output_dir/analysis/pages/index.json` 에 저장한다.
     """
@@ -169,11 +197,13 @@ def run_stage_page_scraping(
 
     owned_client = client is None
     if client is None:
-        client = _build_brightdata_client()
+        client = _build_body_fetcher()
 
     try:
         result = scrape_pages(serp, client)
     finally:
+        # owned_client 일 때만 close — 폴백 fetcher 면 FallbackFetcher.close 가
+        # insane + Bright Data 양쪽 세션을 함께 정리한다.
         if owned_client:
             client.close()
 

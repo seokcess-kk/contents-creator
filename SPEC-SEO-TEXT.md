@@ -34,7 +34,7 @@
     ↓
 [1] Bright Data SERP API → 네이버 블로그 URL 수집
     ↓
-[2] Bright Data Web Unlocker → 블로그 본문 HTML 수집 (재시도 포함)
+[2] 본문 HTML 수집 → insane(curl-only) 우선 + Bright Data 폴백 (하이브리드, 재시도 포함)
     ↓
 [3] 물리적 구조 추출 (DOM 파싱, LLM 불필요)
     ↓
@@ -98,7 +98,13 @@ POST https://api.brightdata.com/request
 
 ### [2] 본문 수집
 
-Bright Data Web Unlocker로 각 블로그 본문 HTML 수집.
+각 블로그 본문 HTML 을 **하이브리드 fetcher** 로 수집한다. 본문 fetcher 는
+`domain/crawler/fetcher.py` 의 `HtmlFetcher` 추상화를 경유하며, 기본값
+(`crawler_body_fetcher="insane"`)은 `vendor/insane_search`(curl-only, v0.9.1)로 1차
+수집(cost=0)한 뒤 실패 시 Bright Data Web Unlocker 로 자동 폴백한다
+(`FallbackFetcher(InsaneFetcher, BrightDataClient)`). `crawler_body_fetcher="brightdata"`
+로 두면 Bright Data 단독으로 강제(롤백 밸브). ⚠️ SERP 수집([1])·keyword_difficulty·
+ranking 은 이 토글과 무관하게 항상 Bright Data 다. 폴백용으로 Bright Data 키는 여전히 필수.
 
 **정책:**
 - URL당 최대 2회 재시도 (exponential backoff: 2s → 5s)
@@ -842,7 +848,7 @@ create index idx_generated_contents_card on generated_contents (pattern_card_id,
 | 언어 | Python 3.11+ |
 | DB | Supabase (PostgreSQL) |
 | SERP 수집 | Bright Data Web Unlocker (SERP 페이지를 범용 fetch) |
-| 본문 크롤링 | Bright Data Web Unlocker (동일 zone) |
+| 본문 크롤링 | 하이브리드 — insane(curl-only, v0.9.1) 우선 + Bright Data Web Unlocker 폴백 (`HtmlFetcher` 추상화, `crawler_body_fetcher` 토글) |
 | HTML 파싱 | BeautifulSoup / lxml |
 | LLM API | Anthropic Claude (`anthropic` SDK) |
 | 이미지 생성 | Google Gemini 3.1 Flash Image Preview (`google-genai` SDK) |
@@ -864,7 +870,7 @@ create index idx_generated_contents_card on generated_contents (pattern_card_id,
 | [9] AI 이미지 생성 | **Gemini 3.1 Flash Image Preview** | 검증된 prompt → 이미지 | 단일 호출, 영어 prompt, 텍스트 절대 금지 |
 
 ### LLM 불필요 (코드)
-- [1] SERP 수집, [2] 본문 수집 — Bright Data API
+- [1] SERP 수집 — Bright Data API. [2] 본문 수집 — insane(curl-only) 우선 + Bright Data 폴백 하이브리드
 - [3] 물리적 구조 추출 — BeautifulSoup + 정규식
 - [5] 교차 분석 집계 — 코드 집계
 - [9] AI 이미지 생성 — Google Gen AI SDK 호출 (prompt 는 [6] 에서 LLM 이 생성, 여기선 호출만)
@@ -909,9 +915,12 @@ contents-creator/
 ├── domain/
 │   ├── crawler/
 │   │   ├── CLAUDE.md
-│   │   ├── brightdata_client.py       ← Bright Data 공통 클라이언트
-│   │   ├── serp_collector.py          ← SERP API: 네이버 블로그 수집
-│   │   └── page_scraper.py            ← Web Unlocker: 본문 HTML 수집 + 재시도
+│   │   ├── fetcher.py                 ← HtmlFetcher Protocol (Bright Data·insane 공통 fetch 계약)
+│   │   ├── brightdata_client.py       ← Bright Data 공통 클라이언트 (SERP + 본문 폴백)
+│   │   ├── insane_fetcher.py          ← vendor/insane_search(curl-only) 어댑터: 본문 1차 (cost=0)
+│   │   ├── fallback_fetcher.py        ← insane → Bright Data 폴백 하이브리드 합성
+│   │   ├── serp_collector.py          ← SERP: 네이버 블로그 수집 (Bright Data)
+│   │   └── page_scraper.py            ← 본문 HTML 수집 + 재시도 (HtmlFetcher 주입)
 │   ├── analysis/
 │   │   ├── CLAUDE.md
 │   │   ├── physical_extractor.py      ← DOM 파싱 (구조·키워드·DIA+ 10종·문단)

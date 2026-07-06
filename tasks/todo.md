@@ -1724,3 +1724,344 @@ UX Refactor P1~P6 에서 산발적으로 적용한 색상/spacing/typography 변
 - A 완료: 신규 batch 실행 후 `keyword_batch_items.failure_category` 컬럼이 7종 enum 중 하나로 채워짐 (실패/skipped row 한정). 백필 스크립트 `--dry-run` 으로 기존 row 매칭률 80%+ 확인
 - B 완료: `/insights?tab=keywords` 페이지에서 키워드 1행 = 분석/발행/순위/진단 통합 1행으로 표시. 칩 필터로 "분석실패만" / "미노출만" 토글 가능. row 클릭 → 해당 PatternCard 또는 Publication 으로 진입
 - pytest/pyright 회귀 0 fail. 단일 흐름 시그니처 무변경 (KeywordBatchItem Pydantic nullable 필드 + DB 컬럼만 추가)
+
+---
+
+# insane-search 하이브리드 fetcher 통합 — 2026-07-06 계획
+
+> 목표: Bright Data(Web Unlocker, 유료) 비용 절감을 위해 오픈소스 insane-search 의
+> `curl_cffi` fetch 엔진을 **본문 수집 경로에만** 부분 도입한다. IP 로테이션이 없는
+> insane 의 한계를 **폴백 있는 하이브리드**로 흡수한다.
+> SPEC 참조: SPEC-SEO-TEXT.md §3 [1][2] (크롤러 도메인), §12 (application 레이어)
+> 실측 결론 (확정): 본문(m.blog.naver.com) = insane 120건 단일 IP 무차단 100% + 파서 필드
+> 100% 일치 → 무손실 대체 가능. SERP(search.naver.com) = insane WAF 검증기가 challenge
+> 오판 → Bright Data 유지.
+> **소스 핀 (확정): insane-search v0.9.1**. 벤더 소스 clone 위치 =
+> `C:\Users\assag\AppData\Local\Temp\claude\C--Users-assag-solution-contents-creator\e4d28f8e-d1fe-48a1-9b81-635a661588ec\scratchpad\insane-search\skills\insane-search\engine\` (실사 완료).
+> 내부 import 100% 상대 import → 폴더 rename 자유, 내부 코드 무수정으로 반입 가능.
+
+## 🎯 목표 / 비목표
+
+**목표**
+- 본문 수집([2] `page_scraper.scrape_pages`) 을 `FallbackFetcher(insane → brightdata)` 로 구성해
+  1차 insane(cost=0), 실패 시 Bright Data 자동 폴백.
+- `domain/crawler` 에 `HtmlFetcher` Protocol 을 도입해 fetch 계약(`fetch(url)->str` + `close()`
+  + `__enter__/__exit__` — **4종 전부**)을 추상화. `BrightDataClient` 는 무변경으로 구현체가 됨
+  (이미 4종 보유 — 테스트 StubClient 로 확인). InsaneFetcher/FallbackFetcher 는 4종을 모두 구현해야
+  pyright 가 구현체로 인정(누락 시 추상 간주 → 인스턴스화 실패).
+- 본문 fetcher 는 settings 토글(`crawler_body_fetcher`)로 "insane"/"brightdata" 강제 전환 가능.
+- 기존 crawler regression 테스트(BrightData mock) **무변경 통과** 유지.
+
+**비목표 (이번 범위 아님, 명시)**
+- ❌ SERP 수집(`collect_serp`, `keyword_difficulty`, `ranking`) 대체 — Bright Data 그대로 유지.
+- ❌ insane IP 로테이션 확보 — 없음. 단일 IP 라 고동시성/장시간은 폴백으로만 흡수.
+- ❌ insane Phase 3(Playwright) 활성 — `enable_playwright=False` 런타임 비활성. 코드 물리 삭제는 후속.
+- ❌ Bright Data 키 제거 — 폴백용으로 여전히 필수(프리플라이트 무변경).
+- ❌ `application/orchestrator.py` 단일 흐름 4함수 시그니처 변경.
+
+## 🧭 핵심 설계 결정 (착수 전 확정 — 사용자 지정 A~G)
+
+> **A. 벤더링 위치 — `vendor/insane_search/` (repo 루트 신규 패키지) 채택**
+> - 현재 repo 에 `vendor/` 없음(확인). 최상위에 신규 생성.
+> - 사유: insane 을 **외부 라이브러리**로 취급 → domain 순수성 서사 보존(vendor 는 도메인 아님).
+>   `architecture-check.sh` 는 `domain/` 만 스캔하므로 `from vendor.insane_search...` 는 검사 대상 밖.
+>   대안 `domain/crawler/_vendor/` 는 자동 패키징/COPY 되나 "도메인 안에 외부코드" 로 순수성 흐림 → 기각.
+> - 대가(추가 작업 3건, 아래 PR2 에 반영): (1) `pyproject.toml [tool.setuptools.packages.find] include` 에
+>   `"vendor*"` 추가(= domain 의 `from vendor...` pyright resolve 관건), (2) `Dockerfile` **의존성 레이어에 vendor
+>   placeholder 선배치**(setuptools strict-editable finder 등록) + 코드 COPY 단계에 `COPY vendor/ vendor/` + Docker 내
+>   import 스모크(현재 domain/application/config/web 만 명시 COPY), (3) `ruff extend-exclude` 에 `vendor` 추가
+>   (린트 면제). pyright 는 vendor 를 include 밖으로 두므로 별도 제외 불필요 — 진짜 관건은 (1) 의 경로 노출(step9 재프레이밍).
+>
+> **B. Protocol — `domain/crawler/fetcher.py::HtmlFetcher`**
+> - **멤버 4종 전부**: `fetch(url: str) -> str` + `close() -> None` + `__enter__` + `__exit__`.
+>   InsaneFetcher·FallbackFetcher 가 이 4종을 모두 구현해야 pyright 가 Protocol 구현체로 인정(하나라도
+>   누락 시 추상 클래스 간주 → 인스턴스화·주입 실패).
+> - **성공 판정 계약**: 구현체는 vendor `FetchResult.ok: bool` 를 성공의 단일 신호로 삼는다. verdict 문자열
+>   열거로 성공/실패를 재구성하지 않는다.
+> - 예외 계약: 실패 시 `BrightDataError` 계열(특히 재시도/폴백 유도는 `BrightDataTransientError`) 호환 예외를
+>   raise. (기존 `brightdata_client.py` 의 3계층 예외를 계약 표준으로 재사용.)
+> - `BrightDataClient` 는 이미 4종 보유 → 코드 변경 없이 구현체.
+>
+> **C. 어댑터 — `domain/crawler/insane_fetcher.py::InsaneFetcher`**
+> - **vendor fetch() 실제 시그니처 (실사 확정, v0.9.1 fetch_chain.py:348)**:
+>   `fetch(url, *, success_selectors=None, device_class="auto", user_hint=None, timeout=25,
+>   max_attempts=None, max_browser_attempts=2, enable_playwright=True, enable_phase0=True,
+>   enable_learning=True) -> FetchResult`.
+> - **어댑터 호출 규약 (고정)**: `enable_playwright=False`(필수 — curl-only 격리, executor/Playwright import 차단),
+>   `enable_learning=False`(필수 — 홈디렉터리 학습파일 쓰기 차단), `device_class="mobile"`(본문 m.blog).
+>   `enable_phase0` 는 engine default(True) 유지(실사로 존재 확인). `device_class`·`enable_phase0` 는
+>   **실존 파라미터** — mock 만으로는 오타/시그니처 오류를 못 잡으므로 PR3 완료 게이트에 실 vendor 1-URL 스모크 추가.
+> - **성공 판정 재작성 (verdict 열거 폐기)**:
+>   - `if not result.ok: <처리>`. `ok=True`(strong_ok/weak_ok) → content 채택.
+>   - `ok=False` 실패 verdict 5종 = challenge / blocked / rate_limited / auth_required / not_found.
+>     `TERMINAL_NONSUCCESS = {auth_required, not_found, rate_limited}`(engine 즉시 종료, 실사 validators.py:84 확인).
+>   - **suspect_ok(부분성공)**: `ok=False` 지만 content 가 존재할 수 있음 → **content sanity(최소 길이 +
+>     차단마커 부재) 통과 시에만 채택**, 아니면 폴백.
+>   - suspect_ok 외 모든 `ok=False` → `BrightDataTransientError` 호환 예외 raise(폴백 유도).
+> - 🔴 **명시적 결정**: **모든 insane 실패는 폴백한다. not_found(404) 는 Bright Data 도 404 라 폴백이 유료
+>   낭비이나, verdict 별 분기로 낭비를 특례 처리하지 않고 "낭비 감수 + 단순성" 을 채택**(부분 성공 케이스가
+>   verdict 오판일 위험 > 404 낭비 비용).
+> - **tenacity 재시도 = 1회로 최소화**(폴백이 있으므로 insane 자체 재시도 증폭 불필요) + 타임아웃 필수.
+> - **동시성 세마포어 실배선**: module-level `threading.BoundedSemaphore(settings.insane_concurrent_limit)` 를
+>   두고 `fetch()` 에서 `with _semaphore:` acquire. `brightdata_client.py` 의 `_concurrent_semaphore` 패턴 미러.
+>   (근거: 배치 BATCH_MAX_WORKERS 2~3 이 단일 IP insane 을 동시 타격 → 강제 메커니즘 없으면 설정값 no-op.)
+> - **usage**: **성공 시에만** `record_usage(ApiUsage(provider="insane"))`(cost=0). 실패(폴백 유도) 시 미기록.
+> - **close()**: curl_cffi 세션 자원(transport 세션풀) 해제 명세.
+>
+> **D. 폴백 — `domain/crawler/fallback_fetcher.py::FallbackFetcher(primary, fallback)`**
+> - HtmlFetcher 4종 전부 구현: `fetch`/`close`/`__enter__`/`__exit__`.
+> - `primary.fetch(url)` 실패(BrightDataError 계열) 시 `fallback.fetch(url)` 호출.
+> - **usage 이중집계 차단**: FallbackFetcher 는 `record_usage` 를 **호출하지 않는다**. 폴백 발생은
+>   `logger.warning` 만 남긴다. 성공 usage 는 primary(insane) 또는 fallback(BrightDataClient) 이 각자 기록.
+>   폴백률은 `provider=brightdata` + `stage=page_scraping` usage 분포로 추론.
+> - `close()`·`__exit__` 는 primary·fallback 양쪽에 위임.
+>
+> **E. 라우팅 — 팩토리 분기**
+> - 본문 경로(`run_stage_page_scraping`) ← `FallbackFetcher(InsaneFetcher, BrightDataClient)` 주입.
+> - SERP 경로(`run_stage_serp_collection`, `keyword_difficulty`, `ranking`) ← `BrightDataClient` 유지.
+> - settings 토글 `crawler_body_fetcher`(default "insane") + `insane_concurrent_limit=3`(단일 IP 보수적,
+>   C 의 세마포어로 실제 강제) + `insane_timeout_seconds`.
+> - ⚠️ **재시도 증폭 주의**: `page_scraper.scrape_pages` 는 이미 실패 URL 을 1회 batch 재시도한다. 이 재시도는
+>   `_fetch_one` 를 다시 호출 → **폴백 체인 전체(InsaneFetcher + BrightDataClient)를 다시 돈다**. InsaneFetcher
+>   tenacity 1회 + BrightDataClient tenacity 3회 결합 시, 지속 실패 URL 1건 worst-case = insane 2회 + brightdata
+>   6회(유료). insane 재시도를 1회로 묶어 insane IP 타격·유료 폭증을 억제.
+>
+> **F. usage/비용 — provider="insane"(cost=0)**
+> - `application/usage_tracker.py::estimate_cost` 에 `provider=="insane"` → 0.0 분기.
+>   폴백 시 brightdata usage 는 `BrightDataClient` 내부 `record_usage` 로 기존대로 기록됨(FallbackFetcher 는 무기록).
+>
+> **G. 테스트 — 어댑터/폴백/라우팅 유닛 + regression 무변경 + 실 vendor 1-URL 통합 스모크(PR3 게이트).**
+
+## 🔴 거버넌스/문서 갱신 — 사용자 승인 완료 (둘 다 갱신)
+
+**본 작업은 아래 governance 문서의 현행 서술과 충돌한다. 사용자가 두 문서 모두 갱신 승인 → 코드와 동반 착지한다.**
+
+- `domain/crawler/CLAUDE.md` §금지 — "Scrapling, Playwright, **기타 대체 크롤링 라이브러리 사용 금지
+  (Bright Data 로 통일)**" → insane(curl_cffi) 도입과 직접 충돌. 이 라인 갱신(insane 하이브리드 예외 명기).
+- `domain/crawler/CLAUDE.md` §핵심규칙 #1 "모든 Bright Data 호출은 brightdata_client.py 경유" 는
+  insane 이 Bright Data 호출이 아니므로 literal 위반 아님. "본문은 HtmlFetcher 추상화 경유" 로 재서술.
+- `SPEC-SEO-TEXT.md` §3 [2] + §"기술 스택" + 아키텍처 표(본문 수집을 Web Unlocker 로 서술한 라인) 가 본문 수집
+  = Bright Data Web Unlocker 로 서술. 하이브리드(본문 = insane + Bright Data 폴백)로 갱신 — **사용자 승인됨**.
+- 🔴 **착지 시점 = PR4(본문 활성화)와 동반** — 코드가 자기 거버넌스 문서를 위반하는 과도기를 만들지 않기 위해,
+  거버넌스 갱신(CLAUDE.md + SPEC-SEO-TEXT.md §3[2] + 아키텍처 표)을 **PR5 가 아니라 PR4 에서 코드와 함께 착지**.
+
+## 📌 교체 지점 (현재 코드 기준 재확인 완료)
+
+| 위치 | 현재 | 변경 |
+|---|---|---|
+| `domain/crawler/brightdata_client.py` | `BrightDataError`/`ClientError`/`TransientError` 3계층, `fetch/close/__enter__/__exit__` | **무변경**. Protocol 이 예외 계약 참조 + 구현체 |
+| `domain/crawler/serp_collector.py:85` | `collect_serp(keyword, client: BrightDataClient)` | 타입힌트만 `HtmlFetcher` 로 완화. 로직 무변경(SERP=BrightData 유지) |
+| `domain/crawler/page_scraper.py:59,106` | `scrape_pages`/`_fetch_one`(client: BrightDataClient) | 타입힌트 `HtmlFetcher` 완화 + `BrightDataError` catch 는 그대로(폴백은 상위 FallbackFetcher) |
+| `application/stage_runner.py:104,130,172` | `_build_brightdata_client()` → serp+page 공용 | `_build_body_fetcher()` 신규(본문 전용). serp 는 기존 유지 |
+| `application/keyword_difficulty_orchestrator.py:40` | `_build_client()` | **무변경**(SERP) — "건드리지 않음" 명시 |
+| `application/ranking_orchestrator.py:439` | `BrightDataClient(...)` 직접 | **무변경**(SERP) — "건드리지 않음" 명시 |
+| `domain/ranking/*` | `Callable[[str],str]` DI | **무변경** — 건드리지 않음 |
+| `config/settings.py` | `bright_data_*`, `brightdata_concurrent_limit=5` | insane 토글/동시성/타임아웃 필드 추가 |
+| `application/usage_tracker.py:62` | provider brightdata/anthropic/gemini | `insane`(0) 분기 추가 |
+| `application/orchestrator.py:560` | `_preflight_required_keys(need_bright_data=...)` | **무변경** — 폴백용 Bright Data 키 여전히 필수(주석만 보강) |
+| `pyproject.toml` / `Dockerfile` / `pyrightconfig.json` | vendor 미인지 | `packages.find include "vendor*"` + ruff extend-exclude `"vendor"` + Dockerfile **의존성 레이어에 vendor placeholder 선배치**(setuptools strict-editable finder 등록) + `COPY vendor/` + Docker 내 vendor import 스모크 |
+
+---
+
+## 단계별 체크리스트 (PR 단위)
+
+### PR1 — HtmlFetcher Protocol 도입 + 타입힌트 완화 (동작 무변경, 안전 기반)
+
+- [ ] 1. [`domain/crawler/fetcher.py`] **신규** — `HtmlFetcher` `Protocol` 정의: **멤버 4종 전부**
+      `fetch(url: str) -> str`, `close() -> None`, `__enter__`, `__exit__`. docstring 에 "성공 판정 계약:
+      구현체는 `FetchResult.ok` 를 성공의 단일 신호로 삼는다(verdict 문자열 열거 금지)" + "예외 계약: 실패 시
+      `BrightDataError` 계열, 폴백/재시도 유도는 `BrightDataTransientError`" 명시. `@runtime_checkable` 부여
+      (테스트 isinstance 용). 완료 기준: pyright 0, 30줄 이내, 4종 멤버 시그니처 완비.
+- [ ] 2. [`domain/crawler/serp_collector.py`] `collect_serp(keyword, client: BrightDataClient)` →
+      `client: HtmlFetcher`. import 추가(`from domain.crawler.fetcher import HtmlFetcher`). 로직 무변경.
+      완료 기준: 기존 `test_serp_collector.py` 무변경 통과.
+- [ ] 3. [`domain/crawler/page_scraper.py`] `scrape_pages`/`_fetch_one` 의 `client: BrightDataClient` →
+      `HtmlFetcher`. `BrightDataError` catch 유지. 완료 기준: 기존 `test_page_scraper.py`(StubClient) 무변경 통과.
+- [ ] 4. 검증 — `ruff check domain/crawler` + `pyright domain/crawler` + `pytest tests/test_crawler --no-cov` 그린.
+      완료 기준: 3개 모두 0 에러, 동작 변화 0.
+
+> PR1 경계: Protocol + 타입 완화만. 벤더/어댑터/라우팅 없음. 순수 리팩터라 롤백 위험 최소.
+
+### PR2 — insane engine 벤더링 (외부 라이브러리 취급, 런타임 미연결)
+
+- [ ] 5. 🔴 [`vendor/insane_search/`] **신규 디렉터리** — insane-search **v0.9.1** engine 반입.
+      소스 = `<scratchpad>/insane-search/skills/insane-search/engine/`(clone 확인, 상단 소스 핀 경로).
+      **실사 확정 최소집합 = 10개 .py** (`__init__`/`fetch_chain`/`validators`/`waf_detector`/`url_transforms`/
+      `content_safety`/`transport`/`safety`/`learning`/`phase0`) **+ `waf_profiles.yaml`**. **`executor.py`·
+      `templates/`·`__main__.py`·`bias_check.py`·`tests/` 제외**(enable_playwright=False 면 executor import 자체가
+      안 일어남). + `vendor/__init__.py` + `vendor/insane_search/__init__.py`. 내부 100% 상대 import → 폴더 rename
+      자유·내부 무수정. MIT 라이선스 파일 동봉. 완료 기준: 디렉터리 존재 + `FetchResult`/`fetch` 심볼 확인.
+- [ ] 6. [`vendor/insane_search/**`] import 무결성 확인 — 내부가 **100% 상대 import**(`from .validators ...`)임을
+      실사로 확정 → **rename 불필요, 내부 코드 무수정**. 확인만: (a) executor/Playwright 계열이 top-level import 로
+      끌려오지 않음(`fetch_chain.py` 가 executor 를 **지연 import**), (b) 제외한 executor.py/templates 를 참조하는
+      top-level import 부재. 완료 기준: `python -c "import vendor.insane_search"` + fetch/FetchResult import 예외 0,
+      `enable_playwright=False` 경로에서 executor 미로드.
+- [ ] 7. [`pyproject.toml`] dependencies — 서드파티는 **curl_cffi(필수, 로컬 0.14.0 확인)** + **pyyaml**
+      (waf_profiles.yaml 로드) 추가. **bs4 는 이미 보유**(재사용). Playwright/executor 계열 제외.
+      `[tool.setuptools.packages.find] include` 에 `"vendor*"` 추가(현재 `["domain*","application*","config*","web*"]`).
+      완료 기준: `pip install -e ".[dev]"` 성공 + `vendor` 패키지가 editable finder 에 등록.
+- [ ] 8. [`Dockerfile`] **2곳 수정**: (1) **의존성 레이어**(현재 `RUN mkdir -p domain application config web/api &&
+      touch ...__init__.py && pip install -e`)에 `vendor/__init__.py`(+ `vendor/insane_search/__init__.py` 및 필요 최소
+      stub) **선배치** — setuptools strict-editable finder 가 `pip install` 시점에 vendor 패키지를 등록하도록(placeholder
+      누락 시 editable install 이 vendor 를 못 잡음). (2) 실제 코드 COPY 단계(현재 domain/application/config/web 만
+      명시)에 `COPY vendor/ vendor/` 추가. **+ Docker 빌드 내 vendor import 스모크 스텝**
+      (`RUN python -c "import vendor.insane_search"`) — 로컬 import 스모크만으로는 Docker 경로 미검증.
+      완료 기준: Dockerfile diff 에 placeholder + COPY + import 스모크 3요소 존재.
+- [ ] 9. [`pyproject.toml` ruff `extend-exclude`] 에 `"vendor"` 추가(외부코드 린트 면제 — `print()`/bare except 등
+      vendor 원본 스타일 허용). **pyright 재프레이밍**: vendor 는 `pyrightconfig.json` include(domain/application/
+      config) **밖**이라 "vendor 제외"는 부분 불필요. 진짜 리스크는 `reportMissingImports:"error"` — domain 파일의
+      `from vendor.insane_search import ...` 가 resolve 실패하면 에러(exclude 로 안 고쳐짐). → **관건은
+      `vendor/__init__.py` 존재 + 경로 노출(`pyproject packages.find include "vendor*"`, step7)**. editable install 로
+      import 가능해지면 pyright 도 심볼 resolve. 완료 기준: `ruff check .` 가 vendor 무시 + domain 의 `from vendor...`
+      가 pyright `reportMissingImports` 0.
+- [ ] 10. 검증 — `python -c "from vendor.insane_search import fetch, FetchResult"` import 클린 + `ruff check .` +
+      `pyright`(domain 의 `from vendor...` reportMissingImports 0). 완료 기준: import/lint/type 그린, 런타임 연결 없음.
+
+> PR2 경계: 벤더 반입 + 패키징/배포/린트 배선만. 어댑터/라우팅 없음(아직 아무 코드도 insane 호출 안 함).
+> 🔴 되돌리기: vendor 디렉터리 생성은 파일 다수 추가 — 롤백은 디렉터리 삭제 + pyproject/Dockerfile 되돌림.
+
+### PR3 — InsaneFetcher + FallbackFetcher 어댑터 (HtmlFetcher 구현, 라우팅 미연결)
+
+- [ ] 11. [`domain/crawler/insane_fetcher.py`] **신규** — `InsaneFetcher` (HtmlFetcher 4종 구현).
+      `fetch(url)` 가 vendor `fetch(url, device_class="mobile", enable_playwright=False, enable_learning=False,
+      enable_phase0=True, timeout=settings.insane_timeout_seconds)` 호출(실 시그니처 §C 고정) →
+      **성공 판정 = `FetchResult.ok`**:
+      - `result.ok` → `content` sanity(최소 길이 + 차단마커 부재) 후 반환.
+      - `not result.ok` + `verdict=="suspect_ok"` + content sanity 통과 → 반환(부분성공 채택).
+      - 그 외 모든 실패(challenge/blocked/rate_limited/auth_required/not_found, suspect_ok sanity 미달) →
+        `BrightDataTransientError` raise(폴백 유도). **verdict 문자열 열거로 성공 재구성 금지**.
+      - 🔴 not_found 도 폴백(낭비 감수 — §C 결정).
+      **tenacity `@retry` = 1회 재시도로 최소화**(폴백 존재) + 타임아웃. module-level
+      `threading.BoundedSemaphore(settings.insane_concurrent_limit)` 를 `fetch()` 에서 `with` acquire
+      (brightdata_client `_concurrent_semaphore` 미러). **성공 시에만** `record_usage(provider="insane")`.
+      차단마커/최소길이 임계는 모듈 상수(매직넘버 승격). `close()` 는 curl_cffi transport 세션풀 해제.
+      완료 기준: 함수 30줄/파일 300줄 이내, HtmlFetcher 4종 완비, 타입힌트 완비.
+- [ ] 12. [`domain/crawler/fallback_fetcher.py`] **신규** — `FallbackFetcher` (HtmlFetcher 4종 구현). 생성자
+      `(primary: HtmlFetcher, fallback: HtmlFetcher)`. `fetch()` 는 primary 시도 → `BrightDataError` 계열 catch 시
+      **`logger.warning`(폴백 발생)만 남기고 `record_usage` 는 호출하지 않음**(이중집계 차단 — 성공 usage 는
+      primary/fallback 이 각자 기록) 후 `fallback.fetch()`. `close()`·`__exit__` 는 primary·fallback 양쪽 위임,
+      `__enter__` 는 self 반환. 완료 기준: 30줄 이내, HtmlFetcher 4종 완비, record_usage 미호출.
+- [ ] 13. [`application/usage_tracker.py:62 estimate_cost`] `if usage.provider == "insane": return 0.0` 분기 추가.
+      [`domain/common/usage.py:23`] `ApiUsage.provider` 주석에 `| "insane"` 추가(문서화). 완료 기준: usage 집계에
+      insane 0원 반영.
+- [ ] 14. [`tests/test_crawler/test_insane_fetcher.py`] **신규** — vendor `fetch` mock(`FetchResult` 반환):
+      (a) `ok=True` 정상 content → 반환, (b) verdict=`challenge`(ok=False) → `BrightDataTransientError`,
+      (c) verdict=`blocked` → 예외, (d) **verdict=`not_found`(404) → 예외(폴백, 낭비 감수 결정 검증)**,
+      (e) **verdict=`auth_required` → 예외**, (f) **verdict=`rate_limited` → 예외**,
+      (g) **verdict=`suspect_ok` + content sanity 통과 → 반환(부분성공 채택)**,
+      (h) **verdict=`suspect_ok` + 과소길이/차단마커 → 예외(폴백)**, (i) `ok=True` 지만 content 차단마커/과소길이 → 예외,
+      (j) timeout/예외 → tenacity 1회 재시도 후 예외, (k) **성공 시 usage provider="insane" 기록 / 실패 시 미기록 어서션**,
+      (l) 세마포어 acquire 경로 진입(동시성 가드 존재 확인). 완료 기준: 12+ 케이스 그린.
+- [ ] 15. [`tests/test_crawler/test_fallback_fetcher.py`] **신규** — (a) primary 성공 → fallback 미호출,
+      (b) primary `BrightDataTransientError` → fallback 호출 + 반환, (c) primary+fallback 모두 실패 → 예외 전파,
+      (d) `close()`·`__exit__` 가 둘 다 닫음, (e) **폴백 발생 시 FallbackFetcher 가 `record_usage` 미호출 어서션
+      (이중집계 비발생 — record_usage monkeypatch spy)**, (f) `__enter__` self 반환. StubFetcher(HtmlFetcher
+      duck-type, record_usage 스파이) 사용. 완료 기준: 6+ 케이스 그린.
+- [ ] 16. 🔴 **PR3 완료 게이트** — `pytest tests/test_crawler --no-cov` + `pyright` 그린 **+ 실 vendor 1-URL 통합
+      스모크**: 실제 `vendor.insane_search.fetch` 로 m.blog.naver.com 1건 fetch → InsaneFetcher 경유 content 반환
+      확인(mock 은 시그니처 오타/실 반환구조 오류를 못 잡음). 스모크는 네트워크 의존 → `@pytest.mark.integration`
+      + 기본 skip, 수동/CI opt-in. 완료 기준: 유닛 그린 + 통합 스모크 1회 수동 통과 기록.
+
+> PR3 경계: 어댑터 구현 + 유닛만. stage_runner 라우팅은 아직 BrightData 단독(동작 무변경).
+
+### PR4 — 라우팅 팩토리 분기 + settings 토글 (본문 = insane→brightdata 폴백 활성)
+
+- [ ] 17. [`config/settings.py`] 필드 추가 — `crawler_body_fetcher: str = "insane"`("brightdata" 로 강제 가능),
+      `insane_concurrent_limit: int = 3`(단일 IP 보수적 — **PR3 InsaneFetcher 의 module-level BoundedSemaphore 가
+      실제 소비**, 정의만 아님), `insane_timeout_seconds: int = 30`. env 매핑/주석 기존 패턴 준수.
+      완료 기준: `settings.crawler_body_fetcher` 로드 + insane_concurrent_limit 이 세마포어에 배선됨(no-op 아님).
+- [ ] 18. [`config/.env.example`] insane 토글 3필드 예시 추가(동기화). 완료 기준: .env.example 에 키 존재.
+- [ ] 19. [`application/stage_runner.py`] `_build_body_fetcher() -> HtmlFetcher` 신규 —
+      `crawler_body_fetcher == "insane"` 이면 `FallbackFetcher(InsaneFetcher(...), BrightDataClient(...))`,
+      아니면 `BrightDataClient(...)`. `run_stage_page_scraping` 의 `_build_brightdata_client()` →
+      `_build_body_fetcher()` 로 교체. `run_stage_serp_collection` 은 `_build_brightdata_client()` **유지**.
+      `client: BrightDataClient | None` 파라미터 타입힌트 → `HtmlFetcher | None`. 완료 기준: 본문 경로만 폴백 fetcher,
+      SERP 경로 무변경.
+- [ ] 20. [`application/orchestrator.py:560`] `_preflight_required_keys` **무변경** — 주석만 보강:
+      "본문 fetcher=insane 이어도 폴백용 Bright Data 키 필수". 완료 기준: 주석 존재, 로직 diff 0.
+- [ ] 21. [`tests/test_application/`] 라우팅 팩토리 유닛 — (a) `crawler_body_fetcher="insane"` 시
+      `_build_body_fetcher()` 가 `FallbackFetcher` 반환 + primary=InsaneFetcher, (b) `"brightdata"` 시
+      `BrightDataClient` 반환, (c) SERP 팩토리는 항상 `BrightDataClient`. monkeypatch settings. 완료 기준: 3 케이스 그린.
+- [ ] 21b. [`tests/test_crawler/test_page_scraper.py`] **재시도 증폭 상호작용 테스트 추가** — StubFallbackFetcher
+      (primary 항상 실패 → fallback) 주입 시 `scrape_pages` 의 1회 batch 재시도가 **폴백 체인 전체를 재실행**함을 검증:
+      (a) 지속 실패 URL 1건 → fetch 호출 카운트 = primary 2회(초기 1 + batch 재시도 1) + fallback 2회, (b) batch
+      재시도로 성공 회복 시 `InsufficientCollectionError` 미발생. 완료 기준: 호출 카운트 어서션 그린.
+- [ ] 22. [`domain/crawler/CLAUDE.md`] **거버넌스 갱신 (PR4 동반 착지)** — §금지 "대체 크롤링 라이브러리 사용 금지"
+      라인 갱신(insane 하이브리드 예외 명기) + §핵심규칙 "본문은 HtmlFetcher 추상화 경유, 기본 insane+Bright Data
+      폴백" 재서술. **사유: 코드가 본문=insane 으로 동작하는 순간(PR4)부터 문서와 정합해야 함**(과도기 위반 회피).
+      완료 기준: 문서와 코드 정합.
+- [ ] 23. 🔴 [`SPEC-SEO-TEXT.md`] **거버넌스 갱신 (PR4 동반, 사용자 승인됨)** — §3 [2] + §"기술 스택" + 아키텍처 표
+      (본문 수집을 Web Unlocker 로 서술한 라인)을 하이브리드(본문 = insane + Bright Data 폴백)로 갱신. §3 [2] 에
+      "본문 fetcher 는 HtmlFetcher 추상화, 기본 insane + Bright Data 폴백" 명기. 완료 기준: SPEC 서술이 코드와 정합.
+- [ ] 24. 검증 — `pytest tests/test_application tests/test_crawler --no-cov` + `pyright` 그린.
+      완료 기준: 라우팅 유닛 + 재시도 증폭 상호작용 + 기존 흐름 회귀 0.
+
+> PR4 경계: 여기서 처음으로 본문 경로가 insane→brightdata 폴백으로 동작 + 거버넌스 문서(CLAUDE.md/SPEC) 동반 착지.
+> `crawler_body_fetcher=brightdata` 로 즉시 롤백 가능(코드 변경 없이 env).
+
+### PR5 — lessons 기록 + 최종 전체 게이트
+
+- [ ] 25. [`tasks/lessons.md`] 결정 기록 — (1) "SERP=BrightData 유지 / 본문=insane 폴백", (2) "insane WAF 가
+      네이버 SERP challenge 오판" 실측, (3) "성공 판정은 FetchResult.ok 단일 신호(verdict 열거 금지)", (4) "not_found
+      도 폴백 — 낭비 감수 결정", (5) "FallbackFetcher 는 record_usage 미호출(이중집계 차단)". 완료 기준: lessons 섹션 존재.
+- [ ] 26. 검증 순서(전체) — ① `ruff check .` 0(vendor 제외) → ② `pyright` 0(domain 의 `from vendor...`
+      reportMissingImports 0) → ③ 신규 유닛(`pytest tests/test_crawler tests/test_application --no-cov`) →
+      ④ 기존 crawler regression(`pytest tests/test_crawler --no-cov`) 무변경 → ⑤ 실 vendor 1-URL 통합 스모크
+      (opt-in) 1회 → ⑥ **Docker 빌드 내 vendor import 스모크 통과**(로컬 경로와 별도) → ⑦
+      `bash .claude/hooks/architecture-check.sh` PASS → ⑧ `bash .claude/hooks/build-check.sh`(커버리지 게이트).
+      완료 기준: 8개 전부 그린.
+
+## ⚠️ 위험 / 미결 항목 (Risk Register)
+
+- **RI-1 (해소됨 — 벤더 import 그래프 실사 완료)**: insane engine 내부는 **100% 상대 import** 확인 → **rename
+  불필요, 내부 무수정**. executor(Playwright) 는 `fetch_chain` 이 **지연 import** 하므로 `enable_playwright=False`
+  경로에서 미로드 → executor.py/templates 제외 가능. 서드파티 추가 = curl_cffi + pyyaml 뿐(bs4 보유). step6 에서
+  지연 import 및 executor 미로드만 확인.
+- **RI-2 (해소됨 — insane 소스 확보)**: insane-search **v0.9.1** 소스 clone 완료(상단 소스 핀 경로). 최소집합
+  10 .py + waf_profiles.yaml 실사 확정, 내부 100% 상대 import → 무수정 반입. `curl_cffi` 0.14.0 설치 확인.
+  MIT 라이선스 파일 vendor/ 에 동봉.
+- **RI-3 (장시간·고동시성 미검증)**: 실측은 단일 IP 120건. 배치 100건+ 동시성 상황의 rate 미검증. → 완화:
+  `insane_concurrent_limit=3` 보수적 + FallbackFetcher 가 차단 시 Bright Data 로 흡수. 운영 초기 폴백률을 usage
+  (provider 분포)로 모니터링.
+- **RI-4 (pyright 통과 관건)**: (1) `HtmlFetcher` Protocol(4종) 도입 후 `BrightDataClient`/`InsaneFetcher`/
+  `FallbackFetcher` 가 **4종 전부 구현**해야 구조적 구현체로 인정(`@runtime_checkable` + 시그니처 정합). (2) vendor 는
+  pyright include 밖이라 vendor 자체 타입에러는 무관 — **진짜 리스크는 domain 의 `from vendor...` reportMissingImports**
+  → `vendor/__init__.py` + packages.find 경로 노출로 해소(step7/9). → 완화: PR1 에서 Protocol pyright 그린 후 어댑터 진행.
+- **RI-5 (거버넌스 문서 정합)**: domain/crawler/CLAUDE.md + SPEC-SEO-TEXT.md 가 "본문=Bright Data" 로 서술.
+  → **PR4 에서 코드 활성화와 동반**해 두 문서 모두 갱신(사용자 승인 완료). 과도기 위반 회피.
+- **RI-6 (폴백 usage 이중 집계 차단)**: → 완화 2중: (1) InsaneFetcher 는 **성공 시에만** insane usage 기록,
+  실패(폴백 유도) 시 미기록, (2) **FallbackFetcher 는 record_usage 를 아예 호출하지 않고 logger.warning 만** —
+  성공 usage 는 primary/fallback 이 각자 기록. 폴백률은 `provider=brightdata + stage=page_scraping` usage 로 추론.
+  테스트로 고정(step14(k), step15(e)).
+- **RI-7 (배포 패키징 누락)**: Dockerfile 이 vendor 를 명시 COPY 안 하면 로컬은 통과/배포만 ImportError. editable
+  install 은 의존성 레이어의 placeholder 를 요구. → PR2 step8 로 placeholder 선배치 + COPY + Docker 내 import 스모크.
+- **RI-8 (mock 이 시그니처 오류를 못 잡음)**: vendor fetch() 시그니처를 mock 하면 오타/실 반환구조 불일치를 유닛이
+  통과시킨다. → 완화: PR3 완료 게이트(step16)에 **실 vendor 1-URL 통합 스모크**(opt-in) + 전체 게이트(step26)에
+  Docker import 스모크.
+- **RI-9 (재시도 증폭 — 유료 폭증)**: `scrape_pages` 의 1회 batch 재시도가 폴백 체인 전체(InsaneFetcher +
+  BrightDataClient tenacity 3회)를 재실행 → 지속 실패 URL 1건 worst-case = insane 2회 + brightdata 6회(유료).
+  → 완화: InsaneFetcher tenacity 를 **1회로 최소화**(폴백 존재), not_found 조기 폴백 유지. step21b 로 호출 카운트 고정.
+- **RI-10 (insane 동시성 no-op 위험)**: `insane_concurrent_limit` 를 정의만 하고 세마포어에 배선하지 않으면
+  배치(BATCH_MAX_WORKERS 2~3)가 단일 IP 를 무제한 동시 타격. → 완화: PR3 InsaneFetcher module-level
+  `BoundedSemaphore` 실배선(brightdata_client 미러), step14(l) 로 존재 검증.
+
+## 검증 순서 (반복)
+
+```
+ruff check .                                  # vendor extend-exclude, 0
+pyright                                        # domain 의 from vendor... reportMissingImports 0
+pytest tests/test_crawler --no-cov            # 어댑터 + verdict 분기 + 재시도 증폭 + 기존 regression
+pytest tests/test_application --no-cov         # 라우팅 팩토리 + 단일 흐름 회귀
+python -c "import vendor.insane_search"        # 로컬 import 스모크
+# (opt-in) 실 vendor 1-URL 통합 스모크 + Docker 빌드 내 import 스모크
+bash .claude/hooks/architecture-check.sh       # domain/crawler → vendor 는 미검사, PASS 확인
+bash .claude/hooks/build-check.sh              # 최종 커버리지 게이트 (한 번만)
+```
+
+## PR 분할 요약
+
+1. **PR1** HtmlFetcher Protocol(4종) + 타입 완화 (동작 무변경, 순수 리팩터)
+2. **PR2** insane v0.9.1 벤더링(10 .py + yaml, executor/templates 제외) + 패키징/Docker placeholder/린트 배선 (런타임 미연결)
+3. **PR3** InsaneFetcher(ok 판정 + suspect_ok sanity + 세마포어 + tenacity 1) + FallbackFetcher(무 record_usage) 어댑터 + 유닛 + 🔴 실 vendor 1-URL 통합 스모크 게이트 (라우팅 미연결)
+4. **PR4** settings 토글 + stage_runner 본문 팩토리 분기 + **거버넌스 문서(CLAUDE.md/SPEC) 동반 착지** (폴백 활성, env 즉시 롤백)
+5. **PR5** lessons 기록 + 최종 전체 게이트(Docker import 스모크 포함)
