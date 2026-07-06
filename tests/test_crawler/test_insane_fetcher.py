@@ -136,11 +136,30 @@ def test_suspect_ok_with_short_content_raises(monkeypatch: pytest.MonkeyPatch) -
         InsaneFetcher().fetch(_URL)
 
 
-def test_ok_true_with_block_marker_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_strong_ok_with_block_marker_skips_sanity(monkeypatch: pytest.MonkeyPatch) -> None:
+    """strong_ok = success_selector positive proof → bare 'captcha' 소프트마커 재검 스킵.
+
+    정상 네이버 SERP 는 captcha.nid.naver.com config 를 임베드해 'captcha' 문자열이 항상
+    존재한다. strong_ok(selector 매칭 확인) 이면 폴백하지 않고 content 를 반환해야 한다.
+    """
+    serp_like = (
+        "<html><body id='main_pack'>" + "본문 " * 200 + " captcha.nid.naver.com</body></html>"
+    )
+    _install(monkeypatch, _result(ok=True, verdict="strong_ok", content=serp_like))
+    assert (
+        InsaneFetcher(device_class="desktop", success_selectors=["#main_pack"]).fetch(_URL)
+        == serp_like
+    )
+    assert any(u.provider == "insane" for u in usage_mod.collect_usage())
+
+
+def test_weak_ok_with_block_marker_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """weak_ok(휴리스틱, selector 없음) 은 기존대로 content sanity 2차 방어 → 차단마커 reject."""
     tainted = "<html>" + "x" * 600 + " CAPTCHA required</html>"
-    _install(monkeypatch, _result(ok=True, verdict="strong_ok", content=tainted))
+    _install(monkeypatch, _result(ok=True, verdict="weak_ok", content=tainted))
     with pytest.raises(BrightDataTransientError):
         InsaneFetcher().fetch(_URL)
+    assert usage_mod.collect_usage() == []  # 폴백 유도, usage 미기록
 
 
 def test_ok_true_with_short_content_raises(monkeypatch: pytest.MonkeyPatch) -> None:

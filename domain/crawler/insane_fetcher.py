@@ -1,9 +1,12 @@
 # insane(curl_cffi) 본문 fetch 어댑터 — HtmlFetcher 구현. 성공 판정 = FetchResult.ok.
 """InsaneFetcher — vendor insane-search(curl_cffi) 를 HtmlFetcher 계약으로 감싼 어댑터.
 
-- 성공 판정은 `FetchResult.ok` 단일 신호를 사용한다 (verdict 문자열 열거로 성공을
-  재구성하지 않는다). 예외: `verdict == "suspect_ok"`(부분성공) 는 ok=False 지만
-  content sanity(최소 길이 + 차단마커 부재) 통과 시 채택한다.
+- 성공 판정 기본은 `FetchResult.ok` + content sanity(최소 길이 + 차단마커 부재) 2차 방어.
+  두 가지 특례: (1) `verdict == "strong_ok"` — vendor Layer 5 가 우리 success_selector
+  (예: `#main_pack`) 매칭을 확인한 강한 positive proof 이므로 content sanity 재검을
+  스킵한다. 정상 네이버 SERP 가 captcha.nid.naver.com config 를 임베드해 bare "captcha"
+  소프트마커에 걸리는 false positive(→ 불필요한 Bright Data 폴백)를 차단한다. (2)
+  `verdict == "suspect_ok"`(부분성공) 는 ok=False 지만 content sanity 통과 시 채택한다.
 - 그 외 모든 실패(challenge/blocked/rate_limited/auth_required/not_found, suspect_ok
   sanity 미달, ok=True 이나 content 비정상) 는 `InsaneFetchError` 로 raise 해 상위
   `FallbackFetcher` 가 Bright Data 로 폴백하도록 유도한다. not_found(404) 도 폴백한다
@@ -45,6 +48,8 @@ _VENDOR_MAX_ATTEMPTS = 3
 
 # content sanity 임계 — suspect_ok(부분성공) 및 ok=True 응답의 2차 방어(매직넘버 승격).
 _MIN_CONTENT_LENGTH = 500
+# strong_ok = success_selector positive proof(vendor Layer 5) → content sanity 재검 스킵.
+_STRONG_OK_VERDICT = "strong_ok"
 _SUSPECT_OK_VERDICT = "suspect_ok"
 # 차단/챌린지 마커(소문자) — 존재 시 content 를 신뢰하지 않고 폴백 유도.
 _BLOCK_MARKERS: tuple[str, ...] = (
@@ -125,7 +130,14 @@ class InsaneFetcher:
             raise InsaneFetchError(f"insane vendor 예외: {url}") from exc
 
     def _accept(self, result: FetchResult, url: str) -> str:
-        """FetchResult.ok(또는 suspect_ok) + content sanity 통과 시 content 반환."""
+        """strong_ok 은 selector positive proof 로 즉시 채택, 그 외는 content sanity 2차 방어."""
+        # strong_ok = vendor Layer 5 가 우리 success_selector(#main_pack) 매칭을 확인한 강한
+        # positive proof. 정상 SERP 의 captcha.nid.naver.com 임베드가 bare "captcha" 소프트
+        # 마커에 걸리는 false positive 를 피하려 content sanity 재검을 스킵한다.
+        if result.verdict == _STRONG_OK_VERDICT:
+            record_usage(ApiUsage(provider="insane", model="curl_cffi"))
+            return result.content
+        # weak_ok/suspect_ok 는 selector 없는 휴리스틱 판정 → sanity 재검이 실제 차단 2차 방어.
         accepted = result.ok or result.verdict == _SUSPECT_OK_VERDICT
         if accepted and _content_is_sane(result.content):
             record_usage(ApiUsage(provider="insane", model="curl_cffi"))
